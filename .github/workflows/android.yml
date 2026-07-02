@@ -44,6 +44,27 @@ jobs:
           fi
           npx cap sync android
 
+      - name: Generate clean and valid Gradle Wrapper
+        run: |
+          echo "=== Creating a temporary directory with blank settings.gradle ==="
+          mkdir -p /tmp/gradle-wrapper-temp
+          cd /tmp/gradle-wrapper-temp
+          touch settings.gradle
+          
+          echo "=== Generating clean Gradle 8.14.3 wrapper ==="
+          gradle wrapper --gradle-version 8.14.3 --distribution-type all
+          
+          echo "=== Copying clean wrapper files to project ==="
+          cd $GITHUB_WORKSPACE
+          mkdir -p android/gradle/wrapper
+          cp /tmp/gradle-wrapper-temp/gradlew android/gradlew
+          cp /tmp/gradle-wrapper-temp/gradle/wrapper/gradle-wrapper.jar android/gradle/wrapper/gradle-wrapper.jar
+          cp /tmp/gradle-wrapper-temp/gradle/wrapper/gradle-wrapper.properties android/gradle/wrapper/gradle-wrapper.properties
+          
+          echo "=== Verifying the generated files ==="
+          ls -la android/gradlew
+          ls -la android/gradle/wrapper/
+
       - name: Build Android Debug APK
         run: |
           cd android
