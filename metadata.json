@@ -1,0 +1,6 @@
+{
+  "name": "Hisab Khata",
+  "description": "একটি ডিজিটাল হিসাব খাতা যা দৈনন্দিন বিক্রি, নগদ জমা, বাকি এবং খরচ সহজে ট্র্যাক ও সংরক্ষণ করতে সাহায্য করে। (A digital ledger for tracking daily sales, cash, dues, and expenses with bilingual English/Bangla support.)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
