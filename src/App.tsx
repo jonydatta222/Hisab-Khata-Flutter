@@ -84,12 +84,11 @@ export default function App() {
       const now = new Date();
       let hours = now.getHours();
       const minutes = String(now.getMinutes()).padStart(2, '0');
-      const seconds = String(now.getSeconds()).padStart(2, '0');
       const ampm = hours >= 12 ? 'PM' : 'AM';
       hours = hours % 12;
       hours = hours ? hours : 12; // key '0' as '12'
       
-      const timeString = `${String(hours).padStart(2, '0')}:${minutes}:${seconds} ${ampm}`;
+      const timeString = `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
       setCurrentTime(timeString);
       
       // Formatting current active calendar date
@@ -98,7 +97,7 @@ export default function App() {
     };
 
     updateTime();
-    const interval = setInterval(updateTime, 1000);
+    const interval = setInterval(updateTime, 15000); // 15 seconds interval to avoid performance lag on low-end phones
     return () => clearInterval(interval);
   }, [isBangla]);
 
@@ -514,58 +513,61 @@ export default function App() {
           </div>
 
           {/* Header Action Tools */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-col items-end gap-1 shrink-0">
             
-            {/* Real-time Clock */}
-            <div className="hidden md:flex items-center gap-1 text-[11px] text-slate-500 font-mono bg-slate-50 border border-slate-200/80 px-2 py-1 rounded-lg h-8">
-              <Clock className="h-3 w-3 text-slate-400" />
-              <span className="font-semibold text-slate-700">
-                {isBangla ? toBanglaNumber(currentTime) : currentTime}
+            {/* Real-time Date & Clock above buttons */}
+            <div className="flex items-center gap-1 text-[9px] sm:text-[10px] text-slate-500 font-mono bg-slate-50 border border-slate-200/60 px-1.5 py-0.5 rounded-md select-none">
+              <Clock className="h-2.5 w-2.5 text-slate-400" />
+              <span className="font-semibold text-slate-600">
+                {currentDateFormatted} • {isBangla ? toBanglaNumber(currentTime) : currentTime}
               </span>
             </div>
 
-            {/* Quick Calculator Action */}
-            <button
-              onClick={() => setIsCalcOpen(true)}
-              className="p-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-lg shadow-3xs transition-all flex items-center justify-center cursor-pointer h-8 w-8"
-              title={isBangla ? 'ক্যালকুলেটর চালু করুন' : 'Open Calculator'}
-              id="calc-trigger-btn"
-            >
-              <CalcIcon className="h-4 w-4" />
-            </button>
+            {/* Action Buttons row */}
+            <div className="flex items-center gap-1">
+              {/* Quick Calculator Action */}
+              <button
+                onClick={() => setIsCalcOpen(true)}
+                className="p-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-md shadow-3xs transition-all flex items-center justify-center cursor-pointer h-7 w-7"
+                title={isBangla ? 'ক্যালকুলেটর চালু করুন' : 'Open Calculator'}
+                id="calc-trigger-btn"
+              >
+                <CalcIcon className="h-3.5 w-3.5" />
+              </button>
 
-            {/* Google Cloud Sync Controller */}
-            <button
-              onClick={handleToggleSync}
-              className={`px-2 py-1 rounded-lg flex items-center gap-1 text-[11px] font-bold border transition-all cursor-pointer h-8 shadow-3xs ${
-                isSyncActive
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                  : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-              }`}
-              id="google-sync-toggle"
-            >
-              {isSyncActive ? (
-                <>
-                  <Cloud className="h-3.5 w-3.5 animate-pulse text-emerald-600" />
-                  <span>{isBangla ? 'সিঙ্ক' : 'Sync'}</span>
-                </>
-              ) : (
-                <>
-                  <CloudOff className="h-3.5 w-3.5 text-rose-500" />
-                  <span>{isBangla ? 'সিঙ্ক' : 'Sync'}</span>
-                </>
-              )}
-            </button>
+              {/* Google Cloud Sync Controller */}
+              <button
+                onClick={handleToggleSync}
+                className={`px-1.5 py-0.5 rounded-md flex items-center gap-0.5 text-[10px] font-bold border transition-all cursor-pointer h-7 shadow-3xs ${
+                  isSyncActive
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                }`}
+                id="google-sync-toggle"
+              >
+                {isSyncActive ? (
+                  <>
+                    <Cloud className="h-3 w-3 animate-pulse text-emerald-600" />
+                    <span>{isBangla ? 'সিঙ্ক' : 'Sync'}</span>
+                  </>
+                ) : (
+                  <>
+                    <CloudOff className="h-3 w-3 text-rose-500" />
+                    <span>{isBangla ? 'সিঙ্ক' : 'Sync'}</span>
+                  </>
+                )}
+              </button>
 
-            {/* Language Selection Toggle */}
-            <button
-              onClick={toggleLanguage}
-              className="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 h-8 shadow-3xs transition-all flex items-center gap-1 cursor-pointer"
-              id="lang-toggler"
-            >
-              <Globe className="h-3.5 w-3.5 text-indigo-500" />
-              <span>{isBangla ? 'EN' : 'বাং'}</span>
-            </button>
+              {/* Language Selection Toggle */}
+              <button
+                onClick={toggleLanguage}
+                className="px-1.5 py-0.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-md text-[10px] font-bold text-slate-700 h-7 shadow-3xs transition-all flex items-center gap-0.5 cursor-pointer"
+                id="lang-toggler"
+              >
+                <Globe className="h-3 w-3 text-indigo-500" />
+                <span>{isBangla ? 'EN' : 'বাং'}</span>
+              </button>
+            </div>
 
           </div>
         </div>
@@ -774,7 +776,7 @@ export default function App() {
                   id="submit-transaction-btn"
                 >
                   <Check className="h-4.5 w-4.5 stroke-[3]" />
-                  <span>{isBangla ? 'হिसাব সেভ করুন' : 'Save Transaction'}</span>
+                  <span>{isBangla ? 'হিসাব সেভ করুন' : 'Save Transaction'}</span>
                 </button>
 
               </form>
