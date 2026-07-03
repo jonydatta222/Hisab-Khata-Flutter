@@ -42,6 +42,8 @@ import {
   generateId
 } from './utils';
 
+import { uploadLedgerToCloud, downloadLedgerFromCloud } from './firebase';
+
 import Calculator from './components/Calculator';
 import StatCard from './components/StatCard';
 import TransactionList from './components/TransactionList';
@@ -141,26 +143,133 @@ export default function App() {
     }
   }, []);
 
-  // --- Save to localStorage & trigger simulated Sync ---
+  // --- Auto Sync on App Load ---
+  useEffect(() => {
+    const runAutoSync = async () => {
+      if (isSyncActive && userEmail && userEmail.trim()) {
+        try {
+          const cloudData = await downloadLedgerFromCloud(userEmail);
+          if (cloudData) {
+            const localUpdated = localStorage.getItem('hisab_khata_last_updated');
+            const localUpdateTime = localUpdated ? parseInt(localUpdated, 10) : 0;
+            const cloudUpdateTime = cloudData.updatedAt || 0;
+            
+            if (cloudUpdateTime > localUpdateTime) {
+              setTransactions(cloudData.transactions || []);
+              setExpenses(cloudData.expenses || []);
+              if (cloudData.shopName) {
+                setShopName(cloudData.shopName);
+                localStorage.setItem('hisab_khata_shop_name', cloudData.shopName);
+              }
+              localStorage.setItem('hisab_khata_transactions', JSON.stringify(cloudData.transactions || []));
+              localStorage.setItem('hisab_khata_expenses', JSON.stringify(cloudData.expenses || []));
+              localStorage.setItem('hisab_khata_last_updated', String(cloudUpdateTime));
+              showToast(isBangla ? 'ক্লাউড থেকে নতুন ডাটা আপডেট করা হয়েছে!' : 'Newer data synced from cloud!');
+            } else if (localUpdateTime > cloudUpdateTime) {
+              await uploadLedgerToCloud(userEmail, transactions, expenses, shopName);
+              localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
+            }
+          } else {
+            await uploadLedgerToCloud(userEmail, transactions, expenses, shopName);
+            localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
+          }
+        } catch (e) {
+          console.error('Auto sync on load failed', e);
+        }
+      }
+    };
+
+    const timer = setTimeout(() => {
+      runAutoSync();
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [isSyncActive, userEmail]);
+
+  // --- Save to localStorage & trigger Real Sync ---
   const saveTransactionsToStorage = (txList: Transaction[]) => {
     setTransactions(txList);
     localStorage.setItem('hisab_khata_transactions', JSON.stringify(txList));
-    triggerCloudSync();
+    const now = Date.now();
+    localStorage.setItem('hisab_khata_last_updated', String(now));
+    if (isSyncActive) {
+      triggerCloudSync(txList, expenses, shopName, userEmail);
+    }
   };
 
   const saveExpensesToStorage = (expList: Expense[]) => {
     setExpenses(expList);
     localStorage.setItem('hisab_khata_expenses', JSON.stringify(expList));
-    triggerCloudSync();
+    const now = Date.now();
+    localStorage.setItem('hisab_khata_last_updated', String(now));
+    if (isSyncActive) {
+      triggerCloudSync(transactions, expList, shopName, userEmail);
+    }
   };
 
-  // --- Simulated Cloud Sync with User Personal Email ---
-  const triggerCloudSync = () => {
-    if (!isSyncActive) return;
+  // --- Delete and Rename Customer Dues ---
+  const handleDeleteCustomerDues = (customerName: string) => {
+    const updated = transactions.filter(tx => tx.customer !== customerName);
+    saveTransactionsToStorage(updated);
+    showToast(isBangla ? 'গ্রাহকের সকল হিসাব ডিলিট করা হয়েছে!' : 'Customer dues deleted successfully!');
+  };
+
+  const handleRenameCustomerDues = (oldName: string, newName: string) => {
+    if (!newName.trim() || oldName === newName.trim()) return;
+    const updated = transactions.map(tx => {
+      if (tx.customer === oldName) {
+        return { ...tx, customer: newName.trim() };
+      }
+      return tx;
+    });
+    saveTransactionsToStorage(updated);
+    showToast(isBangla ? 'গ্রাহকের নাম পরিবর্তন করা হয়েছে!' : 'Customer renamed successfully!');
+  };
+
+  // --- Back Button Navigation with popstate history ---
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (currentNavTab !== 'home') {
+        setCurrentNavTab('home');
+        // Restore history entry so that next back press can exit
+        window.history.pushState({ tab: 'home' }, '');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    // Set initial home state
+    if (!window.history.state) {
+      window.history.replaceState({ tab: 'home' }, '');
+    }
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [currentNavTab]);
+
+  const handleNavTabChange = (tab: 'home' | 'monthly' | 'history' | 'settings') => {
+    setCurrentNavTab(tab);
+    if (tab !== 'home') {
+      window.history.pushState({ tab }, '');
+    }
+  };
+
+  // --- Real Firebase Cloud Sync ---
+  const triggerCloudSync = async (
+    currentTxs: Transaction[] = transactions,
+    currentExs: Expense[] = expenses,
+    currentShopName: string = shopName,
+    currentEmail: string = userEmail
+  ) => {
+    if (!isSyncActive || !currentEmail || !currentEmail.trim()) return;
     setIsSyncing(true);
-    setSyncMessage(isBangla ? 'গুগল ড্রাইভ ক্লাউডে ডেটা সিঙ্ক হচ্ছে...' : 'Syncing data with Google Drive Cloud...');
+    setSyncMessage(isBangla ? 'ফায়ারবেস ক্লাউডে ডেটা সিঙ্ক হচ্ছে...' : 'Syncing data with Firebase Cloud...');
     
-    setTimeout(() => {
+    try {
+      const now = Date.now();
+      await uploadLedgerToCloud(currentEmail, currentTxs, currentExs, currentShopName);
+      localStorage.setItem('hisab_khata_last_updated', String(now));
       setIsSyncing(false);
       setSyncMessage('');
       showToast(
@@ -168,35 +277,88 @@ export default function App() {
           ? 'ক্লাউড সিঙ্ক সফলভাবে সম্পন্ন হয়েছে!' 
           : 'Cloud sync completed successfully!'
       );
-    }, 1200);
+    } catch (e) {
+      console.error('Cloud Sync failed', e);
+      setIsSyncing(false);
+      setSyncMessage('');
+      showToast(
+        isBangla
+          ? 'ক্লাউড সিঙ্ক ব্যর্থ হয়েছে!'
+          : 'Cloud sync failed!'
+      );
+    }
   };
 
-  const toggleSyncState = (targetEmail?: string) => {
+  const toggleSyncState = async (targetEmail?: string) => {
     const emailToUse = targetEmail || userEmail;
+    if (!emailToUse || !emailToUse.trim()) {
+      showToast(isBangla ? 'অনুগ্রহ করে ইমেইল আইডি দিন।' : 'Please provide an email ID.');
+      return;
+    }
+
     if (!isSyncActive) {
       setIsSyncing(true);
-      setSyncMessage(isBangla ? 'গুগল অ্যাকাউন্টের সাথে সংযোগ করা হচ্ছে...' : 'Connecting to Google Account...');
-      setTimeout(() => {
+      setSyncMessage(isBangla ? 'ফায়ারবেস ক্লাউডে সংযোগ করা হচ্ছে...' : 'Connecting to Firebase Cloud...');
+      try {
+        const cloudData = await downloadLedgerFromCloud(emailToUse);
         setIsSyncActive(true);
         localStorage.setItem('hisab_khata_sync', 'true');
         localStorage.setItem('hisab_khata_sync_email', emailToUse);
         setUserEmail(emailToUse);
+        
+        if (cloudData) {
+          const localUpdated = localStorage.getItem('hisab_khata_last_updated');
+          const localUpdateTime = localUpdated ? parseInt(localUpdated, 10) : 0;
+          const cloudUpdateTime = cloudData.updatedAt || 0;
+          
+          if (cloudUpdateTime > localUpdateTime) {
+            setTransactions(cloudData.transactions || []);
+            setExpenses(cloudData.expenses || []);
+            if (cloudData.shopName) {
+              setShopName(cloudData.shopName);
+              localStorage.setItem('hisab_khata_shop_name', cloudData.shopName);
+            }
+            localStorage.setItem('hisab_khata_transactions', JSON.stringify(cloudData.transactions || []));
+            localStorage.setItem('hisab_khata_expenses', JSON.stringify(cloudData.expenses || []));
+            localStorage.setItem('hisab_khata_last_updated', String(cloudUpdateTime));
+            
+            showToast(
+              isBangla 
+                ? 'ক্লাউড থেকে সর্বশেষ ডাটা সফলভাবে ডাউনলোড করা হয়েছে!' 
+                : 'Latest data successfully downloaded from cloud!'
+            );
+          } else {
+            await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName);
+            localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
+            showToast(
+              isBangla 
+                ? 'ক্লাউডে স্থানীয় ডাটা সফলভাবে আপলোড করা হয়েছে!' 
+                : 'Local data successfully uploaded to cloud!'
+            );
+          }
+        } else {
+          await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName);
+          localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
+          showToast(
+            isBangla 
+              ? `ফায়ারবেস সিঙ্ক চালু হয়েছে (${emailToUse})` 
+              : `Firebase Sync Enabled (${emailToUse})`
+          );
+        }
+      } catch (e) {
+        console.error('Failed to enable sync', e);
+        showToast(isBangla ? 'ফায়ারবেস সিঙ্ক চালু করতে ব্যর্থ হয়েছে!' : 'Failed to enable Firebase sync!');
+      } finally {
         setIsSyncing(false);
         setSyncMessage('');
-        showToast(
-          isBangla 
-            ? `গুগল সিঙ্ক চালু হয়েছে (${emailToUse})` 
-            : `Google Sync Enabled (${emailToUse})`
-        );
-        triggerCloudSync();
-      }, 1000);
+      }
     } else {
       setIsSyncActive(false);
       localStorage.setItem('hisab_khata_sync', 'false');
       showToast(
         isBangla 
-          ? 'গুগল সিঙ্ক নিষ্ক্রিয় করা হয়েছে।' 
-          : 'Google Sync Disabled.'
+          ? 'ফায়ারবেস সিঙ্ক নিষ্ক্রিয় করা হয়েছে।' 
+          : 'Firebase Sync Disabled.'
       );
     }
   };
@@ -671,9 +833,17 @@ export default function App() {
           </section>
         </div>
 
+        <AnimatePresence mode="wait">
         {/* --- 1. HOME TAB VIEW --- */}
         {currentNavTab === 'home' && (
-          <div className="space-y-6">
+          <motion.div
+            key="home"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className="space-y-6"
+          >
             
             {/* Day Navigation & Prominent Right-Aligned Action Button Row */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200/85 shadow-3xs max-w-7xl mx-auto w-full">
@@ -689,7 +859,7 @@ export default function App() {
                 <div className="flex items-center gap-2 px-3">
                   <Calendar className="h-4 w-4 text-teal-600" />
                   <span className="text-xs font-black text-slate-800">
-                    {isBangla ? toBanglaNumber(formatDate(selectedDate)) : formatDate(selectedDate)}
+                    {formatDate(selectedDate, isBangla)}
                   </span>
                 </div>
                 <button
@@ -701,35 +871,33 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Prominent Right-aligned Add Expense Button */}
-              <button
-                onClick={() => setIsExpenseModalOpen(true)}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white font-black text-xs sm:text-sm rounded-xl shadow-sm hover:shadow-md active:scale-98 transition-all cursor-pointer border border-rose-400/20"
-                id="prominent-expense-btn"
-              >
-                <PlusCircle className="h-4.5 w-4.5" />
-                <span>{isBangla ? 'দোকানের খরচ যোগ করুন (খরচ)' : 'Add Store Expense'}</span>
-              </button>
             </div>
 
-            {/* TWO-COLUMN WORKSPACE */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* CENTERED & COMPACT SINGLE-COLUMN WORKSPACE */}
+            <div className="max-w-xl mx-auto w-full space-y-6">
               
-              {/* --- LEFT COLUMN: INPUT FORM (5/12 cols) --- */}
-              <div className="lg:col-span-5 space-y-6">
-                
-                {/* 1. Add Transaction Form Card */}
-                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-                  <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="p-1.5 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 flex items-center justify-center">
-                        <Plus className="h-4 w-4 stroke-[3]" />
-                      </span>
-                      <h3 className="text-base font-extrabold text-slate-800 tracking-tight">
-                        {isBangla ? 'নতুন বেচাকেনা হিসাব লিখুন' : 'Record New Transaction'}
-                      </h3>
-                    </div>
+              {/* 1. Add Transaction Form Card */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 flex items-center justify-center">
+                      <Plus className="h-4 w-4 stroke-[3]" />
+                    </span>
+                    <h3 className="text-sm font-extrabold text-slate-800 tracking-tight">
+                      {isBangla ? 'নতুন বেচাকেনা হিসাব লিখুন' : 'Record New Transaction'}
+                    </h3>
                   </div>
+                  {/* Small & simple Expense Button inside the box header */}
+                  <button
+                    type="button"
+                    onClick={() => setIsExpenseModalOpen(true)}
+                    className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-black rounded-lg border border-rose-200/50 transition-colors flex items-center gap-1 cursor-pointer"
+                    id="small-expense-btn"
+                  >
+                    <PlusCircle className="h-3.5 w-3.5" />
+                    <span>{isBangla ? 'খরচ যোগ করুন' : 'Add Expense'}</span>
+                  </button>
+                </div>
 
                   <form onSubmit={handleAddTransaction} className="space-y-4">
                     
@@ -868,132 +1036,119 @@ export default function App() {
 
               </div>
 
-              {/* --- RIGHT COLUMN: CONSOLIDATED LISTS WORKSPACE (7/12 cols) --- */}
-              <div className="lg:col-span-7 space-y-4">
-                
-                {/* Tab Selector Capsule */}
-                <div className="bg-slate-100 p-1.5 rounded-2xl border border-slate-200/50 flex items-center gap-1.5 shadow-2xs">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('dues')}
-                    className={`flex-1 py-2.5 text-xs font-extrabold rounded-xl transition-all text-center cursor-pointer ${
-                      activeTab === 'dues'
-                        ? 'bg-white text-rose-800 shadow-sm border border-slate-200/40'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    {isBangla ? 'বাকি খাতা (Dues)' : 'Dues'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('expenses')}
-                    className={`flex-1 py-2.5 text-xs font-extrabold rounded-xl transition-all text-center cursor-pointer ${
-                      activeTab === 'expenses'
-                        ? 'bg-white text-amber-800 shadow-sm border border-slate-200/40'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    {isBangla ? 'খরচ (Expenses)' : 'Expenses'}
-                  </button>
-                </div>
-
-                {/* Dynamic summary indicator row */}
-                <div className="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-2xs flex flex-wrap items-center gap-2 justify-center sm:justify-start">
-                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mr-1">
-                    {isBangla ? 'আজকের সারসংক্ষেপ:' : 'Today\'s Summary:'}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full border border-emerald-100">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                    {isBangla ? `আজ: ${formatCurrency(todaySales, true)}` : `Today: ${formatCurrency(todaySales, false)}`}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold bg-blue-50 text-blue-700 px-3 py-1 rounded-full border border-blue-100">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                    {isBangla ? `নগদ: ${formatCurrency(todayCashDeposit, true)}` : `Cash: ${formatCurrency(todayCashDeposit, false)}`}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold bg-rose-50 text-rose-700 px-3 py-1 rounded-full border border-rose-100">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                    {isBangla ? `বাকি: ${formatCurrency(todayDueTaken, true)}` : `Due: ${formatCurrency(todayDueTaken, false)}`}
-                  </span>
-                </div>
-
-                {/* Active List Panel Content */}
-                <div className="relative">
-                  {activeTab === 'dues' && (
-                    <DueList
-                      dueList={customerDues}
-                      isBangla={isBangla}
-                      onDeposit={handleDueDeposit}
-                    />
-                  )}
-
-                  {activeTab === 'expenses' && (
-                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
-                        <div>
-                          <h3 className="text-base font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                            <span className="text-rose-500">●</span>
-                            {isBangla ? 'আজকের খরচের তালিকা' : 'Today\'s Store Expenses'}
-                          </h3>
-                          <p className="text-xs text-slate-500">
-                            {isBangla 
-                              ? `আজকের মোট খরচ: ${formatCurrency(todayExpenseTotal, true)} (${toBanglaNumber(todayExpenses.length)} টি খতিয়ান)` 
-                              : `Total Expense: ${formatCurrency(todayExpenseTotal, false)} (${todayExpenses.length} entries)`}
-                          </p>
-                        </div>
-                      </div>
-
-                      {todayExpenses.length === 0 ? (
-                        <div className="text-center py-12 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                          <p className="text-slate-400 text-sm">
-                            {isBangla ? 'আজ কোনো খরচ হিসাবভুক্ত করা হয়নি' : 'No expenses recorded today'}
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-2.5 max-h-[400px] overflow-y-auto pr-1">
-                          {todayExpenses.map((ex) => (
-                            <div key={ex.id} className="flex items-center justify-between p-3.5 rounded-xl bg-amber-50/10 border border-amber-100/30 hover:bg-amber-50/20 transition-all">
-                              <div>
-                                <h4 className="text-xs font-bold text-slate-800">{ex.description}</h4>
-                                <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
-                                  <Clock className="h-3 w-3" />
-                                  {formatTimeStr(ex.time, isBangla)}
-                                </span>
-                              </div>
-                              <span className="text-xs font-extrabold text-rose-600 font-sans">
-                                {formatCurrency(ex.amount, isBangla)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
+              {/* Tab Selector Capsule */}
+              <div className="bg-slate-100 p-1.5 rounded-2xl border border-slate-200/50 flex items-center gap-1.5 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('dues')}
+                  className={`flex-1 py-2.5 text-xs font-extrabold rounded-xl transition-all text-center cursor-pointer ${
+                    activeTab === 'dues'
+                      ? 'bg-white text-rose-800 shadow-sm border border-slate-200/40'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {isBangla ? 'বাকি খাতা (Dues)' : 'Dues'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('expenses')}
+                  className={`flex-1 py-2.5 text-xs font-extrabold rounded-xl transition-all text-center cursor-pointer ${
+                    activeTab === 'expenses'
+                      ? 'bg-white text-amber-800 shadow-sm border border-slate-200/40'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {isBangla ? 'খরচ (Expenses)' : 'Expenses'}
+                </button>
               </div>
 
-            </div>
-          </div>
+              {/* Dynamic summary indicator row */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-2xs flex flex-wrap items-center gap-2 justify-center sm:justify-start">
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mr-1">
+                  {isBangla ? 'আজকের সারসংক্ষেপ:' : 'Today\'s Summary:'}
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full border border-emerald-100">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  {isBangla ? `আজ: ${formatCurrency(todaySales, true)}` : `Today: ${formatCurrency(todaySales, false)}`}
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold bg-blue-50 text-blue-700 px-3 py-1 rounded-full border border-blue-100">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                  {isBangla ? `নগদ: ${formatCurrency(todayCashDeposit, true)}` : `Cash: ${formatCurrency(todayCashDeposit, false)}`}
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold bg-rose-50 text-rose-700 px-3 py-1 rounded-full border border-rose-100">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                  {isBangla ? `বাকি: ${formatCurrency(todayDueTaken, true)}` : `Due: ${formatCurrency(todayDueTaken, false)}`}
+                </span>
+              </div>
+
+              {/* Active List Panel Content */}
+              <div className="relative">
+                {activeTab === 'dues' && (
+                  <DueList
+                    dueList={customerDues}
+                    isBangla={isBangla}
+                    onDeposit={handleDueDeposit}
+                    onDelete={handleDeleteCustomerDues}
+                    onRename={handleRenameCustomerDues}
+                  />
+                )}
+
+                {activeTab === 'expenses' && (
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                          <span className="text-rose-500">●</span>
+                          {isBangla ? 'আজকের খরচের তালিকা' : 'Today\'s Store Expenses'}
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                          {isBangla 
+                            ? `আজকের মোট খরচ: ${formatCurrency(todayExpenseTotal, true)} (${toBanglaNumber(todayExpenses.length)} টি খতিয়ান)` 
+                            : `Total Expense: ${formatCurrency(todayExpenseTotal, false)} (${todayExpenses.length} entries)`}
+                        </p>
+                      </div>
+                    </div>
+
+                    {todayExpenses.length === 0 ? (
+                      <div className="text-center py-12 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                        <p className="text-slate-400 text-sm">
+                          {isBangla ? 'আজ কোনো খরচ হিসাবভুক্ত করা হয়নি' : 'No expenses recorded today'}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5 max-h-[400px] overflow-y-auto pr-1">
+                        {todayExpenses.map((ex) => (
+                          <div key={ex.id} className="flex items-center justify-between p-3.5 rounded-xl bg-amber-50/10 border border-amber-100/30 hover:bg-amber-50/20 transition-all">
+                            <div>
+                              <h4 className="text-xs font-bold text-slate-800">{ex.description}</h4>
+                              <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
+                                <Clock className="h-3 w-3" />
+                                {formatTimeStr(ex.time, isBangla)}
+                              </span>
+                            </div>
+                            <span className="text-xs font-extrabold text-rose-600 font-sans">
+                              {formatCurrency(ex.amount, isBangla)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+          </motion.div>
         )}
 
         {/* --- 2. MONTHLY REPORT TAB VIEW --- */}
         {currentNavTab === 'monthly' && (
-          <div className="max-w-4xl mx-auto w-full px-4 py-4 space-y-6">
-            <div className="bg-gradient-to-br from-[#102A43] to-[#1F3A52] text-white p-5 rounded-2xl shadow-md relative overflow-hidden">
-              <div className="relative z-10 space-y-1">
-                <span className="text-[10px] font-extrabold uppercase text-emerald-300 tracking-widest">
-                  {isBangla ? 'সার্বিক মাসিক রিপোর্ট' : 'Monthly Performance Analytics'}
-                </span>
-                <h2 className="text-xl font-extrabold">
-                  {isBangla ? `${toBanglaNumber(new Date().getFullYear())} সালের বর্তমান মাসের হিসাব` : 'Current Month Statement 2026'}
-                </h2>
-                <p className="text-xs text-slate-300">
-                  {isBangla ? 'বেচাকেনা, নগদ জমা, বাকি ও খরচের একটি পরিচ্ছন্ন চার্ট ও সামারি।' : 'A complete breakdown of sales, deposits, dues and expenses.'}
-                </p>
-              </div>
-              <div className="absolute -right-10 -bottom-10 h-32 w-32 rounded-full bg-teal-500/10 blur-xl"></div>
-            </div>
-
+          <motion.div
+            key="monthly"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className="max-w-4xl mx-auto w-full px-4 py-4 space-y-6"
+          >
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -1056,7 +1211,7 @@ export default function App() {
                         return (
                           <div key={dateStr} className="space-y-1">
                             <span className="text-[11px] font-extrabold text-slate-600 block font-mono">
-                              {isBangla ? toBanglaNumber(formatDate(dateStr)) : formatDate(dateStr)}
+                              {formatDate(dateStr, isBangla)}
                             </span>
                             
                             <div className="space-y-1.5">
@@ -1161,12 +1316,19 @@ export default function App() {
                 </table>
               </div>
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* --- 3. OLD LEDGER TAB VIEW --- */}
         {currentNavTab === 'history' && (
-          <div className="max-w-4xl mx-auto w-full px-4 py-4 space-y-6">
+          <motion.div
+            key="history"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className="max-w-4xl mx-auto w-full px-4 py-4 space-y-6"
+          >
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
@@ -1243,7 +1405,7 @@ export default function App() {
                         <div>
                           <h4 className="text-xs font-bold text-slate-800">{tx.product}</h4>
                           <span className="text-[9px] text-slate-400 block mt-0.5">
-                            {tx.customer ? `${isBangla ? 'কাস্টমার' : 'Customer'}: ${tx.customer}` : (isBangla ? 'নগদ বিক্রি' : 'Cash Sale')} • {formatTimeStr(tx.time)}
+                            {tx.customer ? `${isBangla ? 'কাস্টমার' : 'Customer'}: ${tx.customer}` : (isBangla ? 'নগদ বিক্রি' : 'Cash Sale')} • {formatTimeStr(tx.time, isBangla)}
                           </span>
                         </div>
                         <span className={`text-xs font-black ${tx.isCash ? 'text-emerald-600' : 'text-amber-600'}`}>
@@ -1271,7 +1433,7 @@ export default function App() {
                       <div key={ex.id} className="p-3 bg-slate-50 border border-slate-200/50 rounded-xl flex items-center justify-between">
                         <div>
                           <h4 className="text-xs font-bold text-slate-800">{ex.description}</h4>
-                          <span className="text-[9px] text-slate-400 block mt-0.5">{formatTimeStr(ex.time)}</span>
+                          <span className="text-[9px] text-slate-400 block mt-0.5">{formatTimeStr(ex.time, isBangla)}</span>
                         </div>
                         <span className="text-xs font-black text-rose-600">
                           {formatCurrency(ex.amount, isBangla)}
@@ -1282,12 +1444,19 @@ export default function App() {
                 </div>
               </div>
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* --- 4. SETTINGS TAB VIEW --- */}
         {currentNavTab === 'settings' && (
-          <div className="max-w-xl mx-auto w-full px-4 py-4 space-y-6">
+          <motion.div
+            key="settings"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className="max-w-xl mx-auto w-full px-4 py-4 space-y-6"
+          >
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-4">
               <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
                 <SettingsIcon className="h-5 w-5 text-teal-600" />
@@ -1403,8 +1572,9 @@ export default function App() {
                 <span>{isBangla ? 'খাতা সম্পূর্ণ খালি করুন (Reset)' : 'Reset All Ledger Data'}</span>
               </button>
             </div>
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
 
       </main>
 
@@ -1418,6 +1588,124 @@ export default function App() {
           showToast(isBangla ? 'হিসাবটি দামের ঘরে বসানো হয়েছে!' : 'Amount pasted successfully!');
         }}
       />
+
+      {/* --- CLOUD SYNC MODAL OVERLAY DIALOG --- */}
+      <AnimatePresence>
+        {isSyncModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSyncModalOpen(false)}
+              className="fixed inset-0 bg-black"
+            />
+
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 border border-slate-100 overflow-hidden"
+              id="sync-modal-box"
+            >
+              <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                <h3 className="font-bold text-slate-800 text-base flex items-center gap-1.5">
+                  <Cloud className="h-5 w-5 text-teal-600 animate-pulse" />
+                  <span>{isBangla ? 'ফায়ারবেস ক্লাউড সিঙ্ক' : 'Firebase Cloud Sync'}</span>
+                </h3>
+                <button
+                  onClick={() => setIsSyncModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer text-xs font-bold p-1 hover:bg-slate-100 rounded-full"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  {isBangla 
+                    ? 'আপনার হিসাব খাতার সকল ডাটা ফায়ারবেস ক্লাউডে রিয়েল-টাইমে সিঙ্ক করুন। এতে আপনার ফোন হারিয়ে গেলেও ডাটা সুরক্ষিত থাকবে।' 
+                    : 'Sync all your ledger data in real-time to Firebase Cloud. Your data will remain safe and secure even if you switch or lose your device.'}
+                </p>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">
+                    {isBangla ? 'সিঙ্ক ইমেইল আইডি' : 'Sync Email ID'}
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="e.g. jony@example.com"
+                    value={userEmail}
+                    onChange={(e) => {
+                      setUserEmail(e.target.value);
+                      localStorage.setItem('hisab_khata_sync_email', e.target.value);
+                    }}
+                    className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-bold font-sans"
+                    id="sync-email-input"
+                  />
+                </div>
+
+                <div className="p-3 bg-slate-50 border border-slate-150 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {isSyncActive ? (
+                      <Cloud className="h-4 w-4 text-emerald-600 animate-pulse" />
+                    ) : (
+                      <CloudOff className="h-4 w-4 text-rose-500" />
+                    )}
+                    <span className="text-xs font-bold text-slate-700">
+                      {isSyncActive ? (isBangla ? 'সিঙ্ক সক্রিয় আছে' : 'Sync Active') : (isBangla ? 'সিঙ্ক নিষ্ক্রিয় আছে' : 'Sync Inactive')}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleSyncState(userEmail)}
+                    disabled={isSyncing}
+                    className={`px-3 py-1.5 text-xs font-black rounded-lg border transition-colors cursor-pointer ${
+                      isSyncActive
+                        ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
+                        : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
+                    }`}
+                  >
+                    {isSyncActive ? (isBangla ? 'বন্ধ করুন' : 'Disable') : (isBangla ? 'চালু করুন' : 'Enable')}
+                  </button>
+                </div>
+
+                {isSyncActive && (
+                  <button
+                    type="button"
+                    onClick={() => triggerCloudSync(transactions, expenses, shopName, userEmail)}
+                    disabled={isSyncing}
+                    className="w-full py-2.5 bg-teal-600 hover:bg-teal-500 disabled:bg-teal-400 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <Cloud className="h-4 w-4 text-white" />
+                    <span>{isBangla ? 'এখনই সিঙ্ক করুন (Force Sync)' : 'Sync Now (Force Sync)'}</span>
+                  </button>
+                )}
+
+                {isSyncing && (
+                  <div className="text-center py-1 text-xs text-indigo-600 font-bold animate-pulse flex items-center justify-center gap-1.5">
+                    <span className="h-3 w-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
+                    <span>{syncMessage}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsSyncModalOpen(false)}
+                    className="px-4 py-2 text-xs text-slate-500 hover:bg-slate-100 rounded-lg cursor-pointer font-bold"
+                  >
+                    {isBangla ? 'বন্ধ করুন' : 'Close'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* --- ADD EXPENSE MODAL OVERLAY DIALOG --- */}
       <AnimatePresence>
