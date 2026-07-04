@@ -42,7 +42,7 @@ import {
   generateId
 } from './utils';
 
-import { uploadLedgerToCloud, downloadLedgerFromCloud } from './firebase';
+import { uploadLedgerToCloud, downloadLedgerFromCloud, auth, signInWithGoogle, logOutFromGoogle } from './firebase';
 
 import Calculator from './components/Calculator';
 import StatCard from './components/StatCard';
@@ -83,7 +83,7 @@ export default function App() {
 
   // User details (from environment & local storage)
   const [userEmail, setUserEmail] = useState(() => {
-    return localStorage.getItem('hisab_khata_sync_email') || 'jonydatta222@gmail.com';
+    return localStorage.getItem('hisab_khata_sync_email') || '';
   });
   const [shopName, setShopName] = useState(() => {
     return localStorage.getItem('hisab_khata_shop_name') || '';
@@ -141,6 +141,17 @@ export default function App() {
     if (localSync) {
       setIsSyncActive(localSync === 'true');
     }
+  }, []);
+
+  // --- Listen for Firebase Auth changes ---
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user && user.email) {
+        setUserEmail(user.email);
+        localStorage.setItem('hisab_khata_sync_email', user.email);
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
   // --- Auto Sync on App Load ---
@@ -365,6 +376,46 @@ export default function App() {
 
   const handleToggleSync = () => {
     setIsSyncModalOpen(true);
+  };
+
+  const handleGoogleLogin = async () => {
+    setIsSyncing(true);
+    setSyncMessage(isBangla ? 'গুগল অ্যাকাউন্ট কানেক্ট করা হচ্ছে...' : 'Connecting Google Account...');
+    try {
+      const email = await signInWithGoogle();
+      showToast(isBangla ? `গুগল অ্যাকাউন্ট সংযুক্ত হয়েছে: ${email}` : `Connected Google account: ${email}`);
+      // Automatically toggle sync if not active
+      if (!isSyncActive) {
+        await toggleSyncState(email);
+      }
+    } catch (error) {
+      console.error(error);
+      showToast(isBangla ? 'গুগল সাইন-ইন ব্যর্থ হয়েছে!' : 'Google sign-in failed!');
+    } finally {
+      setIsSyncing(false);
+      setSyncMessage('');
+    }
+  };
+
+  const handleGoogleLogout = async () => {
+    setIsSyncing(true);
+    setSyncMessage(isBangla ? 'লগআউট করা হচ্ছে...' : 'Signing out...');
+    try {
+      await logOutFromGoogle();
+      setUserEmail('');
+      localStorage.removeItem('hisab_khata_sync_email');
+      if (isSyncActive) {
+        setIsSyncActive(false);
+        localStorage.setItem('hisab_khata_sync', 'false');
+      }
+      showToast(isBangla ? 'সফলভাবে লগআউট করা হয়েছে' : 'Successfully signed out');
+    } catch (error) {
+      console.error(error);
+      showToast(isBangla ? 'লগআউট ব্যর্থ হয়েছে!' : 'Sign-out failed!');
+    } finally {
+      setIsSyncing(false);
+      setSyncMessage('');
+    }
   };
 
   // Language Toggler
@@ -1499,7 +1550,50 @@ export default function App() {
                 {isBangla ? 'ক্লাউড সিঙ্ক অ্যাকাউন্ট' : 'Cloud Sync Account'}
               </h3>
 
-              <div className="space-y-3">
+              <div className="space-y-4">
+                <div className="flex flex-col gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    disabled={isSyncing}
+                    className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-bold text-slate-700 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24">
+                      <path
+                        fill="#EA4335"
+                        d="M12.24 10.285V14.4h6.887c-.275 1.565-1.88 4.6-6.887 4.6-4.33 0-7.859-3.578-7.859-8s3.53-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l3.227-3.103C18.28 1.845 15.548 1 12.24 1A11 11 0 0 0 1.24 12a11 11 0 0 0 11 11c11.5 0 12.24-8.09 11.965-11.715H12.24z"
+                      />
+                    </svg>
+                    <span>{isBangla ? 'গুগল দিয়ে সাইন-ইন করুন' : 'Sign in with Google'}</span>
+                  </button>
+
+                  {userEmail && (
+                    <div className="flex items-center justify-between px-3 py-2 bg-teal-50/50 rounded-lg border border-teal-100/50">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0"></span>
+                        <span className="text-[11px] text-teal-800 font-bold truncate max-w-[180px] font-sans">
+                          {userEmail}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleGoogleLogout}
+                        className="text-[10px] text-rose-600 hover:text-rose-800 font-extrabold cursor-pointer hover:bg-rose-50 px-2 py-0.5 rounded"
+                      >
+                        {isBangla ? 'লগআউট' : 'Logout'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="relative flex py-1 items-center">
+                  <div className="flex-grow border-t border-slate-150"></div>
+                  <span className="flex-shrink mx-3 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                    {isBangla ? 'অথবা নিজে লিখুন' : 'or enter manually'}
+                  </span>
+                  <div className="flex-grow border-t border-slate-150"></div>
+                </div>
+
                 <div className="space-y-1">
                   <label className="block text-xs font-bold text-slate-600">
                     {isBangla ? 'পছন্দের সিঙ্ক ইমেইল আইডি' : 'Preferred Sync Email ID'}
@@ -1511,13 +1605,14 @@ export default function App() {
                       setUserEmail(e.target.value);
                       localStorage.setItem('hisab_khata_sync_email', e.target.value);
                     }}
+                    placeholder="e.g. jony@example.com"
                     className="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-bold font-sans"
                   />
                 </div>
 
                 <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-150 rounded-xl">
                   <div className="flex items-center gap-2">
-                    <Cloud className="h-4 w-4 text-teal-600" />
+                    <Cloud className="h-4 w-4 text-teal-600 animate-pulse" />
                     <span className="text-xs font-bold text-slate-700">
                       {isSyncActive ? (isBangla ? 'সিঙ্ক সক্রিয় আছে' : 'Sync Active') : (isBangla ? 'সিঙ্ক বন্ধ আছে' : 'Sync Inactive')}
                     </span>
@@ -1527,8 +1622,8 @@ export default function App() {
                     onClick={() => toggleSyncState(userEmail)}
                     className={`px-3 py-1.5 text-[10px] font-extrabold rounded-lg border transition-colors cursor-pointer ${
                       isSyncActive
-                        ? 'bg-rose-50 border-rose-200 text-rose-700'
-                        : 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                        ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
+                        : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
                     }`}
                   >
                     {isSyncActive ? (isBangla ? 'বন্ধ করুন' : 'Disable') : (isBangla ? 'চালু করুন' : 'Enable')}
@@ -1630,22 +1725,64 @@ export default function App() {
                     : 'Sync all your ledger data in real-time to Firebase Cloud. Your data will remain safe and secure even if you switch or lose your device.'}
                 </p>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">
-                    {isBangla ? 'সিঙ্ক ইমেইল আইডি' : 'Sync Email ID'}
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="e.g. jony@example.com"
-                    value={userEmail}
-                    onChange={(e) => {
-                      setUserEmail(e.target.value);
-                      localStorage.setItem('hisab_khata_sync_email', e.target.value);
-                    }}
-                    className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-bold font-sans"
-                    id="sync-email-input"
-                  />
+                <div className="space-y-3">
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={handleGoogleLogin}
+                      disabled={isSyncing}
+                      className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-bold text-slate-700 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
+                    >
+                      <svg className="h-4 w-4" viewBox="0 0 24 24">
+                        <path
+                          fill="#EA4335"
+                          d="M12.24 10.285V14.4h6.887c-.275 1.565-1.88 4.6-6.887 4.6-4.33 0-7.859-3.578-7.859-8s3.53-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l3.227-3.103C18.28 1.845 15.548 1 12.24 1A11 11 0 0 0 1.24 12a11 11 0 0 0 11 11c11.5 0 12.24-8.09 11.965-11.715H12.24z"
+                        />
+                      </svg>
+                      <span>{isBangla ? 'গুগল দিয়ে সাইন-ইন করুন' : 'Sign in with Google'}</span>
+                    </button>
+                    
+                    {userEmail && (
+                      <div className="flex items-center justify-between px-2.5 py-1.5 bg-teal-50/50 rounded-lg border border-teal-100/50">
+                        <span className="text-[10px] text-teal-800 font-bold truncate max-w-[200px]">
+                          {userEmail}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleGoogleLogout}
+                          className="text-[10px] text-rose-600 hover:text-rose-800 font-extrabold cursor-pointer hover:bg-rose-50 px-2 py-0.5 rounded"
+                        >
+                          {isBangla ? 'লগআউট' : 'Logout'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="relative flex py-1 items-center">
+                    <div className="flex-grow border-t border-slate-150"></div>
+                    <span className="flex-shrink mx-3 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                      {isBangla ? 'অথবা নিজে লিখুন' : 'or enter manually'}
+                    </span>
+                    <div className="flex-grow border-t border-slate-150"></div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">
+                      {isBangla ? 'সিঙ্ক ইমেইল আইডি' : 'Sync Email ID'}
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="e.g. jony@example.com"
+                      value={userEmail}
+                      onChange={(e) => {
+                        setUserEmail(e.target.value);
+                        localStorage.setItem('hisab_khata_sync_email', e.target.value);
+                      }}
+                      className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-bold font-sans"
+                      id="sync-email-input"
+                    />
+                  </div>
                 </div>
 
                 <div className="p-3 bg-slate-50 border border-slate-150 rounded-xl flex items-center justify-between">

@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "643249504246",
+    "firebase_url": "https://com-hisabkhata-app-default-rtdb.firebaseio.com",
+    "project_id": "com-hisabkhata-app",
+    "storage_bucket": "com-hisabkhata-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:643249504246:android:c5729e2a388bb0a4ca51d7",
+        "android_client_info": {
+          "package_name": "com.hisabkhata.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD1v6ZBJJZph5zvXapvllC3ultKamQ1Q5s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

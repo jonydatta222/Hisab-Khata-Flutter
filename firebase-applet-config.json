@@ -1,10 +1,10 @@
 {
-  "projectId": "zany-camera-nnzsc",
-  "appId": "1:1011703841352:web:1e0c4bb3c5ed5e4b330e7d",
-  "apiKey": "AIzaSyDcszlgkDe8mzn5S4fPTGiPNbLfYOsQhuc",
-  "authDomain": "zany-camera-nnzsc.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-flutter-823045dd-3899-41ad-b645-588a5f994fb4",
-  "storageBucket": "zany-camera-nnzsc.firebasestorage.app",
-  "messagingSenderId": "1011703841352",
-  "measurementId": ""
+  "projectId": "com-hisabkhata-app",
+  "appId": "1:643249504246:web:5dced0db5b1d2f87ca51d7",
+  "apiKey": "AIzaSyC-DCX-nH5fyJ2acPK3ETLe8CpI-aBtXwA",
+  "authDomain": "com-hisabkhata-app.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "com-hisabkhata-app.firebasestorage.app",
+  "messagingSenderId": "643249504246",
+  "measurementId": "G-MHTVJYZV4P"
 }

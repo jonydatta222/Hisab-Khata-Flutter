@@ -1,0 +1,50 @@
+{
+  "entities": {
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Represents a sales or payment transaction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "product": { "type": "string" },
+        "amount": { "type": "number" },
+        "isCash": { "type": "boolean" },
+        "customer": { "type": "string" }
+      },
+      "required": ["id", "date", "time", "product", "amount", "isCash"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Represents a business expense",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "description": { "type": "string" },
+        "amount": { "type": "number" }
+      },
+      "required": ["id", "date", "time", "description", "amount"]
+    },
+    "UserLedgerData": {
+      "title": "User Ledger Data",
+      "description": "Ledger data containing all transactions and expenses synced for a specific email",
+      "type": "object",
+      "properties": {
+        "transactions": { "type": "array" },
+        "expenses": { "type": "array" },
+        "shopName": { "type": "string" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["transactions", "expenses", "shopName", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "users/{email}": {
+      "schema": "UserLedgerData",
+      "description": "User ledger document identified by clean lower-case email"
+    }
+  }
+}
