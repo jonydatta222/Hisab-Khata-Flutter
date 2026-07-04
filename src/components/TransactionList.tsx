@@ -19,6 +19,7 @@ export default function TransactionList({
 }: TransactionListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   
   // Edit form states
   const [editProduct, setEditProduct] = useState('');
@@ -208,10 +209,16 @@ export default function TransactionList({
                         /* Normal Table Row */
                         <>
                           <td className="py-2.5 px-3">
-                            <div className="flex flex-col">
-                              <span className="font-bold text-slate-800 text-xs sm:text-[13px]">{tx.product}</span>
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center flex-wrap gap-1.5">
+                                <span className="font-bold text-slate-800 text-xs sm:text-[13px]">{tx.product}</span>
+                                <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-400 font-bold font-mono">
+                                  <Clock className="h-2.5 w-2.5 shrink-0" />
+                                  {tx.time}
+                                </span>
+                              </div>
                               {!tx.isCash && tx.customer && (
-                                <span className="text-[10px] text-rose-600 font-extrabold bg-rose-50 px-1.5 py-0.2 rounded w-fit mt-0.5 border border-rose-100/40">
+                                <span className="text-[10px] text-rose-600 font-extrabold bg-rose-50 px-1.5 py-0.2 rounded w-fit border border-rose-100/40">
                                   👤 {tx.customer}
                                 </span>
                               )}
@@ -237,22 +244,47 @@ export default function TransactionList({
                           </td>
                           <td className="py-2.5 px-3">
                             <div className="flex items-center justify-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => startEditing(tx)}
-                                className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-md transition-colors cursor-pointer"
-                                title={isBangla ? 'হিসাব পরিবর্তন' : 'Edit'}
-                              >
-                                <Edit2 className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onDelete(tx.id)}
-                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-                                title={isBangla ? 'হিসাব মুছুন' : 'Delete'}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
+                              {deletingId === tx.id ? (
+                                <div className="flex items-center gap-1 bg-rose-50 border border-rose-100 p-1 rounded-lg">
+                                  <span className="text-[9px] text-rose-700 font-bold">{isBangla ? 'মুছবেন?' : 'Sure?'}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      onDelete(tx.id);
+                                      setDeletingId(null);
+                                    }}
+                                    className="px-1.5 py-0.5 bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-bold rounded cursor-pointer"
+                                  >
+                                    {isBangla ? 'হ্যাঁ' : 'Yes'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeletingId(null)}
+                                    className="px-1.5 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[9px] font-bold rounded cursor-pointer"
+                                  >
+                                    {isBangla ? 'না' : 'No'}
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditing(tx)}
+                                    className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-md transition-colors cursor-pointer"
+                                    title={isBangla ? 'হিসাব পরিবর্তন' : 'Edit'}
+                                  >
+                                    <Edit2 className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeletingId(tx.id)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                                    title={isBangla ? 'হিসাব মুছুন' : 'Delete'}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </td>
                         </>

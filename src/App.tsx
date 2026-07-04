@@ -26,6 +26,7 @@ import {
   LogOut,
   ChevronDown,
   Check,
+  X,
   Home,
   Settings as SettingsIcon,
   Database,
@@ -67,6 +68,9 @@ export default function App() {
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isDueListModalOpen, setIsDueListModalOpen] = useState(false);
   const [modalSearchQuery, setModalSearchQuery] = useState('');
+  const [depositingCustomerName, setDepositingCustomerName] = useState<string | null>(null);
+  const [modalDepositValue, setModalDepositValue] = useState('');
+  const [modalDepositError, setModalDepositError] = useState('');
   const [isSyncActive, setIsSyncActive] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState('');
@@ -687,13 +691,6 @@ export default function App() {
 
   // Delete transaction with safety rollback
   const handleDeleteTransaction = (id: string) => {
-    const confirmation = window.confirm(
-      isBangla 
-        ? 'আপনি কি নিশ্চিতভাবে এই হিসাবটি মুছে ফেলতে চান? এটি হিসাবের ব্যালেন্স পুনর্নির্ধারণ করবে।' 
-        : 'Are you sure you want to delete this entry? This will rollback balances.'
-    );
-    if (!confirmation) return;
-
     const updated = transactions.filter((tx) => tx.id !== id);
     saveTransactionsToStorage(updated);
     showToast(isBangla ? 'হিসাবটি সফলভাবে মোছা হয়েছে' : 'Ledger entry deleted');
@@ -843,7 +840,7 @@ export default function App() {
             <div className="hidden md:flex items-center gap-1.5 text-[10px] text-slate-500 font-mono bg-slate-50 border border-slate-200/60 px-2 py-1 rounded-md select-none">
               <Clock className="h-3 w-3 text-slate-400" />
               <span className="font-bold text-slate-600">
-                {currentDateFormatted} • {isBangla ? toBanglaNumber(currentTime) : currentTime}
+                {currentDateFormatted} • {currentTime}
               </span>
             </div>
 
@@ -852,7 +849,7 @@ export default function App() {
               {/* Mobile Only Clock block */}
               <div className="md:hidden flex items-center gap-1 text-[9px] text-slate-500 font-mono bg-slate-50 border border-slate-200 px-1.5 py-1 rounded-md select-none">
                 <span className="font-bold text-slate-600">
-                  {isBangla ? toBanglaNumber(currentTime) : currentTime}
+                  {currentTime}
                 </span>
               </div>
 
@@ -1005,7 +1002,7 @@ export default function App() {
                         ref={productInputRef}
                         type="text"
                         required
-                        placeholder={isBangla ? 'যেমন: চাল, ডাল, সাবান' : 'e.g. Rice, Lentil, Soap'}
+                        placeholder={isBangla ? 'পণ্যের নাম লিখুন' : 'Enter product name'}
                         value={productName}
                         onChange={(e) => setProductName(e.target.value)}
                         className="w-full text-base px-3 py-2.5 rounded-xl border-2 border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-teal-600 bg-teal-50/20 transition-all font-semibold text-slate-900 h-12"
@@ -1966,53 +1963,100 @@ export default function App() {
                     {isBangla ? 'কোনো বকেয়া হিসাব পাওয়া যায়নি' : 'No matching outstanding dues'}
                   </div>
                 ) : (
-                  filteredModalDues.map((cd) => (
-                    <div
-                      key={cd.name}
-                      className="p-3 rounded-xl border border-slate-100 bg-rose-50/10 hover:bg-rose-50/20 flex items-center justify-between gap-3 transition-colors"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="h-2 w-2 rounded-full bg-rose-500"></span>
-                          <h4 className="text-xs sm:text-sm font-black text-slate-800 truncate">{cd.name}</h4>
+                  filteredModalDues.map((cd) => {
+                    const isDepositingThis = depositingCustomerName === cd.name;
+
+                    return (
+                      <div
+                        key={cd.name}
+                        className="p-3 rounded-xl border border-slate-100 bg-rose-50/10 hover:bg-rose-50/20 flex flex-col gap-2 transition-colors"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="h-2 w-2 rounded-full bg-rose-500"></span>
+                              <h4 className="text-xs sm:text-sm font-black text-slate-800 truncate">{cd.name}</h4>
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-bold mt-1">
+                              {isBangla ? 'সর্বশেষ লেনদেন:' : 'Last active:'} <span className="font-mono">{isBangla ? toBanglaNumber(cd.lastDate) : cd.lastDate}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="text-right shrink-0 flex flex-col items-end">
+                            <span className="text-xs sm:text-sm font-black text-rose-600 block">
+                              {formatCurrency(cd.amount, isBangla)}
+                            </span>
+                            
+                            {!isDepositingThis && (
+                              <button
+                                onClick={() => {
+                                  setDepositingCustomerName(cd.name);
+                                  setModalDepositValue('');
+                                  setModalDepositError('');
+                                }}
+                                className="text-[9px] font-black text-teal-700 bg-teal-50 border border-teal-200/50 hover:bg-teal-100 px-2 py-0.5 rounded-lg mt-1 transition-all cursor-pointer shadow-3xs"
+                              >
+                                {isBangla ? 'জমা নিন' : 'Deposit'}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="text-[10px] text-slate-400 font-bold mt-1">
-                          {isBangla ? 'সর্বশেষ লেনদেন:' : 'Last active:'} <span className="font-mono">{isBangla ? toBanglaNumber(cd.lastDate) : cd.lastDate}</span>
-                        </div>
+
+                        {isDepositingThis && (
+                          <div className="space-y-1.5 pt-1.5 border-t border-slate-150 mt-1">
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                placeholder={isBangla ? '৳ জমার পরিমাণ' : '৳ Deposit Amount'}
+                                value={modalDepositValue}
+                                onChange={(e) => {
+                                  setModalDepositValue(e.target.value);
+                                  setModalDepositError('');
+                                }}
+                                className="flex-1 text-xs p-1.5 rounded-xl border-2 border-teal-200 focus:outline-none focus:border-teal-500 bg-white font-semibold"
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => {
+                                  const amt = parseFloat(modalDepositValue);
+                                  if (isNaN(amt) || amt <= 0) {
+                                    setModalDepositError(isBangla ? 'সঠিক টাকার পরিমাণ লিখুন' : 'Please enter a valid amount');
+                                    return;
+                                  }
+                                  if (amt > cd.amount) {
+                                    setModalDepositError(isBangla ? 'বকেয়া পরিমাণের চেয়ে বেশি জমা করা যাবে না' : 'Deposit cannot exceed due');
+                                    return;
+                                  }
+                                  handleDueDeposit(cd.name, amt);
+                                  setDepositingCustomerName(null);
+                                  setModalDepositValue('');
+                                  setModalDepositError('');
+                                }}
+                                className="p-1.5 bg-teal-600 hover:bg-teal-500 text-white rounded-lg cursor-pointer transition-all shrink-0 flex items-center justify-center"
+                                title={isBangla ? 'জমা সম্পন্ন করুন' : 'Confirm Deposit'}
+                              >
+                                <Check className="h-3 w-3" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDepositingCustomerName(null);
+                                  setModalDepositValue('');
+                                  setModalDepositError('');
+                                }}
+                                className="p-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg cursor-pointer shrink-0 flex items-center justify-center"
+                                title={isBangla ? 'বাতিল' : 'Cancel'}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                            {modalDepositError && (
+                              <p className="text-[10px] text-rose-600 font-bold mt-0.5">{modalDepositError}</p>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      
-                      <div className="text-right shrink-0">
-                        <span className="text-xs sm:text-sm font-black text-rose-600 block">
-                          {formatCurrency(cd.amount, isBangla)}
-                        </span>
-                        
-                        {/* Inline deposit button */}
-                        <button
-                          onClick={() => {
-                            const amtStr = window.prompt(
-                              isBangla 
-                                ? `${cd.name}-এর কাছ থেকে কত টাকা জমা নিতে চান? (সর্বোচ্চ ${formatCurrency(cd.amount, true)})`
-                                : `Enter deposit amount from ${cd.name} (Max ${formatCurrency(cd.amount, false)}):`
-                            );
-                            if (amtStr === null) return;
-                            const amt = parseFloat(amtStr);
-                            if (isNaN(amt) || amt <= 0) {
-                              alert(isBangla ? 'সঠিক টাকার পরিমাণ লিখুন' : 'Please enter a valid amount');
-                              return;
-                            }
-                            if (amt > cd.amount) {
-                              alert(isBangla ? 'বকেয়া পরিমাণের চেয়ে বেশি জমা করা যাবে না' : 'Deposit cannot exceed outstanding due');
-                              return;
-                            }
-                            handleDueDeposit(cd.name, amt);
-                          }}
-                          className="text-[9px] font-black text-teal-700 bg-teal-50 border border-teal-200/50 hover:bg-teal-100 px-2 py-0.5 rounded-lg mt-1 transition-all cursor-pointer shadow-3xs"
-                        >
-                          {isBangla ? 'জমা নিন' : 'Deposit'}
-                        </button>
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
 
