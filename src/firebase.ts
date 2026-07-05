@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { initializeFirestore, doc, setDoc, getDoc, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { initializeFirestore, doc, setDoc, getDoc, getDocFromCache, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import firebaseConfig from '../firebase-applet-config.json';
 import { Transaction, Expense } from './types';
@@ -20,7 +20,7 @@ const db = initializeFirestore(app, {
     tabManager: persistentMultipleTabManager(),
   }),
   experimentalForceLongPolling: true,
-}, firebaseConfig.firestoreDatabaseId || '(default)');
+}, (firebaseConfig as any).firestoreDatabaseId || '(default)');
 const auth = getAuth(app);
 
 export { app, db, auth };
@@ -105,7 +105,12 @@ export async function uploadLedgerToCloud(
   
   try {
     await setDoc(userDocRef, payload, { merge: true });
-  } catch (error) {
+  } catch (error: any) {
+    const errMsg = error?.message || String(error);
+    if (errMsg.includes('offline') || errMsg.includes('network') || errMsg.includes('Failed to')) {
+      console.warn('Firestore is offline. Write is queued locally:', errMsg);
+      return;
+    }
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
@@ -128,8 +133,23 @@ export async function downloadLedgerFromCloud(email: string): Promise<UserLedger
       return docSnap.data() as UserLedgerData;
     }
     return null;
-  } catch (error) {
+  } catch (error: any) {
+    const errMsg = error?.message || String(error);
+    if (errMsg.includes('offline') || errMsg.includes('network') || errMsg.includes('Failed to get document')) {
+      console.warn('Firestore is offline. Attempting to retrieve from cache...', errMsg);
+      try {
+        const cachedSnap = await getDocFromCache(userDocRef);
+        if (cachedSnap.exists()) {
+          console.log('Successfully retrieved ledger data from offline cache!');
+          return cachedSnap.data() as UserLedgerData;
+        }
+      } catch (cacheError) {
+        console.warn('Failed to retrieve from offline cache:', cacheError);
+      }
+      return null;
+    }
     handleFirestoreError(error, OperationType.GET, path);
+    return null;
   }
 }
 
@@ -148,6 +168,30 @@ export async function signInWithGoogle(): Promise<string> {
     return email;
   } catch (error) {
     console.error('Google Sign-In Error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Sign in with Google Popup specifically requesting Google Drive permissions
+ */
+export async function signInWithGoogleForDrive(): Promise<{ email: string; accessToken: string }> {
+  const provider = new GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/drive.file');
+  try {
+    const result = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const email = result.user.email;
+    const accessToken = credential?.accessToken;
+    if (!email) {
+      throw new Error('No email found in Google account.');
+    }
+    if (!accessToken) {
+      throw new Error('Failed to get access token for Google Drive.');
+    }
+    return { email, accessToken };
+  } catch (error) {
+    console.error('Google Drive Sign-In Error:', error);
     throw error;
   }
 }

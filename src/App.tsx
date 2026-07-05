@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  BookOpen,
   Calculator as CalcIcon,
   Cloud,
   CloudOff,
@@ -43,7 +42,22 @@ import {
   generateId
 } from './utils';
 
-import { uploadLedgerToCloud, downloadLedgerFromCloud, auth, signInWithGoogle, logOutFromGoogle } from './firebase';
+import { 
+  uploadLedgerToCloud, 
+  downloadLedgerFromCloud, 
+  auth, 
+  signInWithGoogle, 
+  signInWithGoogleForDrive,
+  logOutFromGoogle 
+} from './firebase';
+
+import { 
+  findBackupFile, 
+  createBackupFile, 
+  updateBackupFile, 
+  downloadBackupFile, 
+  DriveBackupData 
+} from './utils/driveBackup';
 
 import Calculator from './components/Calculator';
 import StatCard from './components/StatCard';
@@ -57,10 +71,31 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(getTodayDateString());
   const [currentTime, setCurrentTime] = useState('');
   const [currentDateFormatted, setCurrentDateFormatted] = useState('');
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   
   // Database state
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    const localTxs = localStorage.getItem('hisab_khata_transactions');
+    if (localTxs) {
+      try {
+        return JSON.parse(localTxs);
+      } catch (e) {
+        console.error('Failed to parse transactions', e);
+      }
+    }
+    return [];
+  });
+  const [expenses, setExpenses] = useState<Expense[]>(() => {
+    const localExpenses = localStorage.getItem('hisab_khata_expenses');
+    if (localExpenses) {
+      try {
+        return JSON.parse(localExpenses);
+      } catch (e) {
+        console.error('Failed to parse expenses', e);
+      }
+    }
+    return [];
+  });
   
   // Interactive UI States
   const [activeTab, setActiveTab] = useState<'dues' | 'expenses'>('dues');
@@ -95,9 +130,30 @@ export default function App() {
   const [shopName, setShopName] = useState(() => {
     return localStorage.getItem('hisab_khata_shop_name') || '';
   });
+
+  // Google Drive Backup States
+  const [driveEmail, setDriveEmail] = useState<string>(() => {
+    return localStorage.getItem('hisab_khata_drive_email') || '';
+  });
+  const [driveAccessToken, setDriveAccessToken] = useState<string | null>(null);
+  const [isDriveAutoBackupActive, setIsDriveAutoBackupActive] = useState<boolean>(() => {
+    return localStorage.getItem('hisab_khata_drive_auto_backup') === 'true';
+  });
+  const [isDriveSyncing, setIsDriveSyncing] = useState(false);
+  const [driveSyncMessage, setDriveSyncMessage] = useState('');
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [showAuthHelp, setShowAuthHelp] = useState(false);
   const [currentNavTab, setCurrentNavTab] = useState<'home' | 'monthly' | 'history' | 'settings'>('home');
+  const [showAllHistoryTxs, setShowAllHistoryTxs] = useState(false);
+  const [showAllTopProducts, setShowAllTopProducts] = useState(false);
+  const [activeSliceIndex, setActiveSliceIndex] = useState<number | null>(null);
+  const [isOthersModalOpen, setIsOthersModalOpen] = useState(false);
+
+  // Collapse history transaction list when date or navigation tab changes
+  useEffect(() => {
+    setShowAllHistoryTxs(false);
+    setShowAllTopProducts(false);
+  }, [selectedDate, currentNavTab]);
 
   // Delete past date confirmation states
   const [isDeleteDateModalOpen, setIsDeleteDateModalOpen] = useState(false);
@@ -114,59 +170,29 @@ export default function App() {
     setCustomerName(cust);
   };
 
-  // --- Pull to Refresh Custom Logic ---
-  const [pullDistance, setPullDistance] = useState(0);
-  const [isPulling, setIsPulling] = useState(false);
-  const appContainerRef = useRef<HTMLDivElement>(null);
-
-  const refreshParamsRef = useRef({
-    isSyncActive,
-    userEmail,
-    transactions,
-    expenses,
-    shopName,
-    isBangla
-  });
-
-  useEffect(() => {
-    refreshParamsRef.current = {
-      isSyncActive,
-      userEmail,
-      transactions,
-      expenses,
-      shopName,
-      isBangla
-    };
-  }, [isSyncActive, userEmail, transactions, expenses, shopName, isBangla]);
-
   const handleRefresh = async () => {
-    // Read the very latest state values from our safe mutable ref to bypass React closures!
-    const { 
-      isSyncActive: syncActive, 
-      userEmail: email, 
-      shopName: sName, 
-      isBangla: bangla,
-      transactions: currentTxs,
-      expenses: currentExs
-    } = refreshParamsRef.current;
-    
     setIsSyncing(true);
-    setSyncMessage(bangla ? 'তথ্য লোড ও রিফ্রেশ করা হচ্ছে...' : 'Refreshing and reloading info...');
+    setSyncMessage(isBangla ? 'তথ্য লোড ও রিফ্রেশ করা হচ্ছে...' : 'Refreshing and reloading info...');
+    
+    // Reset date to today's date
+    setSelectedDate(getTodayDateString());
     
     try {
       // 1. Reload local state from localStorage to ensure correct local sync state
       const localTxsStr = localStorage.getItem('hisab_khata_transactions');
       const localExpensesStr = localStorage.getItem('hisab_khata_expenses');
+      const localShopName = localStorage.getItem('hisab_khata_shop_name') || '';
       
-      const freshLocalTxs = localTxsStr ? JSON.parse(localTxsStr) : currentTxs;
-      const freshLocalExs = localExpensesStr ? JSON.parse(localExpensesStr) : currentExs;
+      const freshLocalTxs = localTxsStr ? JSON.parse(localTxsStr) : transactions;
+      const freshLocalExs = localExpensesStr ? JSON.parse(localExpensesStr) : expenses;
       
       setTransactions(freshLocalTxs);
       setExpenses(freshLocalExs);
+      setShopName(localShopName);
       
       // 2. If sync is active, perform cloud download
-      if (syncActive && email && email.trim()) {
-        const cloudData = await downloadLedgerFromCloud(email);
+      if (isSyncActive && userEmail && userEmail.trim()) {
+        const cloudData = await downloadLedgerFromCloud(userEmail);
         if (cloudData) {
           const localUpdated = localStorage.getItem('hisab_khata_last_updated');
           const localUpdateTime = localUpdated ? parseInt(localUpdated, 10) : 0;
@@ -176,98 +202,39 @@ export default function App() {
             // Cloud is newer or equal, so download and apply
             setTransactions(cloudData.transactions || []);
             setExpenses(cloudData.expenses || []);
-            if (cloudData.shopName) {
+            if (cloudData.shopName !== undefined) {
               setShopName(cloudData.shopName);
               localStorage.setItem('hisab_khata_shop_name', cloudData.shopName);
             }
             localStorage.setItem('hisab_khata_transactions', JSON.stringify(cloudData.transactions || []));
             localStorage.setItem('hisab_khata_expenses', JSON.stringify(cloudData.expenses || []));
             localStorage.setItem('hisab_khata_last_updated', String(cloudUpdateTime));
-            showToast(bangla ? 'ক্লাউড থেকে নতুন তথ্য সফলভাবে রিফ্রেশ হয়েছে!' : 'Data refreshed and synced from cloud!');
+            showToast(isBangla ? 'ক্লাউড থেকে নতুন তথ্য সফলভাবে রিফ্রেশ হয়েছে!' : 'Data refreshed and synced from cloud!');
           } else {
             // Local is newer, so push fresh local data to cloud
-            await uploadLedgerToCloud(email, freshLocalTxs, freshLocalExs, sName);
+            await uploadLedgerToCloud(userEmail, freshLocalTxs, freshLocalExs, localShopName);
             localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
-            showToast(bangla ? 'সর্বশেষ লোকাল ডাটা ক্লাউডে সিঙ্ক করা হয়েছে!' : 'Local data synced to cloud!');
+            showToast(isBangla ? 'সর্বশেষ লোকাল ডাটা ক্লাউডে সিঙ্ক করা হয়েছে!' : 'Local data synced to cloud!');
           }
         } else {
           // Cloud doc doesn't exist yet, push fresh local data
-          await uploadLedgerToCloud(email, freshLocalTxs, freshLocalExs, sName);
+          await uploadLedgerToCloud(userEmail, freshLocalTxs, freshLocalExs, localShopName);
           localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
-          showToast(bangla ? 'সফলভাবে রিফ্রেশ সম্পন্ন হয়েছে!' : 'Refresh completed successfully!');
+          showToast(isBangla ? 'সফলভাবে রিফ্রেশ সম্পন্ন হয়েছে!' : 'Refresh completed successfully!');
         }
       } else {
         // Just brief delay to make it feel super polished and premium
         await new Promise((resolve) => setTimeout(resolve, 800));
-        showToast(bangla ? 'সফলভাবে তথ্য রিফ্রেশ করা হয়েছে!' : 'Data reloaded successfully!');
+        showToast(isBangla ? 'সফলভাবে তথ্য রিফ্রেশ করা হয়েছে!' : 'Data reloaded successfully!');
       }
     } catch (e) {
       console.error('Refresh failed', e);
-      showToast(bangla ? 'রিফ্রেশ করতে সমস্যা হয়েছে!' : 'Refresh failed!');
+      showToast(isBangla ? 'রিফ্রেশ করতে সমস্যা হয়েছে!' : 'Refresh failed!');
     } finally {
       setIsSyncing(false);
       setSyncMessage('');
     }
   };
-
-  useEffect(() => {
-    const container = appContainerRef.current;
-    if (!container) return;
-
-    let startY = 0;
-    let isAtTop = false;
-
-    const onTouchStart = (e: TouchEvent) => {
-      // Pull-to-refresh is only enabled if the scroll offset is at 0
-      isAtTop = window.scrollY === 0;
-      if (isAtTop) {
-        startY = e.touches[0].clientY;
-      }
-    };
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (!isAtTop) return;
-      
-      const currentY = e.touches[0].clientY;
-      const diff = currentY - startY;
-
-      if (diff > 0) {
-        // If pulling down at scroll top, intercept default browser drag
-        if (e.cancelable) {
-          e.preventDefault();
-        }
-        const resistance = 0.45;
-        const dist = Math.min(diff * resistance, 110);
-        setPullDistance(dist);
-        setIsPulling(true);
-      }
-    };
-
-    const onTouchEnd = async () => {
-      if (!isAtTop) return;
-      
-      const finalDist = pullDistance;
-      
-      // Reset drag state instantly for visual responsiveness
-      setPullDistance(0);
-      setIsPulling(false);
-      isAtTop = false;
-
-      if (finalDist > 65) {
-        await handleRefresh();
-      }
-    };
-
-    container.addEventListener('touchstart', onTouchStart, { passive: true });
-    container.addEventListener('touchmove', onTouchMove, { passive: false });
-    container.addEventListener('touchend', onTouchEnd, { passive: true });
-
-    return () => {
-      container.removeEventListener('touchstart', onTouchStart);
-      container.removeEventListener('touchmove', onTouchMove);
-      container.removeEventListener('touchend', onTouchEnd);
-    };
-  }, [pullDistance]);
 
   // --- Real-Time Date & Time updates ---
   useEffect(() => {
@@ -292,27 +259,25 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isBangla]);
 
+  // --- Track internet connection status ---
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   // --- Load initial data from localStorage ---
   useEffect(() => {
-    const localTxs = localStorage.getItem('hisab_khata_transactions');
-    const localExpenses = localStorage.getItem('hisab_khata_expenses');
     const localLang = localStorage.getItem('hisab_khata_lang');
     const localSync = localStorage.getItem('hisab_khata_sync');
 
-    if (localTxs) {
-      try {
-        setTransactions(JSON.parse(localTxs));
-      } catch (e) {
-        console.error('Failed to parse transactions', e);
-      }
-    }
-    if (localExpenses) {
-      try {
-        setExpenses(JSON.parse(localExpenses));
-      } catch (e) {
-        console.error('Failed to parse expenses', e);
-      }
-    }
     if (localLang) {
       setIsBangla(localLang === 'bn');
     }
@@ -384,6 +349,9 @@ export default function App() {
     if (isSyncActive) {
       triggerCloudSync(txList, expenses, shopName, userEmail);
     }
+    if (isDriveAutoBackupActive && driveAccessToken) {
+      triggerDriveBackup(txList, expenses, shopName, true);
+    }
   };
 
   const saveExpensesToStorage = (expList: Expense[]) => {
@@ -393,6 +361,9 @@ export default function App() {
     localStorage.setItem('hisab_khata_last_updated', String(now));
     if (isSyncActive) {
       triggerCloudSync(transactions, expList, shopName, userEmail);
+    }
+    if (isDriveAutoBackupActive && driveAccessToken) {
+      triggerDriveBackup(transactions, expList, shopName, true);
     }
   };
 
@@ -608,6 +579,146 @@ export default function App() {
     }
   };
 
+  // --- Google Drive Backup Actions ---
+  const triggerDriveBackup = async (
+    currentTxs: Transaction[] = transactions,
+    currentExs: Expense[] = expenses,
+    currentShopName: string = shopName,
+    silent: boolean = false
+  ) => {
+    if (!driveAccessToken) {
+      if (!silent) {
+        showToast(isBangla ? 'গুগল ড্রাইভ সংযুক্ত নয়! দয়া করে ড্রাইভ কানেক্ট করুন।' : 'Google Drive not connected! Please connect Drive.');
+      }
+      return;
+    }
+
+    setIsDriveSyncing(true);
+    setDriveSyncMessage(isBangla ? 'গুগল ড্রাইভে ব্যাকআপ নেওয়া হচ্ছে...' : 'Backing up to Google Drive...');
+
+    try {
+      const backupData: DriveBackupData = {
+        transactions: currentTxs,
+        expenses: currentExs,
+        shopName: currentShopName,
+        updatedAt: Date.now(),
+        exportDate: new Date().toISOString(),
+        creator: driveEmail,
+      };
+
+      const existingFileId = await findBackupFile(driveAccessToken);
+
+      if (existingFileId) {
+        await updateBackupFile(driveAccessToken, existingFileId, backupData);
+      } else {
+        await createBackupFile(driveAccessToken, backupData);
+      }
+
+      if (!silent) {
+        showToast(isBangla ? 'গুগল ড্রাইভে ব্যাকআপ সফলভাবে সংরক্ষিত হয়েছে!' : 'Backup successfully saved to Google Drive!');
+      }
+    } catch (error: any) {
+      console.error('Google Drive backup failed:', error);
+      if (error.message === 'UNAUTHORIZED') {
+        setDriveAccessToken(null);
+        showToast(isBangla ? 'গুগল ড্রাইভ সেশন শেষ হয়েছে, দয়া করে পুনরায় কানেক্ট করুন।' : 'Google Drive session expired, please reconnect.');
+      } else {
+        if (!silent) {
+          showToast(isBangla ? 'গুগল ড্রাইভে ব্যাকআপ রাখতে ব্যর্থ হয়েছে!' : 'Failed to backup to Google Drive!');
+        }
+      }
+    } finally {
+      setIsDriveSyncing(false);
+      setDriveSyncMessage('');
+    }
+  };
+
+  const triggerDriveRestore = async () => {
+    if (!driveAccessToken) {
+      showToast(isBangla ? 'গুগল ড্রাইভ সংযুক্ত নয়! দয়া করে ড্রাইভ কানেক্ট করুন।' : 'Google Drive not connected! Please connect Drive.');
+      return;
+    }
+
+    const doubleCheck = window.confirm(
+      isBangla 
+        ? '⚠️ আপনি কি ড্রাইভ থেকে ব্যাকআপ রিস্টোর করতে চান? এটি আপনার বর্তমান ডিভাইসের সকল তথ্য মুছে ড্রাইভের ব্যাকআপ দিয়ে পরিবর্তন করবে।'
+        : '⚠️ Are you sure you want to restore from Google Drive? This will overwrite all your current device data with the backup.'
+    );
+    if (!doubleCheck) return;
+
+    setIsDriveSyncing(true);
+    setDriveSyncMessage(isBangla ? 'গুগল ড্রাইভ থেকে ব্যাকআপ খোঁজা হচ্ছে...' : 'Searching for backup in Google Drive...');
+
+    try {
+      const fileId = await findBackupFile(driveAccessToken);
+      if (!fileId) {
+        showToast(isBangla ? 'ড্রাইভে কোনো ব্যাকআপ ফাইল পাওয়া যায়নি!' : 'No backup file found in your Google Drive!');
+        return;
+      }
+
+      setDriveSyncMessage(isBangla ? 'ব্যাকআপ ডাউনলোড ও রিস্টোর করা হচ্ছে...' : 'Downloading and restoring backup...');
+      const backupData = await downloadBackupFile(driveAccessToken, fileId);
+
+      if (Array.isArray(backupData.transactions) && Array.isArray(backupData.expenses)) {
+        setTransactions(backupData.transactions);
+        setExpenses(backupData.expenses);
+        if (backupData.shopName !== undefined) {
+          setShopName(backupData.shopName);
+          localStorage.setItem('hisab_khata_shop_name', backupData.shopName);
+        }
+        localStorage.setItem('hisab_khata_transactions', JSON.stringify(backupData.transactions));
+        localStorage.setItem('hisab_khata_expenses', JSON.stringify(backupData.expenses));
+        localStorage.setItem('hisab_khata_last_updated', String(backupData.updatedAt || Date.now()));
+
+        showToast(isBangla ? 'গুগল ড্রাইভ থেকে সফলভাবে তথ্য রিস্টোর হয়েছে!' : 'Successfully restored data from Google Drive!');
+
+        if (isSyncActive) {
+          triggerCloudSync(backupData.transactions, backupData.expenses, backupData.shopName, userEmail);
+        }
+      } else {
+        showToast(isBangla ? 'ভুল ব্যাকআপ ফরম্যাট!' : 'Invalid backup file format!');
+      }
+    } catch (error: any) {
+      console.error('Google Drive restore failed:', error);
+      if (error.message === 'UNAUTHORIZED') {
+        setDriveAccessToken(null);
+        showToast(isBangla ? 'গুগল ড্রাইভ সেশন শেষ হয়েছে, দয়া করে পুনরায় কানেক্ট করুন।' : 'Google Drive session expired, please reconnect.');
+      } else {
+        showToast(isBangla ? 'রিস্টোর করতে সমস্যা হয়েছে!' : 'Failed to restore from Google Drive!');
+      }
+    } finally {
+      setIsDriveSyncing(false);
+      setDriveSyncMessage('');
+    }
+  };
+
+  const handleDriveConnect = async () => {
+    setIsDriveSyncing(true);
+    setDriveSyncMessage(isBangla ? 'গুগল ড্রাইভ কানেক্ট করা হচ্ছে...' : 'Connecting Google Drive...');
+    try {
+      const result = await signInWithGoogleForDrive();
+      setDriveEmail(result.email);
+      setDriveAccessToken(result.accessToken);
+      localStorage.setItem('hisab_khata_drive_email', result.email);
+      showToast(isBangla ? `গুগল ড্রাইভ সংযুক্ত হয়েছে: ${result.email}` : `Connected Google Drive: ${result.email}`);
+    } catch (error) {
+      console.error('Drive connect error:', error);
+      showToast(isBangla ? 'গুগল ড্রাইভ সংযোগ ব্যর্থ হয়েছে!' : 'Google Drive connection failed!');
+    } finally {
+      setIsDriveSyncing(false);
+      setDriveSyncMessage('');
+    }
+  };
+
+  const handleDriveDisconnect = async () => {
+    setDriveEmail('');
+    setDriveAccessToken(null);
+    localStorage.removeItem('hisab_khata_drive_email');
+    setIsDriveAutoBackupActive(false);
+    localStorage.setItem('hisab_khata_drive_auto_backup', 'false');
+    showToast(isBangla ? 'গুগল ড্রাইভ সংযোগ বিচ্ছিন্ন করা হয়েছে' : 'Google Drive disconnected');
+  };
+
   // Language Toggler
   const toggleLanguage = () => {
     const nextLang = !isBangla;
@@ -697,6 +808,97 @@ export default function App() {
 
   const customerDues = getCustomerDues();
   const globalTotalDue = customerDues.reduce((sum, cd) => sum + cd.amount, 0);
+
+  // --- All-time Product Sales Helper for Donut Chart ---
+  const getAllTimeProductSales = () => {
+    const productSalesMap: Record<string, { name: string; count: number; amount: number }> = {};
+    let totalAllTimeSalesAmount = 0;
+
+    transactions.forEach(tx => {
+      const prodLower = tx.product.toLowerCase().trim();
+      // Exclude due deposits (which are not product sales)
+      if (
+        prodLower.startsWith('বাকি টাকা জমা') || 
+        prodLower.startsWith('বাকির টাকা জমা') || 
+        prodLower.includes('due deposit')
+      ) {
+        return;
+      }
+
+      // Split by '+' sign and trim each part
+      const parts = tx.product.split('+').map(p => p.trim()).filter(Boolean);
+      if (parts.length === 0) return;
+
+      const splitAmount = tx.amount / parts.length;
+
+      parts.forEach(part => {
+        const key = part.toLowerCase();
+        if (!productSalesMap[key]) {
+          productSalesMap[key] = {
+            name: part,
+            count: 0,
+            amount: 0
+          };
+        }
+        productSalesMap[key].count += 1;
+        productSalesMap[key].amount += splitAmount;
+        totalAllTimeSalesAmount += splitAmount;
+      });
+    });
+
+    const items = Object.values(productSalesMap).sort((a, b) => b.amount - a.amount);
+    return { items, totalAmount: totalAllTimeSalesAmount };
+  };
+
+  const allTimeSales = getAllTimeProductSales();
+  
+  // Group everything after top 6 into 'Others' (অন্যান্য)
+  const getChartData = () => {
+    const chartDataList: { name: string; amount: number; count: number; percentage: number; color: string }[] = [];
+    if (allTimeSales.totalAmount > 0 && allTimeSales.items.length > 0) {
+      const topCount = 6;
+      const topItems = allTimeSales.items.slice(0, topCount);
+      const otherItems = allTimeSales.items.slice(topCount);
+      
+      // Diverse, beautiful colors with only the first being Red
+      const colors = ['#EF4444', '#10B981', '#4F46E5', '#F59E0B', '#8B5CF6', '#06B6D4'];
+      
+      topItems.forEach((item, idx) => {
+        chartDataList.push({
+          name: item.name,
+          amount: item.amount,
+          count: item.count,
+          percentage: (item.amount / allTimeSales.totalAmount) * 100,
+          color: colors[idx % colors.length]
+        });
+      });
+      
+      if (otherItems.length > 0) {
+        const otherAmount = otherItems.reduce((sum, item) => sum + item.amount, 0);
+        const otherCount = otherItems.reduce((sum, item) => sum + item.count, 0);
+        chartDataList.push({
+          name: isBangla ? 'অন্যান্য' : 'Others',
+          amount: otherAmount,
+          count: otherCount,
+          percentage: (otherAmount / allTimeSales.totalAmount) * 100,
+          color: '#64748B' // Gray for others
+        });
+      }
+    }
+    return chartDataList;
+  };
+
+  const chartData = getChartData();
+  
+  // Pre-calculate accumulated offsets for correct SVG rendering of donut slices
+  const radius = 50;
+  const circumference = 2 * Math.PI * radius; // ~314.159
+  const accumulatedOffsetArray: number[] = [];
+  let runningOffset = 0;
+  chartData.forEach(data => {
+    accumulatedOffsetArray.push(runningOffset);
+    runningOffset += (data.percentage / 100) * circumference;
+  });
 
   const filteredModalDues = customerDues.filter((cd) =>
     cd.name.toLowerCase().includes(modalSearchQuery.toLowerCase())
@@ -1020,164 +1222,149 @@ export default function App() {
   };
 
   return (
-    <div 
-      ref={appContainerRef}
-      className="min-h-screen bg-[#F8F9FA] text-slate-800 antialiased font-sans flex flex-col pb-24 relative overflow-x-hidden"
-      style={{
-        transform: pullDistance > 0 ? `translateY(${pullDistance * 0.45}px)` : 'none',
-        transition: isPulling ? 'none' : 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
-      }}
-    >
+    <div className="min-h-screen bg-[#F8F9FA] text-slate-800 antialiased font-sans flex flex-col pb-24 relative overflow-x-hidden">
       
-      {/* --- Pull-to-Refresh Visual Swipe Overlay --- */}
-      <div 
-        className="pointer-events-none fixed left-0 right-0 z-50 flex justify-center transition-all duration-75"
-        style={{
-          top: `${Math.max(12, pullDistance - 28)}px`,
-          opacity: pullDistance > 10 ? Math.min(pullDistance / 50, 1) : 0,
-          transform: `scale(${Math.min(pullDistance / 60, 1)})`,
-        }}
-      >
-        <div className="bg-white text-emerald-600 px-4 py-2 rounded-full shadow-lg border border-slate-200/80 flex items-center gap-2 text-xs font-bold font-sans">
-          <RotateCcw className={`h-3.5 w-3.5 text-emerald-600 transition-transform duration-200 ${pullDistance > 65 ? 'rotate-180 text-teal-600' : ''} ${isSyncing ? 'animate-spin' : ''}`} />
-          <span>
-            {isSyncing 
-              ? (isBangla ? 'রিফ্রেশ হচ্ছে...' : 'Refreshing...') 
-              : pullDistance > 65 
-                ? (isBangla ? 'রিফ্রেশ করতে ছেড়ে দিন' : 'Release to refresh') 
-                : (isBangla ? 'টেনে রিফ্রেশ করুন' : 'Pull to refresh')
-            }
-          </span>
-        </div>
-      </div>
-
-      {/* 🚀 Top Simulated Cloud Sync Active Progress Bar */}
-      <AnimatePresence>
-        {isSyncing && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="bg-teal-600 text-white text-xs py-2 px-4 flex items-center justify-between shadow-inner relative overflow-hidden z-50"
-            id="sync-progressbar"
-          >
+      {/* --- Fixed Top Area (Progress Bar + Header) --- */}
+      <div className="fixed top-0 left-0 right-0 z-40 flex flex-col shadow-xs border-b border-slate-100">
+        {/* 🚀 Top Simulated Cloud Sync Active Progress Bar */}
+        <AnimatePresence>
+          {(isSyncing || isDriveSyncing) && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className={`${isDriveSyncing ? 'bg-indigo-600' : 'bg-teal-600'} text-white text-xs py-2 px-4 flex items-center justify-between shadow-inner relative overflow-hidden z-50`}
+              id="sync-progressbar"
+            >
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                <span className="font-medium">{syncMessage || driveSyncMessage}</span>
+              </div>
+              {/* Infinite loading line */}
+              <div className={`absolute bottom-0 left-0 h-[2px] ${isDriveSyncing ? 'bg-indigo-300' : 'bg-emerald-300'} animate-[loading_1.5s_infinite_linear]`} style={{ width: '40%' }}></div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+   
+        {/* --- App Header & Action Bar --- */}
+        <header className="bg-white py-3">
+          <div className="max-w-7xl mx-auto px-4 flex items-center justify-between gap-3">
+            
+            {/* Brand Logo & Name */}
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-white animate-ping"></span>
-              <span className="font-medium">{syncMessage}</span>
-            </div>
-            {/* Infinite loading line */}
-            <div className="absolute bottom-0 left-0 h-[2px] bg-emerald-300 animate-[loading_1.5s_infinite_linear]" style={{ width: '40%' }}></div>
-          </motion.div>
-        )}
-      </AnimatePresence>
- 
-      {/* --- App Header & Action Bar --- */}
-      <header className="bg-white border-b border-slate-100 sticky top-0 z-40 py-3 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 flex items-center justify-between gap-3">
-          
-          {/* Brand Logo & Name */}
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-[#102A43] text-emerald-300 rounded-xl shadow-xs border border-[#1F3A52] shrink-0 transition-transform duration-250 active:scale-95">
-              <BookOpen className="h-4.5 w-4.5 stroke-[2.5]" />
-            </div>
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-1.5">
-                <h1 className="text-sm sm:text-base font-black tracking-tight text-slate-900 font-sans leading-none">
-                  {isBangla ? 'হিসাব খাতা' : 'Hisab Khata'}
-                </h1>
-                <span className="text-[7px] sm:text-[8px] font-black text-teal-700 bg-teal-50 border border-teal-200/50 px-1 py-0.2 rounded-md uppercase leading-none">
-                  {isBangla ? 'ডিজিটাল' : 'Pro'}
+              <img
+                src="/src/assets/logo.jpg"
+                alt="হিসাব খাতা"
+                className="h-10 w-10 rounded-xl object-cover shadow-sm border border-slate-200/60 shrink-0 transition-transform duration-250 active:scale-95"
+                referrerPolicy="no-referrer"
+              />
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h1 className="text-sm sm:text-base font-black tracking-tight text-slate-900 font-sans leading-none">
+                    {isBangla ? 'হিসাব খাতা' : 'Hisab Khata'}
+                  </h1>
+                  {isOnline ? (
+                    <span className="text-[8px] sm:text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200/50 px-1.5 py-0.5 rounded-md uppercase leading-none flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      {isBangla ? 'অনলাইন' : 'Online'}
+                    </span>
+                  ) : (
+                    <span className="text-[8px] sm:text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200/50 px-1.5 py-0.5 rounded-md uppercase leading-none flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                      {isBangla ? 'অফলাইন' : 'Offline'}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] sm:text-xs font-bold text-slate-500 truncate mt-1 max-w-[150px] sm:max-w-[250px]" id="shop-name-title">
+                  <span className="text-teal-600 font-mono font-bold mr-1.5 md:hidden inline-block">{currentTime} •</span>
+                  {shopName || (isBangla ? 'মেসার্স জনি ট্রেডার্স' : 'M/S Jony Traders')}
                 </span>
               </div>
-              <span className="text-[10px] sm:text-xs font-bold text-slate-500 truncate mt-1 max-w-[150px] sm:max-w-[250px]" id="shop-name-title">
-                <span className="text-teal-600 font-mono font-bold mr-1.5 md:hidden inline-block">{currentTime} •</span>
-                {shopName || (isBangla ? 'মেসার্স জনি ট্রেডার্স' : 'M/S Jony Traders')}
-              </span>
+            </div>
+   
+            {/* Header Action Tools */}
+            <div className="flex items-center gap-2 shrink-0">
+              
+              {/* Real-time Date & Clock above buttons */}
+              <div className="hidden md:flex items-center gap-2 text-[10px] text-slate-600 font-mono bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg select-none">
+                <Clock className="h-3.5 w-3.5 text-slate-400" />
+                <span className="font-bold text-slate-700">
+                  {currentDateFormatted} • {currentTime}
+                </span>
+              </div>
+   
+              {/* Action Buttons row */}
+              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+   
+                {/* Manual Refresh Action */}
+                <button
+                  type="button"
+                  onClick={handleRefresh}
+                  disabled={isSyncing}
+                  className="p-1 bg-emerald-50 hover:bg-emerald-100/70 border border-emerald-200 text-emerald-700 rounded-md shadow-3xs transition-all flex items-center justify-center cursor-pointer h-8 w-8 active:scale-95 shrink-0 disabled:opacity-50"
+                  title={isBangla ? 'তথ্য রিফ্রেশ করুন' : 'Refresh Ledger'}
+                  id="manual-refresh-btn"
+                >
+                  <RotateCcw className={`h-4 w-4 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />
+                </button>
+   
+                {/* Quick Calculator Action */}
+                <button
+                  type="button"
+                  onClick={() => setIsCalcOpen(true)}
+                  className="p-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-md shadow-3xs transition-all flex items-center justify-center cursor-pointer h-8 w-8 active:scale-95 shrink-0"
+                  title={isBangla ? 'ক্যালকুলেটর চালু করুন' : 'Open Calculator'}
+                  id="calc-trigger-btn"
+                >
+                  <CalcIcon className="h-4 w-4 text-slate-600" />
+                </button>
+     
+                {/* Google Cloud Sync Controller */}
+                <button
+                  type="button"
+                  onClick={handleToggleSync}
+                  className={`flex items-center justify-center border transition-all cursor-pointer h-8 shadow-3xs active:scale-95 shrink-0 rounded-md ${
+                    isSyncActive
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                      : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                  } w-8 sm:w-auto sm:px-2.5 sm:gap-1.5`}
+                  id="google-sync-toggle"
+                  title={isSyncActive ? (isBangla ? 'ক্লাউড সিঙ্ক চালু' : 'Cloud Sync Active') : (isBangla ? 'ক্লাউড সিঙ্ক বন্ধ' : 'Cloud Sync Inactive')}
+                >
+                  {isSyncActive ? (
+                    <>
+                      <Cloud className="h-4 w-4 animate-pulse text-emerald-600" />
+                      <span className="hidden sm:inline text-[11px] font-black">{isBangla ? 'সিঙ্ক চালু' : 'Sync On'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <CloudOff className="h-4 w-4 text-rose-500" />
+                      <span className="hidden sm:inline text-[11px] font-black">{isBangla ? 'সিঙ্ক বন্ধ' : 'Sync Off'}</span>
+                    </>
+                  )}
+                </button>
+   
+                {/* Language Selection Toggle */}
+                <button
+                  type="button"
+                  onClick={toggleLanguage}
+                  className="bg-white hover:bg-slate-50 border border-slate-200 rounded-md text-[11px] font-black text-slate-700 h-8 shadow-3xs transition-all flex items-center justify-center cursor-pointer active:scale-95 shrink-0 w-8 sm:w-auto sm:px-2 sm:gap-1"
+                  id="lang-toggler"
+                  title={isBangla ? 'ভাষা পরিবর্তন করুন' : 'Change Language'}
+                >
+                  <Globe className="h-4 w-4 text-indigo-500 sm:block hidden" />
+                  <span className="text-[10px] sm:text-[11px] font-black text-indigo-600 sm:text-slate-700">{isBangla ? 'EN' : 'বাং'}</span>
+                </button>
+              </div>
+   
             </div>
           </div>
- 
-          {/* Header Action Tools */}
-          <div className="flex items-center gap-2 shrink-0">
-            
-            {/* Real-time Date & Clock above buttons */}
-            <div className="hidden md:flex items-center gap-2 text-[10px] text-slate-600 font-mono bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg select-none">
-              <Clock className="h-3.5 w-3.5 text-slate-400" />
-              <span className="font-bold text-slate-700">
-                {currentDateFormatted} • {currentTime}
-              </span>
-            </div>
- 
-            {/* Action Buttons row */}
-            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
- 
-              {/* Manual Refresh Action */}
-              <button
-                type="button"
-                onClick={handleRefresh}
-                disabled={isSyncing}
-                className="p-1 bg-emerald-50 hover:bg-emerald-100/70 border border-emerald-200 text-emerald-700 rounded-md shadow-3xs transition-all flex items-center justify-center cursor-pointer h-8 w-8 active:scale-95 shrink-0 disabled:opacity-50"
-                title={isBangla ? 'তথ্য রিফ্রেশ করুন' : 'Refresh Ledger'}
-                id="manual-refresh-btn"
-              >
-                <RotateCcw className={`h-4 w-4 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />
-              </button>
- 
-              {/* Quick Calculator Action */}
-              <button
-                type="button"
-                onClick={() => setIsCalcOpen(true)}
-                className="p-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-md shadow-3xs transition-all flex items-center justify-center cursor-pointer h-8 w-8 active:scale-95 shrink-0"
-                title={isBangla ? 'ক্যালকুলেটর চালু করুন' : 'Open Calculator'}
-                id="calc-trigger-btn"
-              >
-                <CalcIcon className="h-4 w-4 text-slate-600" />
-              </button>
-  
-              {/* Google Cloud Sync Controller */}
-              <button
-                type="button"
-                onClick={handleToggleSync}
-                className={`flex items-center justify-center border transition-all cursor-pointer h-8 shadow-3xs active:scale-95 shrink-0 rounded-md ${
-                  isSyncActive
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                    : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                } w-8 sm:w-auto sm:px-2.5 sm:gap-1.5`}
-                id="google-sync-toggle"
-                title={isSyncActive ? (isBangla ? 'ক্লাউড সিঙ্ক চালু' : 'Cloud Sync Active') : (isBangla ? 'ক্লাউড সিঙ্ক বন্ধ' : 'Cloud Sync Inactive')}
-              >
-                {isSyncActive ? (
-                  <>
-                    <Cloud className="h-4 w-4 animate-pulse text-emerald-600" />
-                    <span className="hidden sm:inline text-[11px] font-black">{isBangla ? 'সিঙ্ক চালু' : 'Sync On'}</span>
-                  </>
-                ) : (
-                  <>
-                    <CloudOff className="h-4 w-4 text-rose-500" />
-                    <span className="hidden sm:inline text-[11px] font-black">{isBangla ? 'সিঙ্ক বন্ধ' : 'Sync Off'}</span>
-                  </>
-                )}
-              </button>
- 
-              {/* Language Selection Toggle */}
-              <button
-                type="button"
-                onClick={toggleLanguage}
-                className="bg-white hover:bg-slate-50 border border-slate-200 rounded-md text-[11px] font-black text-slate-700 h-8 shadow-3xs transition-all flex items-center justify-center cursor-pointer active:scale-95 shrink-0 w-8 sm:w-auto sm:px-2 sm:gap-1"
-                id="lang-toggler"
-                title={isBangla ? 'ভাষা পরিবর্তন করুন' : 'Change Language'}
-              >
-                <Globe className="h-4 w-4 text-indigo-500 sm:block hidden" />
-                <span className="text-[10px] sm:text-[11px] font-black text-indigo-600 sm:text-slate-700">{isBangla ? 'EN' : 'বাং'}</span>
-              </button>
-            </div>
- 
-          </div>
-        </div>
-      </header>
+        </header>
+      </div>
 
 
       {/* --- Main Contents Container --- */}
-      <main className="max-w-7xl mx-auto w-full px-4 py-4 flex-1 flex flex-col gap-4">
+      <main className="max-w-7xl mx-auto w-full px-4 py-4 pt-[84px] flex-1 flex flex-col gap-4">
 
         <AnimatePresence mode="wait">
         {/* --- 1. HOME TAB VIEW --- */}
@@ -1196,19 +1383,19 @@ export default function App() {
               <section className="grid grid-cols-2 gap-3" id="stats-dashboard-grid">
                 
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block">
                     {isBangla ? 'মোট বিক্রি' : 'Total Sales'}
                   </span>
-                  <span className="text-base sm:text-lg font-black text-emerald-600 block mt-1">
+                  <span className="text-[17px] sm:text-lg font-black text-emerald-600 block mt-1">
                     {formatCurrency(todaySales, isBangla)}
                   </span>
                 </div>
 
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block">
                     {isBangla ? 'নগদ জমা' : 'Cash Deposit'}
                   </span>
-                  <span className="text-base sm:text-lg font-black text-blue-600 block mt-1">
+                  <span className="text-[17px] sm:text-lg font-black text-blue-600 block mt-1">
                     {formatCurrency(todayCashDeposit, isBangla)}
                   </span>
                 </div>
@@ -1217,19 +1404,19 @@ export default function App() {
                   onClick={() => setIsDueListModalOpen(true)}
                   className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs cursor-pointer hover:bg-slate-50/50 transition-colors"
                 >
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block">
                     {isBangla ? 'আজকের বাকি' : "Today's Due"}
                   </span>
-                  <span className="text-base sm:text-lg font-black text-amber-600 block mt-1">
+                  <span className="text-[17px] sm:text-lg font-black text-amber-600 block mt-1">
                     {formatCurrency(todayDueTaken, isBangla)}
                   </span>
                 </div>
 
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block">
                     {isBangla ? 'আজকের খরচ' : "Today's Expense"}
                   </span>
-                  <span className="text-base sm:text-lg font-black text-rose-600 block mt-1">
+                  <span className="text-[17px] sm:text-lg font-black text-rose-600 block mt-1">
                     {formatCurrency(todayExpenseTotal, isBangla)}
                   </span>
                 </div>
@@ -1475,34 +1662,34 @@ export default function App() {
           >
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block">
                   {isBangla ? 'মাসিক মোট বিক্রি' : 'Monthly Sales'}
                 </span>
-                <span className="text-base sm:text-lg font-black text-emerald-600 block mt-1">
+                <span className="text-[17px] sm:text-lg font-black text-emerald-600 block mt-1">
                   {formatCurrency(getMonthlyStats().sales, isBangla)}
                 </span>
               </div>
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block">
                   {isBangla ? 'মাসিক নগদ জমা' : 'Monthly Cash'}
                 </span>
-                <span className="text-base sm:text-lg font-black text-blue-600 block mt-1">
+                <span className="text-[17px] sm:text-lg font-black text-blue-600 block mt-1">
                   {formatCurrency(getMonthlyStats().cash, isBangla)}
                 </span>
               </div>
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block">
                   {isBangla ? 'মাসিক মোট বাকি' : 'Monthly Due'}
                 </span>
-                <span className="text-base sm:text-lg font-black text-amber-600 block mt-1">
+                <span className="text-[17px] sm:text-lg font-black text-amber-600 block mt-1">
                   {formatCurrency(getMonthlyStats().due, isBangla)}
                 </span>
               </div>
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block">
                   {isBangla ? 'মাসিক মোট খরচ' : 'Monthly Expenses'}
                 </span>
-                <span className="text-base sm:text-lg font-black text-rose-600 block mt-1">
+                <span className="text-[17px] sm:text-lg font-black text-rose-600 block mt-1">
                   {formatCurrency(getMonthlyStats().expense, isBangla)}
                 </span>
               </div>
@@ -1594,7 +1781,7 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="space-y-3.5">
-                    {getTopSellingProducts().map((item, index) => {
+                    {(showAllTopProducts ? getTopSellingProducts() : getTopSellingProducts().slice(0, 8)).map((item, index) => {
                       const allProducts = getTopSellingProducts();
                       const maxVal = allProducts.length > 0 ? allProducts[0].count : 1;
                       const percent = (item.count / maxVal) * 100;
@@ -1635,6 +1822,21 @@ export default function App() {
                         </div>
                       );
                     })}
+
+                    {getTopSellingProducts().length > 8 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllTopProducts(!showAllTopProducts)}
+                        className="w-full mt-2 py-2 text-xs font-extrabold text-teal-600 hover:text-teal-800 hover:bg-slate-100/50 border border-slate-200/50 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-98"
+                      >
+                        <span>
+                          {showAllTopProducts 
+                            ? (isBangla ? 'কম দেখান' : 'Show Less') 
+                            : (isBangla ? `আরও ${toBanglaNumber(getTopSellingProducts().length - 8)}টি দেখুন` : `Show ${getTopSellingProducts().length - 8} More`)
+                          }
+                        </span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -1756,37 +1958,185 @@ export default function App() {
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
                 <div className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-100">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block">
                     {isBangla ? 'ঐ দিনের মোট বিক্রি' : 'Sales on Date'}
                   </span>
-                  <span className="text-sm font-black text-emerald-700 block mt-0.5">
+                  <span className="text-[17px] sm:text-lg font-black text-emerald-700 block mt-1">
                     {formatCurrency(todaySales, isBangla)}
                   </span>
                 </div>
                 <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block">
                     {isBangla ? 'নগদ জমা' : 'Cash Deposit'}
                   </span>
-                  <span className="text-sm font-black text-blue-700 block mt-0.5">
+                  <span className="text-[17px] sm:text-lg font-black text-blue-700 block mt-1">
                     {formatCurrency(todayCashDeposit, isBangla)}
                   </span>
                 </div>
                 <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-100">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block">
                     {isBangla ? 'বাকি লেনদেন' : 'Dues Given'}
                   </span>
-                  <span className="text-sm font-black text-amber-700 block mt-0.5">
+                  <span className="text-[17px] sm:text-lg font-black text-amber-700 block mt-1">
                     {formatCurrency(todayDueTaken, isBangla)}
                   </span>
                 </div>
                 <div className="bg-rose-50/50 p-3 rounded-xl border border-rose-100">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block">
                     {isBangla ? 'ঐ দিনের মোট খরচ' : 'Expenses on Date'}
                   </span>
-                  <span className="text-sm font-black text-rose-700 block mt-0.5">
+                  <span className="text-[17px] sm:text-lg font-black text-rose-700 block mt-1">
                     {formatCurrency(todayExpenseTotal, isBangla)}
                   </span>
                 </div>
+              </div>
+
+              {/* --- All-time Product Sales Donut Chart Infographic --- */}
+              <div className="border-t border-slate-100 pt-5 mt-2 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="h-4 w-4 text-teal-600 shrink-0" />
+                      <span>{isBangla ? 'সর্বমোট পণ্য বিক্রির সামারি (শুরু থেকে বর্তমান)' : 'All-time Product Sales Summary'}</span>
+                    </h3>
+                    <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5">
+                      {isBangla ? 'অ্যাপের শুরু থেকে এ পর্যন্ত মোট বিক্রিত পণ্যের অনুপাত ও খতিয়ান।' : 'Distribution of product sales from the beginning of the ledger.'}
+                    </p>
+                  </div>
+                </div>
+                
+                {chartData.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-slate-400 font-medium bg-slate-50/50 border border-dashed border-slate-200 rounded-xl">
+                    {isBangla ? 'এখনও কোনো পণ্যের বিক্রি রেকর্ড করা হয়নি।' : 'No product sales recorded yet.'}
+                  </div>
+                ) : (
+                  <div className="bg-slate-50/40 rounded-2xl border border-slate-150 p-4 sm:p-5 flex flex-col md:flex-row items-center gap-6 md:gap-8">
+                    
+                    {/* SVG Donut Chart container */}
+                    <div className="relative w-32 h-32 sm:w-36 sm:h-36 flex-shrink-0 flex items-center justify-center mx-auto">
+                      <svg viewBox="0 0 120 120" className="w-full h-full">
+                        {/* Background circle */}
+                        <circle
+                          cx="60"
+                          cy="60"
+                          r="50"
+                          fill="transparent"
+                          stroke="#F1F5F9"
+                          strokeWidth="11"
+                        />
+                        
+                        {/* Rotated group to start from 12 o'clock (top) */}
+                        <g transform="rotate(-90 60 60)">
+                          {/* Circles for chart segments */}
+                          {chartData.map((data, index) => {
+                            const strokeLength = (data.percentage / 100) * circumference;
+                            const strokeOffset = -accumulatedOffsetArray[index];
+                            const isOthers = data.name === 'অন্যান্য' || data.name === 'Others';
+                            
+                            return (
+                              <motion.circle
+                                key={data.name}
+                                cx="60"
+                                cy="60"
+                                r="50"
+                                fill="transparent"
+                                stroke={data.color}
+                                strokeWidth={activeSliceIndex === index ? 14 : 11}
+                                strokeDasharray={`${strokeLength} ${circumference}`}
+                                strokeDashoffset={strokeOffset}
+                                initial={{ strokeDasharray: `0 ${circumference}` }}
+                                animate={{ strokeDasharray: `${strokeLength} ${circumference}` }}
+                                transition={{ duration: 0.8, ease: "easeOut", delay: index * 0.05 }}
+                                className="transition-all duration-200 cursor-pointer"
+                                style={{ transformOrigin: 'center' }}
+                                onMouseEnter={() => setActiveSliceIndex(index)}
+                                onMouseLeave={() => setActiveSliceIndex(null)}
+                                onClick={() => {
+                                  if (isOthers) {
+                                    setIsOthersModalOpen(true);
+                                  }
+                                }}
+                              />
+                            );
+                          })}
+                        </g>
+                      </svg>
+                      
+                      {/* Inner circle text */}
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none p-3">
+                        <span className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">
+                          {isBangla ? 'মোট বিক্রি' : 'Total Sales'}
+                        </span>
+                        <span className="text-[11px] sm:text-xs font-black text-slate-800 font-sans mt-1 leading-none max-w-[85px] truncate" title={formatCurrency(allTimeSales.totalAmount, isBangla)}>
+                          {formatCurrency(allTimeSales.totalAmount, isBangla)}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Infographic details / legends list */}
+                    <div className="flex-grow w-full space-y-2.5">
+                      {chartData.map((data, index) => {
+                        const isHovered = activeSliceIndex === index;
+                        const isOthers = data.name === 'অন্যান্য' || data.name === 'Others';
+                        return (
+                          <div
+                            key={data.name}
+                            className={`flex flex-col gap-1 p-2 -mx-2 rounded-xl transition-all duration-200 cursor-pointer ${
+                              isHovered ? 'bg-white shadow-3xs border border-slate-150' : 'border border-transparent'
+                            }`}
+                            onMouseEnter={() => setActiveSliceIndex(index)}
+                            onMouseLeave={() => setActiveSliceIndex(null)}
+                            onClick={() => {
+                              if (isOthers) {
+                                setIsOthersModalOpen(true);
+                              }
+                            }}
+                          >
+                            <div className="flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-2 min-w-0">
+                                {/* Circle dot */}
+                                <span
+                                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                                  style={{ backgroundColor: data.color }}
+                                />
+                                <span className="font-extrabold text-slate-800 truncate">
+                                  {data.name}
+                                  {isOthers && (
+                                    <span className="text-[9px] font-medium text-indigo-500 ml-1.5 underline">
+                                      {isBangla ? '(বিস্তারিত)' : '(Details)'}
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 font-mono shrink-0">
+                                <span className="text-[9px] text-slate-400 font-bold">
+                                  {isBangla ? `${toBanglaNumber(data.count)} বার` : `${data.count} sold`}
+                                </span>
+                                <span className="font-black text-slate-900 text-[11px]">
+                                  {formatCurrency(data.amount, isBangla)}
+                                </span>
+                                <span className="text-[9px] text-teal-600 font-black bg-teal-50 px-1 py-0.5 rounded-md">
+                                  {isBangla ? `${toBanglaNumber(data.percentage.toFixed(0))}%` : `${data.percentage.toFixed(0)}%`}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {/* Visual percentage progress bar */}
+                            <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                              <motion.div
+                                className="h-full rounded-full"
+                                style={{ backgroundColor: data.color }}
+                                initial={{ width: 0 }}
+                                animate={{ width: `${data.percentage}%` }}
+                                transition={{ duration: 0.8, ease: "easeOut", delay: index * 0.05 }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1803,19 +2153,36 @@ export default function App() {
                       {isBangla ? 'ঐ তারিখে কোনো বেচাকেনা হিসাব নেই।' : 'No sales entries on this date.'}
                     </div>
                   ) : (
-                    todayTransactions.map(tx => (
-                      <div key={tx.id} className="p-3 bg-slate-50 border border-slate-200/50 rounded-xl flex items-center justify-between">
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-800">{tx.product}</h4>
-                          <span className="text-[9px] text-slate-400 block mt-0.5">
-                            {tx.customer ? `${isBangla ? 'কাস্টমার' : 'Customer'}: ${tx.customer}` : (isBangla ? 'নগদ বিক্রি' : 'Cash Sale')} • {formatTimeStr(tx.time, isBangla)}
+                    <>
+                      {(showAllHistoryTxs ? todayTransactions : todayTransactions.slice(0, 6)).map(tx => (
+                        <div key={tx.id} className="p-3 bg-slate-50 border border-slate-200/50 rounded-xl flex items-center justify-between">
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-800">{tx.product}</h4>
+                            <span className="text-[9px] text-slate-400 block mt-0.5">
+                              {tx.customer ? `${isBangla ? 'কাস্টমার' : 'Customer'}: ${tx.customer}` : (isBangla ? 'নগদ বিক্রি' : 'Cash Sale')} • {formatTimeStr(tx.time, isBangla)}
+                            </span>
+                          </div>
+                          <span className={`text-xs font-black ${tx.isCash ? 'text-emerald-600' : 'text-amber-600'}`}>
+                            {formatCurrency(tx.amount, isBangla)}
                           </span>
                         </div>
-                        <span className={`text-xs font-black ${tx.isCash ? 'text-emerald-600' : 'text-amber-600'}`}>
-                          {formatCurrency(tx.amount, isBangla)}
-                        </span>
-                      </div>
-                    ))
+                      ))}
+                      
+                      {todayTransactions.length > 6 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllHistoryTxs(!showAllHistoryTxs)}
+                          className="w-full mt-2 py-2 text-xs font-extrabold text-indigo-600 hover:text-indigo-800 hover:bg-slate-100/50 border border-slate-200/50 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-98"
+                        >
+                          <span>
+                            {showAllHistoryTxs 
+                              ? (isBangla ? 'কম দেখান' : 'Show Less') 
+                              : (isBangla ? `আরও ${toBanglaNumber(todayTransactions.length - 6)}টি দেখুন` : `Show ${todayTransactions.length - 6} More`)
+                            }
+                          </span>
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -1885,8 +2252,19 @@ export default function App() {
                   placeholder={isBangla ? 'যেমন: মেসার্স জনি ট্রেডার্স' : 'e.g. M/S Jony Traders'}
                   value={shopName}
                   onChange={(e) => {
-                    setShopName(e.target.value);
-                    localStorage.setItem('hisab_khata_shop_name', e.target.value);
+                    const val = e.target.value;
+                    setShopName(val);
+                    localStorage.setItem('hisab_khata_shop_name', val);
+                    localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
+                  }}
+                  onBlur={(e) => {
+                    const val = e.target.value;
+                    const now = Date.now();
+                    localStorage.setItem('hisab_khata_shop_name', val);
+                    localStorage.setItem('hisab_khata_last_updated', String(now));
+                    if (isSyncActive) {
+                      triggerCloudSync(transactions, expenses, val, userEmail);
+                    }
                   }}
                   className="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-bold"
                 />
@@ -1981,6 +2359,141 @@ export default function App() {
                     {isSyncActive ? (isBangla ? 'বন্ধ করুন' : 'Disable') : (isBangla ? 'চালু করুন' : 'Enable')}
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* Google Drive Backup Card */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest block">
+                  {isBangla ? 'গুগল ড্রাইভ ব্যাকআপ' : 'Google Drive Backup'}
+                </h3>
+                <span className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded font-black">Drive v3</span>
+              </div>
+
+              <div className="space-y-4">
+                {/* Connection status & Google sign-in */}
+                <div className="space-y-2.5">
+                  {!driveEmail ? (
+                    <button
+                      type="button"
+                      onClick={handleDriveConnect}
+                      disabled={isDriveSyncing}
+                      className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-bold text-slate-700 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
+                    >
+                      <svg className="h-4 w-4" viewBox="0 0 24 24">
+                        <path
+                          fill="#EA4335"
+                          d="M12.24 10.285V14.4h6.887c-.275 1.565-1.88 4.6-6.887 4.6-4.33 0-7.859-3.578-7.859-8s3.53-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l3.227-3.103C18.28 1.845 15.548 1 12.24 1A11 11 0 0 0 1.24 12a11 11 0 0 0 11 11c11.5 0 12.24-8.09 11.965-11.715H12.24z"
+                        />
+                      </svg>
+                      <span>{isBangla ? 'ড্রাইভ ব্যাকআপ চালু করুন' : 'Enable Drive Backup'}</span>
+                    </button>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between px-3 py-2 bg-indigo-50/50 rounded-lg border border-indigo-100/50">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="inline-block h-2 w-2 rounded-full bg-indigo-500 animate-pulse flex-shrink-0"></span>
+                          <span className="text-[11px] text-indigo-800 font-bold truncate max-w-[180px] font-sans">
+                            {driveEmail}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleDriveDisconnect}
+                          className="text-[10px] text-rose-600 hover:text-rose-800 font-extrabold cursor-pointer hover:bg-rose-50 px-2 py-0.5 rounded"
+                        >
+                          {isBangla ? 'সংযোগ বিচ্ছিন্ন' : 'Disconnect'}
+                        </button>
+                      </div>
+
+                      {/* Token status if expired */}
+                      {!driveAccessToken && (
+                        <div className="p-2 bg-amber-50 rounded-lg border border-amber-100 flex items-start gap-1.5">
+                          <AlertCircle className="h-3.5 w-3.5 text-amber-600 mt-0.5 flex-shrink-0" />
+                          <div className="text-[10px] text-amber-800">
+                            <span className="font-bold">
+                              {isBangla ? 'ড্রাইভ কানেক্ট করুন:' : 'Session expired:'}
+                            </span>{' '}
+                            {isBangla
+                              ? 'অটো-ব্যাকআপ বা ম্যানুয়াল ব্যাকআপের জন্য প্রথমে ড্রাইভ কানেক্ট করুন।'
+                              : 'Click connect to log into Drive for backing up.'}
+                            <button
+                              onClick={handleDriveConnect}
+                              className="block mt-1 text-[10px] text-indigo-700 underline font-bold"
+                            >
+                              {isBangla ? 'কানেক্ট করুন' : 'Connect Now'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Backup & Restore controls */}
+                {driveEmail && (
+                  <div className="space-y-3">
+                    {/* Auto backup switch */}
+                    <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-150 rounded-xl">
+                      <div className="flex items-center gap-2">
+                        <Cloud className="h-4 w-4 text-indigo-600" />
+                        <div>
+                          <span className="text-xs font-bold text-slate-700 block">
+                            {isBangla ? 'অটো-ব্যাকআপ' : 'Auto-Backup'}
+                          </span>
+                          <span className="text-[9px] text-slate-400 block -mt-1 font-medium">
+                            {isBangla ? 'প্রতি পরিবর্তনের পর স্বয়ংক্রিয় ড্রাইভ ব্যাকআপ' : 'Automatic upload on change'}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextVal = !isDriveAutoBackupActive;
+                          setIsDriveAutoBackupActive(nextVal);
+                          localStorage.setItem('hisab_khata_drive_auto_backup', String(nextVal));
+                          if (nextVal && !driveAccessToken) {
+                            handleDriveConnect();
+                          } else if (nextVal && driveAccessToken) {
+                            triggerDriveBackup(transactions, expenses, shopName, false);
+                          }
+                        }}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
+                          isDriveAutoBackupActive ? 'bg-indigo-600' : 'bg-slate-200'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                            isDriveAutoBackupActive ? 'translate-x-4.5' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Manual buttons */}
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <button
+                        onClick={() => triggerDriveBackup(transactions, expenses, shopName, false)}
+                        disabled={isDriveSyncing || !driveAccessToken}
+                        className="py-2 px-2 border border-indigo-100 bg-indigo-50/50 hover:bg-indigo-50 rounded-xl text-xs font-bold text-indigo-700 flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors disabled:opacity-50"
+                      >
+                        <FileUp className="h-4 w-4 text-indigo-600" />
+                        <span>{isBangla ? 'ড্রাইভে ব্যাকআপ' : 'Backup to Drive'}</span>
+                      </button>
+
+                      <button
+                        onClick={triggerDriveRestore}
+                        disabled={isDriveSyncing || !driveAccessToken}
+                        className="py-2 px-2 border border-emerald-100 bg-emerald-50/50 hover:bg-emerald-50 rounded-xl text-xs font-bold text-emerald-700 flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors disabled:opacity-50"
+                      >
+                        <FileDown className="h-4 w-4 text-emerald-600" />
+                        <span>{isBangla ? 'ড্রাইভ রিস্টোর' : 'Restore from Drive'}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2761,6 +3274,159 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setSelectedProductForDetail(null)}
+                  className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 hover:text-slate-800 text-xs font-black rounded-xl transition-all cursor-pointer shadow-3xs"
+                >
+                  {isBangla ? 'বন্ধ করুন' : 'Close'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- OTHER PRODUCTS BREAKDOWN MODAL --- */}
+      <AnimatePresence>
+        {isOthersModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsOthersModalOpen(false)}
+              className="fixed inset-0 bg-black shadow-lg"
+            />
+
+            {/* Modal Box */}
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+              className="bg-white rounded-2xl w-full max-w-md shadow-2xl relative z-10 overflow-hidden border border-slate-100 flex flex-col max-h-[80vh]"
+            >
+              {/* Header */}
+              <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 bg-slate-100 text-slate-700 rounded-lg shrink-0">
+                    <Sparkles className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 leading-none">
+                      {isBangla ? 'অন্যান্য পণ্যের বিক্রয় খতিয়ান' : 'Other Products Sales Details'}
+                    </h3>
+                    <p className="text-[10px] text-slate-400 mt-1.5">
+                      {isBangla ? 'শীর্ষ ৬টি পণ্য বাদে অন্যান্য সব পণ্যের বিক্রির হিসাব।' : 'List of all other product sales outside the top 6.'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsOthersModalOpen(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                >
+                  <span className="text-base">✕</span>
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 overflow-y-auto flex-1 space-y-4">
+                {/* Total Summary of Others */}
+                {(() => {
+                  const othersList = allTimeSales.items.slice(6);
+                  const totalOthersAmount = othersList.reduce((sum, item) => sum + item.amount, 0);
+                  const totalOthersCount = othersList.reduce((sum, item) => sum + item.count, 0);
+                  const othersPercentage = allTimeSales.totalAmount > 0 ? (totalOthersAmount / allTimeSales.totalAmount) * 100 : 0;
+
+                  return (
+                    <>
+                      <div className="p-3.5 bg-slate-50/70 border border-slate-150 rounded-xl text-xs space-y-1">
+                        <span className="font-extrabold text-slate-500 uppercase block tracking-wider text-[9px]">
+                          {isBangla ? 'অন্যান্য প্রোডাক্ট সামারি' : 'Others Category Summary'}
+                        </span>
+                        <div className="flex justify-between items-center pt-1 font-bold">
+                          <span className="text-slate-500">
+                            {isBangla ? 'অন্যান্য পণ্যের মোট বিক্রি:' : 'Total sales from Others:'}
+                          </span>
+                          <span className="text-slate-800 font-sans font-black text-sm">
+                            {formatCurrency(totalOthersAmount, isBangla)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center font-bold">
+                          <span className="text-slate-500">
+                            {isBangla ? 'মোট পণ্য সংখ্যা:' : 'Total other products:'}
+                          </span>
+                          <span className="text-slate-800 font-sans font-black text-xs">
+                            {isBangla ? `${toBanglaNumber(othersList.length)}টি` : `${othersList.length} products`}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center font-bold">
+                          <span className="text-slate-500">
+                            {isBangla ? 'মোট বিক্রির অংশীদারিত্ব:' : 'Share of overall sales:'}
+                          </span>
+                          <span className="text-indigo-600 font-sans font-black text-xs bg-indigo-50 px-1.5 py-0.5 rounded">
+                            {isBangla ? `${toBanglaNumber(othersPercentage.toFixed(1))}%` : `${othersPercentage.toFixed(1)}%`}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Product details list */}
+                      <div className="space-y-3">
+                        <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
+                          {isBangla ? 'অন্যান্য পণ্যের তালিকা' : 'List of other products'}
+                        </h4>
+
+                        {othersList.length === 0 ? (
+                          <div className="text-center py-8 text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl font-semibold">
+                            {isBangla ? 'কোনো পণ্য পাওয়া যায়নি।' : 'No other products found.'}
+                          </div>
+                        ) : (
+                          <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
+                            {othersList.map((item, index) => {
+                              const itemPercentage = allTimeSales.totalAmount > 0 ? (item.amount / allTimeSales.totalAmount) * 100 : 0;
+                              return (
+                                <div key={item.name} className="p-3 bg-white border border-slate-150 rounded-xl flex flex-col gap-1.5 shadow-3xs">
+                                  <div className="flex items-center justify-between text-xs font-bold">
+                                    <span className="text-slate-800 font-extrabold truncate max-w-[200px]" title={item.name}>
+                                      {item.name}
+                                    </span>
+                                    <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-900 shrink-0">
+                                      <span className="text-[9px] text-slate-400">
+                                        {isBangla ? `${toBanglaNumber(item.count)} বার` : `${item.count} sold`}
+                                      </span>
+                                      <span className="font-black">
+                                        {formatCurrency(item.amount, isBangla)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {/* Progress bar */}
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-slate-500 rounded-full"
+                                        style={{ width: `${itemPercentage}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-[9px] font-black text-slate-400 shrink-0 font-mono">
+                                      {isBangla ? `${toBanglaNumber(itemPercentage.toFixed(1))}%` : `${itemPercentage.toFixed(1)}%`}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50">
+                <button
+                  type="button"
+                  onClick={() => setIsOthersModalOpen(false)}
                   className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 hover:text-slate-800 text-xs font-black rounded-xl transition-all cursor-pointer shadow-3xs"
                 >
                   {isBangla ? 'বন্ধ করুন' : 'Close'}

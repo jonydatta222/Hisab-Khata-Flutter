@@ -1,10 +1,10 @@
 {
   "projectId": "com-hisabkhata-app",
-  "appId": "1:643249504246:web:5dced0db5b1d2f87ca51d7",
+  "appId": "1:643249504246:web:4d91594cefb19b67ca51d7",
   "apiKey": "AIzaSyC-DCX-nH5fyJ2acPK3ETLe8CpI-aBtXwA",
   "authDomain": "com-hisabkhata-app.firebaseapp.com",
-  "firestoreDatabaseId": "(default)",
+  "firestoreDatabaseId": "ai-studio-flutter-823045dd-3899-41ad-b645-588a5f994fb4",
   "storageBucket": "com-hisabkhata-app.firebasestorage.app",
   "messagingSenderId": "643249504246",
-  "measurementId": "G-MHTVJYZV4P"
+  "measurementId": ""
 }
