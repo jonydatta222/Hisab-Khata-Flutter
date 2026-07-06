@@ -1278,7 +1278,7 @@ export default function App() {
             {/* Brand Logo & Name */}
             <div className="flex items-center gap-2">
               <img
-                src="/src/assets/logo.jpg"
+                src="/src/assets/logo.png"
                 alt="হিসাব খাতা"
                 className="h-10 w-10 rounded-xl object-cover shadow-sm border border-slate-200/60 shrink-0 transition-transform duration-250 active:scale-95"
                 referrerPolicy="no-referrer"
