@@ -3,6 +3,7 @@ import { initializeFirestore, doc, setDoc, getDoc, getDocFromCache, persistentLo
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import firebaseConfig from '../firebase-applet-config.json';
 import { Transaction, Expense } from './types';
+import CryptoJS from 'crypto-js';
 
 // Initialize Firebase App
 const app = initializeApp({
@@ -80,26 +81,39 @@ export interface UserLedgerData {
 }
 
 /**
- * Syncs the local ledger data to Firebase Firestore
+ * Syncs the local ledger data to Firebase Firestore (Encrypted with a 6-digit PIN)
  */
 export async function uploadLedgerToCloud(
   email: string,
   transactions: Transaction[],
   expenses: Expense[],
-  shopName: string
+  shopName: string,
+  passcode: string
 ): Promise<void> {
   if (!email || !email.trim()) {
     throw new Error('Email is required for syncing');
+  }
+  if (!passcode || passcode.length !== 6) {
+    throw new Error('6-digit PIN is required');
   }
   
   const cleanEmail = email.trim().toLowerCase();
   const path = `users/${cleanEmail}`;
   const userDocRef = doc(db, 'users', cleanEmail);
   
-  const payload: UserLedgerData = {
+  // Encrypt the transaction data using the passcode as the secret key
+  const rawDataToEncrypt = JSON.stringify({
     transactions,
     expenses,
-    shopName,
+    shopName
+  });
+  
+  const encryptedData = CryptoJS.AES.encrypt(rawDataToEncrypt, passcode).toString();
+  const passcodeHash = CryptoJS.SHA256(passcode).toString();
+  
+  const payload = {
+    encryptedData,
+    passcodeHash,
     updatedAt: Date.now(),
   };
   
@@ -116,34 +130,101 @@ export async function uploadLedgerToCloud(
 }
 
 /**
- * Downloads the user's ledger data from Firebase Firestore
+ * Downloads the user's ledger data from Firebase Firestore and decrypts it with the 6-digit PIN
  */
-export async function downloadLedgerFromCloud(email: string): Promise<UserLedgerData | null> {
+export async function downloadLedgerFromCloud(email: string, passcode: string): Promise<UserLedgerData | null> {
   if (!email || !email.trim()) {
     throw new Error('Email is required for downloading');
+  }
+  if (!passcode || passcode.length !== 6) {
+    throw new Error('6-digit PIN is required');
   }
   
   const cleanEmail = email.trim().toLowerCase();
   const path = `users/${cleanEmail}`;
   const userDocRef = doc(db, 'users', cleanEmail);
   
+  const clientHash = CryptoJS.SHA256(passcode).toString();
+  
   try {
     const docSnap = await getDoc(userDocRef);
     if (docSnap.exists()) {
-      return docSnap.data() as UserLedgerData;
+      const serverData = docSnap.data();
+      
+      // Verification
+      if (serverData.passcodeHash && serverData.passcodeHash !== clientHash) {
+        throw new Error('WRONG_PIN');
+      }
+      
+      if (serverData.encryptedData) {
+        try {
+          const bytes = CryptoJS.AES.decrypt(serverData.encryptedData, passcode);
+          const decryptedText = bytes.toString(CryptoJS.enc.Utf8);
+          if (!decryptedText) {
+            throw new Error('WRONG_PIN');
+          }
+          const parsedData = JSON.parse(decryptedText);
+          return {
+            transactions: parsedData.transactions || [],
+            expenses: parsedData.expenses || [],
+            shopName: parsedData.shopName || '',
+            updatedAt: serverData.updatedAt || Date.now(),
+          };
+        } catch (decryptError) {
+          throw new Error('WRONG_PIN');
+        }
+      } else {
+        // Fallback for unencrypted legacy data (if any existed before encryption was introduced)
+        return {
+          transactions: serverData.transactions || [],
+          expenses: serverData.expenses || [],
+          shopName: serverData.shopName || '',
+          updatedAt: serverData.updatedAt || Date.now(),
+        };
+      }
     }
     return null;
   } catch (error: any) {
+    if (error.message === 'WRONG_PIN') {
+      throw error;
+    }
     const errMsg = error?.message || String(error);
     if (errMsg.includes('offline') || errMsg.includes('network') || errMsg.includes('Failed to get document')) {
       console.warn('Firestore is offline. Attempting to retrieve from cache...', errMsg);
       try {
         const cachedSnap = await getDocFromCache(userDocRef);
         if (cachedSnap.exists()) {
-          console.log('Successfully retrieved ledger data from offline cache!');
-          return cachedSnap.data() as UserLedgerData;
+          const serverData = cachedSnap.data();
+          if (serverData.passcodeHash && serverData.passcodeHash !== clientHash) {
+            throw new Error('WRONG_PIN');
+          }
+          
+          if (serverData.encryptedData) {
+            const bytes = CryptoJS.AES.decrypt(serverData.encryptedData, passcode);
+            const decryptedText = bytes.toString(CryptoJS.enc.Utf8);
+            if (!decryptedText) {
+              throw new Error('WRONG_PIN');
+            }
+            const parsedData = JSON.parse(decryptedText);
+            return {
+              transactions: parsedData.transactions || [],
+              expenses: parsedData.expenses || [],
+              shopName: parsedData.shopName || '',
+              updatedAt: serverData.updatedAt || Date.now(),
+            };
+          }
+          
+          return {
+            transactions: serverData.transactions || [],
+            expenses: serverData.expenses || [],
+            shopName: serverData.shopName || '',
+            updatedAt: serverData.updatedAt || Date.now(),
+          };
         }
-      } catch (cacheError) {
+      } catch (cacheError: any) {
+        if (cacheError.message === 'WRONG_PIN') {
+          throw cacheError;
+        }
         console.warn('Failed to retrieve from offline cache:', cacheError);
       }
       return null;

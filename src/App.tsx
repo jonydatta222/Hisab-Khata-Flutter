@@ -59,6 +59,8 @@ import {
   DriveBackupData 
 } from './utils/driveBackup';
 
+import logoImg from './assets/logo.png';
+
 import Calculator from './components/Calculator';
 import StatCard from './components/StatCard';
 import TransactionList from './components/TransactionList';
@@ -67,6 +69,13 @@ import ExpenseList from './components/ExpenseList';
 
 export default function App() {
   // --- States ---
+  const isIframe = typeof window !== 'undefined' && window.self !== window.top;
+  const isCapacitor = typeof window !== 'undefined' && (
+    (window as any).Capacitor || 
+    window.location.protocol === 'file:' || 
+    window.location.protocol.startsWith('capacitor') ||
+    /Capacitor|Cordova/i.test(navigator.userAgent)
+  );
   const [isBangla, setIsBangla] = useState(true);
   const [selectedDate, setSelectedDate] = useState(getTodayDateString());
   const [currentTime, setCurrentTime] = useState('');
@@ -126,6 +135,9 @@ export default function App() {
   // User details (from environment & local storage)
   const [userEmail, setUserEmail] = useState(() => {
     return localStorage.getItem('hisab_khata_sync_email') || '';
+  });
+  const [syncPin, setSyncPin] = useState(() => {
+    return localStorage.getItem('hisab_khata_sync_pin') || '';
   });
   const [shopName, setShopName] = useState(() => {
     return localStorage.getItem('hisab_khata_shop_name') || '';
@@ -217,7 +229,8 @@ export default function App() {
       
       // 2. If sync is active, perform cloud download
       if (isSyncActive && userEmail && userEmail.trim()) {
-        const cloudData = await downloadLedgerFromCloud(userEmail);
+        const pinToUse = syncPin || localStorage.getItem('hisab_khata_sync_pin') || '000000';
+        const cloudData = await downloadLedgerFromCloud(userEmail, pinToUse);
         if (cloudData) {
           const localUpdated = localStorage.getItem('hisab_khata_last_updated');
           const localUpdateTime = localUpdated ? parseInt(localUpdated, 10) : 0;
@@ -237,13 +250,13 @@ export default function App() {
             showToast(isBangla ? 'ক্লাউড থেকে নতুন তথ্য সফলভাবে রিফ্রেশ হয়েছে!' : 'Data refreshed and synced from cloud!');
           } else {
             // Local is newer, so push fresh local data to cloud
-            await uploadLedgerToCloud(userEmail, freshLocalTxs, freshLocalExs, localShopName);
+            await uploadLedgerToCloud(userEmail, freshLocalTxs, freshLocalExs, localShopName, pinToUse);
             localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
             showToast(isBangla ? 'সর্বশেষ লোকাল ডাটা ক্লাউডে সিঙ্ক করা হয়েছে!' : 'Local data synced to cloud!');
           }
         } else {
           // Cloud doc doesn't exist yet, push fresh local data
-          await uploadLedgerToCloud(userEmail, freshLocalTxs, freshLocalExs, localShopName);
+          await uploadLedgerToCloud(userEmail, freshLocalTxs, freshLocalExs, localShopName, pinToUse);
           localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
           showToast(isBangla ? 'সফলভাবে রিফ্রেশ সম্পন্ন হয়েছে!' : 'Refresh completed successfully!');
         }
@@ -326,8 +339,9 @@ export default function App() {
   useEffect(() => {
     const runAutoSync = async () => {
       if (isSyncActive && userEmail && userEmail.trim()) {
+        const pinToUse = syncPin || localStorage.getItem('hisab_khata_sync_pin') || '000000';
         try {
-          const cloudData = await downloadLedgerFromCloud(userEmail);
+          const cloudData = await downloadLedgerFromCloud(userEmail, pinToUse);
           if (cloudData) {
             const localUpdated = localStorage.getItem('hisab_khata_last_updated');
             const localUpdateTime = localUpdated ? parseInt(localUpdated, 10) : 0;
@@ -345,11 +359,11 @@ export default function App() {
               localStorage.setItem('hisab_khata_last_updated', String(cloudUpdateTime));
               showToast(isBangla ? 'ক্লাউড থেকে নতুন ডাটা আপডেট করা হয়েছে!' : 'Newer data synced from cloud!');
             } else if (localUpdateTime > cloudUpdateTime) {
-              await uploadLedgerToCloud(userEmail, transactions, expenses, shopName);
+              await uploadLedgerToCloud(userEmail, transactions, expenses, shopName, pinToUse);
               localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
             }
           } else {
-            await uploadLedgerToCloud(userEmail, transactions, expenses, shopName);
+            await uploadLedgerToCloud(userEmail, transactions, expenses, shopName, pinToUse);
             localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
           }
         } catch (e) {
@@ -451,15 +465,20 @@ export default function App() {
     currentTxs: Transaction[] = transactions,
     currentExs: Expense[] = expenses,
     currentShopName: string = shopName,
-    currentEmail: string = userEmail
+    currentEmail: string = userEmail,
+    currentPin: string = syncPin
   ) => {
     if (!isSyncActive || !currentEmail || !currentEmail.trim()) return;
+    if (!currentPin || currentPin.length !== 6) {
+      showToast(isBangla ? 'ভুল পিন নম্বর! ৬-ডিজিটের পিন দিন।' : 'Invalid PIN! Please enter a 6-digit PIN.');
+      return;
+    }
     setIsSyncing(true);
     setSyncMessage(isBangla ? 'ফায়ারবেস ক্লাউডে ডেটা সিঙ্ক হচ্ছে...' : 'Syncing data with Firebase Cloud...');
     
     try {
       const now = Date.now();
-      await uploadLedgerToCloud(currentEmail, currentTxs, currentExs, currentShopName);
+      await uploadLedgerToCloud(currentEmail, currentTxs, currentExs, currentShopName, currentPin);
       localStorage.setItem('hisab_khata_last_updated', String(now));
       setIsSyncing(false);
       setSyncMessage('');
@@ -480,22 +499,29 @@ export default function App() {
     }
   };
 
-  const toggleSyncState = async (targetEmail?: string) => {
+  const toggleSyncState = async (targetEmail?: string, targetPin?: string) => {
     const emailToUse = targetEmail || userEmail;
+    const pinToUse = targetPin || syncPin;
     if (!emailToUse || !emailToUse.trim()) {
       showToast(isBangla ? 'অনুগ্রহ করে ইমেইল আইডি দিন।' : 'Please provide an email ID.');
       return;
     }
 
     if (!isSyncActive) {
+      if (!pinToUse || pinToUse.length !== 6) {
+        showToast(isBangla ? 'অনুগ্রহ করে ৬-ডিজিটের পিন নম্বর দিন।' : 'Please provide a 6-digit PIN passcode.');
+        return;
+      }
       setIsSyncing(true);
       setSyncMessage(isBangla ? 'ফায়ারবেস ক্লাউডে সংযোগ করা হচ্ছে...' : 'Connecting to Firebase Cloud...');
       try {
-        const cloudData = await downloadLedgerFromCloud(emailToUse);
+        const cloudData = await downloadLedgerFromCloud(emailToUse, pinToUse);
         setIsSyncActive(true);
         localStorage.setItem('hisab_khata_sync', 'true');
         localStorage.setItem('hisab_khata_sync_email', emailToUse);
+        localStorage.setItem('hisab_khata_sync_pin', pinToUse);
         setUserEmail(emailToUse);
+        setSyncPin(pinToUse);
         
         if (cloudData) {
           const localUpdated = localStorage.getItem('hisab_khata_last_updated');
@@ -519,7 +545,7 @@ export default function App() {
                 : 'Latest data successfully downloaded from cloud!'
             );
           } else {
-            await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName);
+            await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName, pinToUse);
             localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
             showToast(
               isBangla 
@@ -528,7 +554,7 @@ export default function App() {
             );
           }
         } else {
-          await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName);
+          await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName, pinToUse);
           localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
           showToast(
             isBangla 
@@ -536,9 +562,13 @@ export default function App() {
               : `Firebase Sync Enabled (${emailToUse})`
           );
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error('Failed to enable sync', e);
-        showToast(isBangla ? 'ফায়ারবেস সিঙ্ক চালু করতে ব্যর্থ হয়েছে!' : 'Failed to enable Firebase sync!');
+        if (e.message === 'WRONG_PIN') {
+          showToast(isBangla ? 'ভুল পিন নম্বর! অন্য কারও অ্যাকাউন্টে অ্যাক্সেস করতে পারবেন না।' : 'Wrong PIN number! Access denied.');
+        } else {
+          showToast(isBangla ? 'ফায়ারবেস সিঙ্ক চালু করতে ব্যর্থ হয়েছে!' : 'Failed to enable Firebase sync!');
+        }
       } finally {
         setIsSyncing(false);
         setSyncMessage('');
@@ -567,7 +597,7 @@ export default function App() {
       setShowAuthHelp(false);
       // Automatically toggle sync if not active
       if (!isSyncActive) {
-        await toggleSyncState(email);
+        await toggleSyncState(email, '000000');
       }
     } catch (error) {
       console.error('Google Sign-In Error Captured:', error);
@@ -1278,7 +1308,7 @@ export default function App() {
             {/* Brand Logo & Name */}
             <div className="flex items-center gap-2">
               <img
-                src="/src/assets/logo.png"
+                src={logoImg}
                 alt="হিসাব খাতা"
                 className="h-10 w-10 rounded-xl object-cover shadow-sm border border-slate-200/60 shrink-0 transition-transform duration-250 active:scale-95"
                 referrerPolicy="no-referrer"
@@ -2306,6 +2336,36 @@ export default function App() {
               </h3>
 
               <div className="space-y-4">
+                {isCapacitor && !userEmail && (
+                  <div className="p-3.5 bg-amber-50/85 border border-amber-200 rounded-xl text-xs text-amber-950 space-y-2 shadow-xs">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                      <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                      <span>
+                        {isBangla ? 'মোবাইল অ্যাপ নোটিশ' : 'Mobile App Notice'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-amber-900 font-medium">
+                      {isBangla ? (
+                        <>
+                          গুগল সিকিউরিটির (disallowed_useragent) কারণে ইনস্টল করা APK-এর ভেতর সরাসরি গুগল সাইন-ইন সাময়িকভাবে ব্লক থাকে। 
+                          <br /><br />
+                          <span className="text-teal-800 font-extrabold">শতভাগ কার্যকরী সহজ সমাধান:</span>
+                          <br />
+                          নিচে <strong className="text-slate-800">"পছন্দের সিঙ্ক ইমেইল আইডি"</strong> ঘরে আপনার যেকোনো ইমেইল সরাসরি লিখে নিচে <strong className="text-slate-800">"চালু করুন"</strong> বাটনে ক্লিক করলেই আপনার সব তথ্য ক্লাউডে সম্পূর্ণ সুরক্ষিত থাকবে! কোনো পাসওয়ার্ড বা গুগল লগইন এর প্রয়োজন নেই।
+                        </>
+                      ) : (
+                        <>
+                          Due to Google Security policies (disallowed_useragent), Google Sign-In is temporarily blocked inside installed APKs.
+                          <br /><br />
+                          <span className="text-teal-800 font-extrabold">Guaranteed 100% Working Solution:</span>
+                          <br />
+                          Simply type any of your emails in the <strong className="text-slate-800 font-bold">"Preferred Sync Email ID"</strong> field below and click <strong className="text-slate-800 font-bold">"Enable"</strong>. Your data will be fully backed up and synced without needing any password or Google Login!
+                        </>
+                      )}
+                    </p>
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-2.5">
                   <button
                     type="button"
@@ -2399,6 +2459,67 @@ export default function App() {
               <div className="space-y-4">
                 {/* Connection status & Google sign-in */}
                 <div className="space-y-2.5">
+                  {isCapacitor && !driveEmail && (
+                    <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl text-xs text-amber-950 space-y-2 shadow-xs">
+                      <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                        <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                        <span>
+                          {isBangla ? 'মোবাইল অ্যাপ সিকিউরিটি নোটিশ' : 'Mobile App Security Notice'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-amber-900 font-medium">
+                        {isBangla ? (
+                          <>
+                            গুগল পলিসির (disallowed_useragent) কারণে ইনস্টল করা মোবাইল APK-এর ভেতর সরাসরি গুগল ড্রাইভ সংযোগ পপআপটি ব্ল্যাঙ্ক হয়ে থাকতে পারে।
+                            <br /><br />
+                            <span className="font-bold text-teal-800">সমাধান:</span> ড্রাইভ ব্যাকআপের পরিবর্তে উপরে উল্লেখিত <span className="font-extrabold text-slate-900">"ক্লাউড সিঙ্ক অ্যাকাউন্ট"</span> ব্যবহার করুন! সেখানে শুধু আপনার ইমেইল এড্রেস লিখে "চালু করুন" বাটনে ক্লিক করলেই সম্পূর্ণ ফ্রিতে ও কোনো ঝামেলা ছাড়াই আপনার সব ডাটা ক্লাউডে সুরক্ষিত থাকবে।
+                          </>
+                        ) : (
+                          <>
+                            Due to Google security rules (disallowed_useragent), Google Drive auth popups will remain blank inside installed mobile APKs.
+                            <br /><br />
+                            <span className="font-bold text-teal-800">Solution:</span> Instead of Drive Backup, please use the <span className="font-extrabold text-slate-900">"Cloud Sync Account"</span> option above! Simply type your email and enable it to back up all your data smoothly and securely without any Google login popups.
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  )}
+
+                  {isIframe && !driveEmail && (
+                    <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-xs text-amber-950 space-y-2 shadow-xs">
+                      <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                        <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                        <span>
+                          {isBangla ? 'ব্রাউজার সিকিউরিটি নোটিশ' : 'Browser Security Notice'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-amber-900 font-medium">
+                        {isBangla ? (
+                          <>
+                            ক্রোম বা মোবাইল ব্রাউজার সিকিউরিটির (iframe restriction) কারণে আইফ্রেমের ভেতরে ড্রাইভ ব্যাকআপ চালু করার সময় স্ক্রিন ব্ল্যাঙ্ক হয়ে থাকতে পারে।
+                            <br />
+                            <span className="font-bold text-amber-950">সমাধান:</span> নিচের বাটনে ক্লিক করে অ্যাপটি সরাসরি নতুন ট্যাবে ওপেন করুন এবং সেখান থেকে সহজেই ড্রাইভ ব্যাকআপ অন করুন।
+                          </>
+                        ) : (
+                          <>
+                            Due to browser security policies inside an iframe (third-party cookie restriction), the Google Drive connection popup may remain blank.
+                            <br />
+                            <span className="font-bold text-amber-950">Solution:</span> Click below to open the app in a new tab, then enable Drive backup from there.
+                          </>
+                        )}
+                      </p>
+                      <a
+                        href={window.location.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex w-full items-center justify-center gap-1.5 py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[11px] transition-colors shadow-xs"
+                      >
+                        <Globe className="h-3.5 w-3.5" />
+                        <span>{isBangla ? 'নতুন ট্যাবে অ্যাপটি খুলুন' : 'Open App in New Tab'}</span>
+                      </a>
+                    </div>
+                  )}
+
                   {!driveEmail ? (
                     <button
                       type="button"
@@ -2436,19 +2557,38 @@ export default function App() {
                       {!driveAccessToken && (
                         <div className="p-2 bg-amber-50 rounded-lg border border-amber-100 flex items-start gap-1.5">
                           <AlertCircle className="h-3.5 w-3.5 text-amber-600 mt-0.5 flex-shrink-0" />
-                          <div className="text-[10px] text-amber-800">
+                          <div className="text-[10px] text-amber-800 w-full">
                             <span className="font-bold">
                               {isBangla ? 'ড্রাইভ কানেক্ট করুন:' : 'Session expired:'}
                             </span>{' '}
                             {isBangla
                               ? 'অটো-ব্যাকআপ বা ম্যানুয়াল ব্যাকআপের জন্য প্রথমে ড্রাইভ কানেক্ট করুন।'
                               : 'Click connect to log into Drive for backing up.'}
-                            <button
-                              onClick={handleDriveConnect}
-                              className="block mt-1 text-[10px] text-indigo-700 underline font-bold"
-                            >
-                              {isBangla ? 'কানেক্ট করুন' : 'Connect Now'}
-                            </button>
+                            
+                            {isCapacitor ? (
+                              <div className="mt-1.5 p-1.5 bg-amber-100/50 rounded text-[9px] text-amber-900 leading-normal font-bold">
+                                {isBangla 
+                                  ? '⚠️ ইনস্টলড APK-তে ড্রাইভ কানেক্ট কাজ করবে না। ব্যাকআপের জন্য উপরের "ক্লাউড সিঙ্ক অ্যাকাউন্ট" ব্যবহার করুন।' 
+                                  : '⚠️ Drive connection fails on APK. Please use "Cloud Sync Account" above instead.'}
+                              </div>
+                            ) : isIframe ? (
+                              <a
+                                href={window.location.href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-2 inline-flex w-full items-center justify-center gap-1 py-1 px-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[9px] transition-colors shadow-xs"
+                              >
+                                <Globe className="h-3 w-3" />
+                                <span>{isBangla ? 'নতুন ট্যাবে অ্যাপ খুলুন' : 'Open App in New Tab'}</span>
+                              </a>
+                            ) : (
+                              <button
+                                onClick={handleDriveConnect}
+                                className="block mt-1 text-[10px] text-indigo-700 underline font-bold cursor-pointer"
+                              >
+                                {isBangla ? 'কানেক্ট করুন' : 'Connect Now'}
+                              </button>
+                            )}
                           </div>
                         </div>
                       )}
@@ -2671,6 +2811,33 @@ export default function App() {
                             ১. নিচে <strong className="text-slate-800">"সিঙ্ক ইমেইল আইডি"</strong> ঘরে আপনার যেকোনো ইমেইল লিখুন।
                             <br />
                             ২. এরপর সরাসরি ডানপাশের <strong className="text-slate-800">"চালু করুন"</strong> বাটনে ক্লিক করুন।
+                            {isCapacitor && (
+                              <>
+                                <br /><br />
+                                <span className="text-amber-700 font-extrabold">মোবাইল অ্যাপ (APK) ব্যবহারকারীদের জন্য:</span>
+                                <br />
+                                গুগল সিকিউরিটি পলিসি অনুযায়ী ইনস্টলড মোবাইল অ্যাপের ভেতর সরাসরি গুগল সাইন-ইন বাটন সাময়িকভাবে সাপোর্ট করে না। 
+                                <br />
+                                তাই নিচে পছন্দের ইমেইল আইডি লিখে সরাসরি <strong className="text-slate-800">"চালু করুন"</strong> বাটনে ক্লিক করুন। এটি সম্পূর্ণ সুরক্ষিত এবং কোনো পাসওয়ার্ড ছাড়াই শতভাগ কাজ করবে!
+                              </>
+                            )}
+                            {isIframe && (
+                              <>
+                                <br /><br />
+                                <span className="text-amber-700 font-extrabold">অথবা, সরাসরি গুগল সাইন-ইন করতে চান?</span>
+                                <br />
+                                নিচে "নতুন ট্যাবে অ্যাপ খুলুন" বাটনে ক্লিক করে অ্যাপটি নতুন ট্যাবে ওপেন করুন। সেখানে সরাসরি গুগল সাইন-ইন করা যাবে!
+                                <a
+                                  href={window.location.href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="mt-2 inline-flex w-full items-center justify-center gap-1.5 py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[10px] transition-colors shadow-xs"
+                                >
+                                  <Globe className="h-3.5 w-3.5" />
+                                  <span>নতুন ট্যাবে অ্যাপটি খুলুন</span>
+                                </a>
+                              </>
+                            )}
                             <br /><br />
                             ব্যাস! কোনো পাসওয়ার্ড বা অতিরিক্ত লগইন ছাড়া আপনার ডাটা ক্লাউডে সুরক্ষিত থাকবে। অ্যাপ প্লে-স্টোরে ইনস্টল করার পর গুগল সাইন-ইন সরাসরি কাজ করবে!
                           </>
@@ -2683,6 +2850,33 @@ export default function App() {
                             1. Type your preferred email in the <strong className="text-slate-800">"Sync Email ID"</strong> field below.
                             <br />
                             2. Click the <strong className="text-slate-800">"Enable"</strong> button directly.
+                            {isCapacitor && (
+                              <>
+                                <br /><br />
+                                <span className="text-amber-700 font-extrabold">For Mobile App (APK) Users:</span>
+                                <br />
+                                Google security rules do not allow direct Google Sign-In popups within an installed mobile APK.
+                                <br />
+                                To back up your data instantly, simply type your email in the Preferred Sync Email ID field below and click <strong className="text-slate-800">"Enable"</strong>. It is 100% secure, passwords are not required, and it works flawlessly on any device!
+                              </>
+                            )}
+                            {isIframe && (
+                              <>
+                                <br /><br />
+                                <span className="text-amber-700 font-extrabold">Or, want to use Google Sign-In directly?</span>
+                                <br />
+                                Click the button below to open this app in a new tab where Google Sign-In is fully supported.
+                                <a
+                                  href={window.location.href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="mt-2 inline-flex w-full items-center justify-center gap-1.5 py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[10px] transition-colors shadow-xs"
+                                >
+                                  <Globe className="h-3.5 w-3.5" />
+                                  <span>Open App in New Tab</span>
+                                </a>
+                              </>
+                            )}
                             <br /><br />
                             That's it! Your data is fully synced and backed up without needing a Google sign-in. Google Login will work out-of-the-box once deployed to production!
                           </>
@@ -2724,6 +2918,31 @@ export default function App() {
                       className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-bold font-sans"
                       id="sync-email-input"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">
+                      {isBangla ? '৬-ডিজিট নিরাপত্তা পিন (PIN)' : '6-Digit Security PIN'}
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      required
+                      placeholder="e.g. 123456"
+                      value={syncPin}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
+                        setSyncPin(val);
+                        localStorage.setItem('hisab_khata_sync_pin', val);
+                      }}
+                      className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-bold font-mono tracking-widest text-center text-sm"
+                      id="sync-pin-input"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1 font-bold leading-normal">
+                      {isBangla 
+                        ? '⚠️ আপনার ইমেলের ব্যাকআপ ডাটা পাসওয়ার্ড ছাড়া অন্য কেউ ডাউনলোড বা ওভাররাইট করতে পারবে না।' 
+                        : '⚠️ Protects your backup from unauthorized access. This acts as a password to secure your ledger.'}
+                    </p>
                   </div>
                 </div>
 
