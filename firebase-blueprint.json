@@ -30,14 +30,15 @@
     },
     "UserLedgerData": {
       "title": "User Ledger Data",
-      "description": "Ledger data encrypted with a 6-digit PIN containing transactions, expenses, and shopName",
+      "description": "Ledger data containing all transactions and expenses synced for a specific email",
       "type": "object",
       "properties": {
-        "encryptedData": { "type": "string" },
-        "passcodeHash": { "type": "string" },
+        "transactions": { "type": "array" },
+        "expenses": { "type": "array" },
+        "shopName": { "type": "string" },
         "updatedAt": { "type": "number" }
       },
-      "required": ["encryptedData", "passcodeHash", "updatedAt"]
+      "required": ["transactions", "expenses", "shopName", "updatedAt"]
     }
   },
   "firestore": {

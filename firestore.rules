@@ -14,24 +14,21 @@ service cloud.firestore {
           && email.size() <= 120;
     }
 
-    // Helper to validate UserLedgerData schema (Encrypted)
+    // Helper to validate UserLedgerData schema
     function isValidUserLedgerData(data) {
-      return data.keys().hasAll(['encryptedData', 'passcodeHash', 'updatedAt'])
-          && data.keys().size() == 3
-          && data.encryptedData is string
-          && data.encryptedData.size() <= 1048576
-          && data.passcodeHash is string
-          && data.passcodeHash.size() == 64
+      return data.keys().hasAll(['transactions', 'expenses', 'shopName', 'updatedAt'])
+          && data.keys().size() == 4
+          && data.transactions is list
+          && data.expenses is list
+          && data.shopName is string
+          && data.shopName.size() <= 150
           && data.updatedAt is int;
     }
 
     match /users/{email} {
       allow get: if isValidEmail(email);
-      allow create: if isValidEmail(email) 
-                    && isValidUserLedgerData(request.resource.data);
-      allow update: if isValidEmail(email) 
-                    && isValidUserLedgerData(request.resource.data)
-                    && (resource.data.get('passcodeHash', null) == null || request.resource.data.passcodeHash == resource.data.passcodeHash);
+      allow create, update: if isValidEmail(email) 
+                             && isValidUserLedgerData(request.resource.data);
       allow delete: if false;
     }
   }

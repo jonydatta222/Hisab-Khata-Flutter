@@ -136,9 +136,6 @@ export default function App() {
   const [userEmail, setUserEmail] = useState(() => {
     return localStorage.getItem('hisab_khata_sync_email') || '';
   });
-  const [syncPin, setSyncPin] = useState(() => {
-    return localStorage.getItem('hisab_khata_sync_pin') || '';
-  });
   const [shopName, setShopName] = useState(() => {
     return localStorage.getItem('hisab_khata_shop_name') || '';
   });
@@ -229,8 +226,7 @@ export default function App() {
       
       // 2. If sync is active, perform cloud download
       if (isSyncActive && userEmail && userEmail.trim()) {
-        const pinToUse = syncPin || localStorage.getItem('hisab_khata_sync_pin') || '000000';
-        const cloudData = await downloadLedgerFromCloud(userEmail, pinToUse);
+        const cloudData = await downloadLedgerFromCloud(userEmail);
         if (cloudData) {
           const localUpdated = localStorage.getItem('hisab_khata_last_updated');
           const localUpdateTime = localUpdated ? parseInt(localUpdated, 10) : 0;
@@ -250,13 +246,13 @@ export default function App() {
             showToast(isBangla ? 'ক্লাউড থেকে নতুন তথ্য সফলভাবে রিফ্রেশ হয়েছে!' : 'Data refreshed and synced from cloud!');
           } else {
             // Local is newer, so push fresh local data to cloud
-            await uploadLedgerToCloud(userEmail, freshLocalTxs, freshLocalExs, localShopName, pinToUse);
+            await uploadLedgerToCloud(userEmail, freshLocalTxs, freshLocalExs, localShopName);
             localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
             showToast(isBangla ? 'সর্বশেষ লোকাল ডাটা ক্লাউডে সিঙ্ক করা হয়েছে!' : 'Local data synced to cloud!');
           }
         } else {
           // Cloud doc doesn't exist yet, push fresh local data
-          await uploadLedgerToCloud(userEmail, freshLocalTxs, freshLocalExs, localShopName, pinToUse);
+          await uploadLedgerToCloud(userEmail, freshLocalTxs, freshLocalExs, localShopName);
           localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
           showToast(isBangla ? 'সফলভাবে রিফ্রেশ সম্পন্ন হয়েছে!' : 'Refresh completed successfully!');
         }
@@ -339,9 +335,8 @@ export default function App() {
   useEffect(() => {
     const runAutoSync = async () => {
       if (isSyncActive && userEmail && userEmail.trim()) {
-        const pinToUse = syncPin || localStorage.getItem('hisab_khata_sync_pin') || '000000';
         try {
-          const cloudData = await downloadLedgerFromCloud(userEmail, pinToUse);
+          const cloudData = await downloadLedgerFromCloud(userEmail);
           if (cloudData) {
             const localUpdated = localStorage.getItem('hisab_khata_last_updated');
             const localUpdateTime = localUpdated ? parseInt(localUpdated, 10) : 0;
@@ -359,11 +354,11 @@ export default function App() {
               localStorage.setItem('hisab_khata_last_updated', String(cloudUpdateTime));
               showToast(isBangla ? 'ক্লাউড থেকে নতুন ডাটা আপডেট করা হয়েছে!' : 'Newer data synced from cloud!');
             } else if (localUpdateTime > cloudUpdateTime) {
-              await uploadLedgerToCloud(userEmail, transactions, expenses, shopName, pinToUse);
+              await uploadLedgerToCloud(userEmail, transactions, expenses, shopName);
               localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
             }
           } else {
-            await uploadLedgerToCloud(userEmail, transactions, expenses, shopName, pinToUse);
+            await uploadLedgerToCloud(userEmail, transactions, expenses, shopName);
             localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
           }
         } catch (e) {
@@ -465,20 +460,15 @@ export default function App() {
     currentTxs: Transaction[] = transactions,
     currentExs: Expense[] = expenses,
     currentShopName: string = shopName,
-    currentEmail: string = userEmail,
-    currentPin: string = syncPin
+    currentEmail: string = userEmail
   ) => {
     if (!isSyncActive || !currentEmail || !currentEmail.trim()) return;
-    if (!currentPin || currentPin.length !== 6) {
-      showToast(isBangla ? 'ভুল পিন নম্বর! ৬-ডিজিটের পিন দিন।' : 'Invalid PIN! Please enter a 6-digit PIN.');
-      return;
-    }
     setIsSyncing(true);
     setSyncMessage(isBangla ? 'ফায়ারবেস ক্লাউডে ডেটা সিঙ্ক হচ্ছে...' : 'Syncing data with Firebase Cloud...');
     
     try {
       const now = Date.now();
-      await uploadLedgerToCloud(currentEmail, currentTxs, currentExs, currentShopName, currentPin);
+      await uploadLedgerToCloud(currentEmail, currentTxs, currentExs, currentShopName);
       localStorage.setItem('hisab_khata_last_updated', String(now));
       setIsSyncing(false);
       setSyncMessage('');
@@ -499,29 +489,22 @@ export default function App() {
     }
   };
 
-  const toggleSyncState = async (targetEmail?: string, targetPin?: string) => {
+  const toggleSyncState = async (targetEmail?: string) => {
     const emailToUse = targetEmail || userEmail;
-    const pinToUse = targetPin || syncPin;
     if (!emailToUse || !emailToUse.trim()) {
       showToast(isBangla ? 'অনুগ্রহ করে ইমেইল আইডি দিন।' : 'Please provide an email ID.');
       return;
     }
 
     if (!isSyncActive) {
-      if (!pinToUse || pinToUse.length !== 6) {
-        showToast(isBangla ? 'অনুগ্রহ করে ৬-ডিজিটের পিন নম্বর দিন।' : 'Please provide a 6-digit PIN passcode.');
-        return;
-      }
       setIsSyncing(true);
       setSyncMessage(isBangla ? 'ফায়ারবেস ক্লাউডে সংযোগ করা হচ্ছে...' : 'Connecting to Firebase Cloud...');
       try {
-        const cloudData = await downloadLedgerFromCloud(emailToUse, pinToUse);
+        const cloudData = await downloadLedgerFromCloud(emailToUse);
         setIsSyncActive(true);
         localStorage.setItem('hisab_khata_sync', 'true');
         localStorage.setItem('hisab_khata_sync_email', emailToUse);
-        localStorage.setItem('hisab_khata_sync_pin', pinToUse);
         setUserEmail(emailToUse);
-        setSyncPin(pinToUse);
         
         if (cloudData) {
           const localUpdated = localStorage.getItem('hisab_khata_last_updated');
@@ -545,7 +528,7 @@ export default function App() {
                 : 'Latest data successfully downloaded from cloud!'
             );
           } else {
-            await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName, pinToUse);
+            await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName);
             localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
             showToast(
               isBangla 
@@ -554,7 +537,7 @@ export default function App() {
             );
           }
         } else {
-          await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName, pinToUse);
+          await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName);
           localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
           showToast(
             isBangla 
@@ -562,13 +545,9 @@ export default function App() {
               : `Firebase Sync Enabled (${emailToUse})`
           );
         }
-      } catch (e: any) {
+      } catch (e) {
         console.error('Failed to enable sync', e);
-        if (e.message === 'WRONG_PIN') {
-          showToast(isBangla ? 'ভুল পিন নম্বর! অন্য কারও অ্যাকাউন্টে অ্যাক্সেস করতে পারবেন না।' : 'Wrong PIN number! Access denied.');
-        } else {
-          showToast(isBangla ? 'ফায়ারবেস সিঙ্ক চালু করতে ব্যর্থ হয়েছে!' : 'Failed to enable Firebase sync!');
-        }
+        showToast(isBangla ? 'ফায়ারবেস সিঙ্ক চালু করতে ব্যর্থ হয়েছে!' : 'Failed to enable Firebase sync!');
       } finally {
         setIsSyncing(false);
         setSyncMessage('');
@@ -597,7 +576,7 @@ export default function App() {
       setShowAuthHelp(false);
       // Automatically toggle sync if not active
       if (!isSyncActive) {
-        await toggleSyncState(email, '000000');
+        await toggleSyncState(email);
       }
     } catch (error) {
       console.error('Google Sign-In Error Captured:', error);
@@ -2918,31 +2897,6 @@ export default function App() {
                       className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-bold font-sans"
                       id="sync-email-input"
                     />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-600 mb-1">
-                      {isBangla ? '৬-ডিজিট নিরাপত্তা পিন (PIN)' : '6-Digit Security PIN'}
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={6}
-                      required
-                      placeholder="e.g. 123456"
-                      value={syncPin}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
-                        setSyncPin(val);
-                        localStorage.setItem('hisab_khata_sync_pin', val);
-                      }}
-                      className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-bold font-mono tracking-widest text-center text-sm"
-                      id="sync-pin-input"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-1 font-bold leading-normal">
-                      {isBangla 
-                        ? '⚠️ আপনার ইমেলের ব্যাকআপ ডাটা পাসওয়ার্ড ছাড়া অন্য কেউ ডাউনলোড বা ওভাররাইট করতে পারবে না।' 
-                        : '⚠️ Protects your backup from unauthorized access. This acts as a password to secure your ledger.'}
-                    </p>
                   </div>
                 </div>
 
