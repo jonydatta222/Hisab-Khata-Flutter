@@ -48,7 +48,9 @@ import {
   auth, 
   signInWithGoogle, 
   signInWithGoogleForDrive,
-  logOutFromGoogle 
+  logOutFromGoogle,
+  loginWithEmailAndPassword,
+  registerWithEmailAndPassword
 } from './firebase';
 
 import { 
@@ -171,6 +173,8 @@ export default function App() {
   const [userEmail, setUserEmail] = useState(() => {
     return localStorage.getItem('hisab_khata_sync_email') || '';
   });
+  const [syncPassword, setSyncPassword] = useState('');
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [shopName, setShopName] = useState(() => {
     return localStorage.getItem('hisab_khata_shop_name') || '';
   });
@@ -367,12 +371,18 @@ export default function App() {
     }
   }, []);
 
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
   // --- Listen for Firebase Auth changes ---
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
+      setCurrentUser(user);
       if (user && user.email) {
         setUserEmail(user.email);
         localStorage.setItem('hisab_khata_sync_email', user.email);
+      } else {
+        setIsSyncActive(false);
+        localStorage.setItem('hisab_khata_sync', 'false');
       }
     });
     return () => unsubscribe();
@@ -663,6 +673,83 @@ export default function App() {
           ? 'ব্রাউজারজনিত কারণে গুগল সাইন-ইন অফলাইন! সহজ বিকল্প উপায়টি নিচে দেখুন।' 
           : 'Google sign-in restricted by browser. See alternative sync solution below!'
       );
+    } finally {
+      setIsSyncing(false);
+      setSyncMessage('');
+    }
+  };
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userEmail || !userEmail.trim()) {
+      showToast(isBangla ? 'অনুগ্রহ করে ইমেইল আইডি দিন।' : 'Please provide an email ID.');
+      return;
+    }
+    if (!syncPassword || syncPassword.length < 6) {
+      showToast(isBangla ? 'পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।' : 'Password must be at least 6 characters.');
+      return;
+    }
+
+    setIsSyncing(true);
+    setSyncMessage(isBangla ? 'লগইন করা হচ্ছে...' : 'Logging in...');
+    try {
+      const email = await loginWithEmailAndPassword(userEmail.trim().toLowerCase(), syncPassword);
+      showToast(isBangla ? `লগইন সফল হয়েছে: ${email}` : `Login successful: ${email}`);
+      setSyncPassword('');
+      // Automatically toggle sync if not active
+      if (!isSyncActive) {
+        await toggleSyncState(email);
+      }
+    } catch (error: any) {
+      console.error('Email Login Error:', error);
+      let errorMsg = isBangla ? 'লগইন ব্যর্থ হয়েছে! পাসওয়ার্ড চেক করুন।' : 'Login failed! Check password.';
+      if (error?.code === 'auth/user-not-found') {
+        errorMsg = isBangla ? 'এই ইমেইল দিয়ে কোনো অ্যাকাউন্ট পাওয়া যায়নি। প্রথমে নিবন্ধন করুন।' : 'No account found with this email. Please register first.';
+      } else if (error?.code === 'auth/wrong-password') {
+        errorMsg = isBangla ? 'ভুল পাসওয়ার্ড! দয়া করে সঠিক পাসওয়ার্ড দিন।' : 'Incorrect password! Please try again.';
+      } else if (error?.code === 'auth/invalid-credential') {
+        errorMsg = isBangla ? 'ভুল ইমেইল বা পাসওয়ার্ড!' : 'Invalid email or password!';
+      }
+      showToast(errorMsg);
+    } finally {
+      setIsSyncing(false);
+      setSyncMessage('');
+    }
+  };
+
+  const handleEmailRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userEmail || !userEmail.trim()) {
+      showToast(isBangla ? 'অনুগ্রহ করে ইমেইল আইডি দিন।' : 'Please provide an email ID.');
+      return;
+    }
+    if (!syncPassword || syncPassword.length < 6) {
+      showToast(isBangla ? 'পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।' : 'Password must be at least 6 characters.');
+      return;
+    }
+
+    setIsSyncing(true);
+    setSyncMessage(isBangla ? 'নতুন অ্যাকাউন্ট তৈরি করা হচ্ছে...' : 'Creating new account...');
+    try {
+      const email = await registerWithEmailAndPassword(userEmail.trim().toLowerCase(), syncPassword);
+      showToast(isBangla ? `নিবন্ধন ও লগইন সফল হয়েছে: ${email}` : `Registration and login successful: ${email}`);
+      setSyncPassword('');
+      setIsRegisterMode(false);
+      // Automatically toggle sync if not active
+      if (!isSyncActive) {
+        await toggleSyncState(email);
+      }
+    } catch (error: any) {
+      console.error('Email Register Error:', error);
+      let errorMsg = isBangla ? 'নিবন্ধন ব্যর্থ হয়েছে!' : 'Registration failed!';
+      if (error?.code === 'auth/email-already-in-use') {
+        errorMsg = isBangla ? 'এই ইমেইলটি ইতিমধ্যে ব্যবহৃত হচ্ছে। লগইন করার চেষ্টা করুন।' : 'This email is already in use. Try logging in.';
+      } else if (error?.code === 'auth/invalid-email') {
+        errorMsg = isBangla ? 'সটীক ইমেইল আইডি দিন।' : 'Please enter a valid email.';
+      } else if (error?.code === 'auth/weak-password') {
+        errorMsg = isBangla ? 'পাসওয়ার্ডটি দুর্বল! কমপক্ষে ৬ অক্ষরের পাসওয়ার্ড দিন।' : 'Password is too weak! Use at least 6 characters.';
+      }
+      showToast(errorMsg);
     } finally {
       setIsSyncing(false);
       setSyncMessage('');
@@ -3211,207 +3298,267 @@ export default function App() {
                 </p>
 
                 <div className="space-y-3">
-                  <div className="flex flex-col gap-2">
-                    <button
-                      type="button"
-                      onClick={handleGoogleLogin}
-                      disabled={isSyncing}
-                      className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-bold text-slate-700 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
-                    >
-                      <svg className="h-4 w-4" viewBox="0 0 24 24">
-                        <path
-                          fill="#EA4335"
-                          d="M12.24 10.285V14.4h6.887c-.275 1.565-1.88 4.6-6.887 4.6-4.33 0-7.859-3.578-7.859-8s3.53-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l3.227-3.103C18.28 1.845 15.548 1 12.24 1A11 11 0 0 0 1.24 12a11 11 0 0 0 11 11c11.5 0 12.24-8.09 11.965-11.715H12.24z"
-                        />
-                      </svg>
-                      <span>{isBangla ? 'গুগল দিয়ে সাইন-ইন করুন' : 'Sign in with Google'}</span>
-                    </button>
-                    
-                    {userEmail && (
-                      <div className="flex items-center justify-between px-2.5 py-1.5 bg-teal-50/50 rounded-lg border border-teal-100/50">
-                        <span className="text-[10px] text-teal-800 font-bold truncate max-w-[200px]">
-                          {userEmail}
-                        </span>
+                  {currentUser ? (
+                    <div className="space-y-4">
+                      <div className="p-4 bg-emerald-50/50 border border-emerald-100 rounded-2xl">
+                        <div className="flex items-center gap-2 mb-2 text-emerald-800 font-black text-xs">
+                          <Check className="h-4 w-4 bg-emerald-100 text-emerald-700 p-0.5 rounded-full" />
+                          <span>{isBangla ? 'নিরাপদ অ্যাকাউন্ট সংযুক্ত' : 'Secure Account Connected'}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 font-bold break-all">
+                          {isBangla ? 'ইমেইল:' : 'Email:'} <span className="text-slate-800">{currentUser.email}</span>
+                        </p>
                         <button
                           type="button"
                           onClick={handleGoogleLogout}
-                          className="text-[10px] text-rose-600 hover:text-rose-800 font-extrabold cursor-pointer hover:bg-rose-50 px-2 py-0.5 rounded"
+                          className="mt-3 text-[10px] text-rose-600 hover:text-rose-800 font-extrabold cursor-pointer hover:bg-rose-50 px-2.5 py-1.5 border border-rose-100 rounded-lg transition-colors flex items-center justify-center gap-1"
                         >
-                          {isBangla ? 'লগআউট' : 'Logout'}
+                          <LogOut className="h-3.5 w-3.5" />
+                          <span>{isBangla ? 'অ্যাকাউন্ট লগআউট করুন' : 'Logout Account'}</span>
                         </button>
                       </div>
-                    )}
-                  </div>
 
-                  {showAuthHelp && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="p-3.5 bg-indigo-50 border border-indigo-150 rounded-xl text-xs text-indigo-950 space-y-2.5 shadow-sm"
-                      id="auth-help-box"
-                    >
-                      <div className="flex items-center gap-1.5 font-black text-indigo-950">
-                        <AlertCircle className="h-4 w-4 text-indigo-600 shrink-0" />
-                        <span>
-                          {isBangla ? 'গুগল সাইন-ইন কেন কাজ করছে না?' : 'Why is Google Sign-In blocked?'}
-                        </span>
-                      </div>
-                      <p className="text-[11px] leading-relaxed text-slate-600 font-bold">
-                        {isBangla ? (
-                          <>
-                            গুগল ক্রোম ও মোবাইল ব্রাউজারের কঠোর সিকিউরিটির কারণে এই টেস্টিং ডোমেইনে ব্রাউজার ডেটা (sessionStorage) শেয়ারিং বন্ধ থাকে, যা গুগল সাইন-ইন সাময়িকভাবে বাধাগ্রস্ত করে।
-                            <br /><br />
-                            <span className="text-teal-700 font-extrabold">শতভাগ কার্যকারী বিকল্প সহজ সমাধান:</span>
-                            <br />
-                            ১. নিচে <strong className="text-slate-800">"সিঙ্ক ইমেইল আইডি"</strong> ঘরে আপনার যেকোনো ইমেইল লিখুন।
-                            <br />
-                            ২. এরপর সরাসরি ডানপাশের <strong className="text-slate-800">"চালু করুন"</strong> বাটনে ক্লিক করুন।
-                            {isCapacitor && (
-                              <>
-                                <br /><br />
-                                <span className="text-amber-700 font-extrabold">মোবাইল অ্যাপ (APK) ব্যবহারকারীদের জন্য:</span>
-                                <br />
-                                গুগল সিকিউরিটি পলিসি অনুযায়ী ইনস্টলড মোবাইল অ্যাপের ভেতর সরাসরি গুগল সাইন-ইন বাটন সাময়িকভাবে সাপোর্ট করে না। 
-                                <br />
-                                তাই নিচে পছন্দের ইমেইল আইডি লিখে সরাসরি <strong className="text-slate-800">"চালু করুন"</strong> বাটনে ক্লিক করুন। এটি সম্পূর্ণ সুরক্ষিত এবং কোনো পাসওয়ার্ড ছাড়াই শতভাগ কাজ করবে!
-                              </>
-                            )}
-                            {isIframe && (
-                              <>
-                                <br /><br />
-                                <span className="text-amber-700 font-extrabold">অথবা, সরাসরি গুগল সাইন-ইন করতে চান?</span>
-                                <br />
-                                নিচে "নতুন ট্যাবে অ্যাপ খুলুন" বাটনে ক্লিক করে অ্যাপটি নতুন ট্যাবে ওপেন করুন। সেখানে সরাসরি গুগল সাইন-ইন করা যাবে!
-                                <a
-                                  href={window.location.href}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="mt-2 inline-flex w-full items-center justify-center gap-1.5 py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[10px] transition-colors shadow-xs"
-                                >
-                                  <Globe className="h-3.5 w-3.5" />
-                                  <span>নতুন ট্যাবে অ্যাপটি খুলুন</span>
-                                </a>
-                              </>
-                            )}
-                            <br /><br />
-                            ব্যাস! কোনো পাসওয়ার্ড বা অতিরিক্ত লগইন ছাড়া আপনার ডাটা ক্লাউডে সুরক্ষিত থাকবে। অ্যাপ প্লে-স্টোরে ইনস্টল করার পর গুগল সাইন-ইন সরাসরি কাজ করবে!
-                          </>
-                        ) : (
-                          <>
-                            Google Chrome restricts cross-domain popups on temporary test environments due to third-party cookie and storage-partitioning security policies.
-                            <br /><br />
-                            <span className="text-teal-700 font-extrabold">Guaranteed Easy Alternative:</span>
-                            <br />
-                            1. Type your preferred email in the <strong className="text-slate-800">"Sync Email ID"</strong> field below.
-                            <br />
-                            2. Click the <strong className="text-slate-800">"Enable"</strong> button directly.
-                            {isCapacitor && (
-                              <>
-                                <br /><br />
-                                <span className="text-amber-700 font-extrabold">For Mobile App (APK) Users:</span>
-                                <br />
-                                Google security rules do not allow direct Google Sign-In popups within an installed mobile APK.
-                                <br />
-                                To back up your data instantly, simply type your email in the Preferred Sync Email ID field below and click <strong className="text-slate-800">"Enable"</strong>. It is 100% secure, passwords are not required, and it works flawlessly on any device!
-                              </>
-                            )}
-                            {isIframe && (
-                              <>
-                                <br /><br />
-                                <span className="text-amber-700 font-extrabold">Or, want to use Google Sign-In directly?</span>
-                                <br />
-                                Click the button below to open this app in a new tab where Google Sign-In is fully supported.
-                                <a
-                                  href={window.location.href}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="mt-2 inline-flex w-full items-center justify-center gap-1.5 py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[10px] transition-colors shadow-xs"
-                                >
-                                  <Globe className="h-3.5 w-3.5" />
-                                  <span>Open App in New Tab</span>
-                                </a>
-                              </>
-                            )}
-                            <br /><br />
-                            That's it! Your data is fully synced and backed up without needing a Google sign-in. Google Login will work out-of-the-box once deployed to production!
-                          </>
-                        )}
-                      </p>
-                      <div className="flex justify-end pt-1 border-t border-indigo-100">
+                      <div className="p-3 bg-slate-50 border border-slate-150 rounded-xl flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {isSyncActive ? (
+                            <Cloud className="h-4 w-4 text-emerald-600 animate-pulse" />
+                          ) : (
+                            <CloudOff className="h-4 w-4 text-rose-500" />
+                          )}
+                          <span className="text-xs font-bold text-slate-700">
+                            {isSyncActive ? (isBangla ? 'সিঙ্ক সক্রিয় আছে' : 'Sync Active') : (isBangla ? 'সিঙ্ক নিষ্ক্রিয় আছে' : 'Sync Inactive')}
+                          </span>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => setShowAuthHelp(false)}
-                          className="text-[10px] font-black text-indigo-700 hover:text-indigo-900 underline cursor-pointer"
+                          onClick={() => toggleSyncState(currentUser.email)}
+                          disabled={isSyncing}
+                          className={`px-3 py-1.5 text-xs font-black rounded-lg border transition-colors cursor-pointer ${
+                            isSyncActive
+                              ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
+                              : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
+                          }`}
                         >
-                          {isBangla ? 'বুঝেছি, এটি লুকান' : 'Got it, hide this'}
+                          {isSyncActive ? (isBangla ? 'বন্ধ করুন' : 'Disable') : (isBangla ? 'চালু করুন' : 'Enable')}
                         </button>
                       </div>
-                    </motion.div>
+
+                      {isSyncActive && (
+                        <button
+                          type="button"
+                          onClick={() => triggerCloudSync(transactions, expenses, shopName, currentUser.email)}
+                          disabled={isSyncing}
+                          className="w-full py-2.5 bg-teal-600 hover:bg-teal-500 disabled:bg-teal-400 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <Cloud className="h-4 w-4 text-white" />
+                          <span>{isBangla ? 'এখনই সিঙ্ক করুন (Force Sync)' : 'Sync Now (Force Sync)'}</span>
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Security warning alert */}
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex gap-2 text-amber-900 text-[11px] leading-relaxed font-bold">
+                        <AlertCircle className="h-4.5 w-4.5 text-amber-600 shrink-0" />
+                        <span>
+                          {isBangla 
+                            ? 'অননুমোদিত প্রবেশ রোধে এখন আপনার খাতা সিঙ্ক করতে গুগল বা ইমেইল ও পাসওয়ার্ড দিয়ে নিরাপদ লগইন আবশ্যক।' 
+                            : 'To prevent unauthorized access, secure login via Google or Email & Password is now required to sync.'}
+                        </span>
+                      </div>
+
+                      {/* Google Login Option */}
+                      <button
+                        type="button"
+                        onClick={handleGoogleLogin}
+                        disabled={isSyncing}
+                        className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-bold text-slate-700 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+                      >
+                        <svg className="h-4 w-4" viewBox="0 0 24 24">
+                          <path
+                            fill="#EA4335"
+                            d="M12.24 10.285V14.4h6.887c-.275 1.565-1.88 4.6-6.887 4.6-4.33 0-7.859-3.578-7.859-8s3.53-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l3.227-3.103C18.28 1.845 15.548 1 12.24 1A11 11 0 0 0 1.24 12a11 11 0 0 0 11 11c11.5 0 12.24-8.09 11.965-11.715H12.24z"
+                          />
+                        </svg>
+                        <span>{isBangla ? 'গুগল দিয়ে নিরাপদ সাইন-ইন' : 'Secure Google Sign-In'}</span>
+                      </button>
+
+                      {showAuthHelp && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          className="p-3.5 bg-indigo-50 border border-indigo-150 rounded-xl text-xs text-indigo-950 space-y-2.5 shadow-sm"
+                          id="auth-help-box"
+                        >
+                          <div className="flex items-center gap-1.5 font-black text-indigo-950">
+                            <AlertCircle className="h-4 w-4 text-indigo-600 shrink-0" />
+                            <span>
+                              {isBangla ? 'গুগল সাইন-ইন কেন কাজ করছে না?' : 'Why is Google Sign-In blocked?'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] leading-relaxed text-slate-600 font-bold">
+                            {isBangla ? (
+                              <>
+                                গুগল ক্রোম ও মোবাইল ব্রাউজারের কঠোর সিকিউরিটির কারণে এই টেস্টিং ডোমেইনে ব্রাউজার ডেটা (sessionStorage) শেয়ারিং বন্ধ থাকে, যা গুগল সাইন-ইন সাময়িকভাবে বাধাগ্রস্ত করে।
+                                <br /><br />
+                                <span className="text-teal-700 font-extrabold">শতভাগ কার্যকারী বিকল্প সহজ সমাধান:</span>
+                                <br />
+                                নিচে ইমেইল ও পাসওয়ার্ড ঘরে আপনার যেকোনো ইমেইল ও নতুন পাসওয়ার্ড দিয়ে সরাসরি <strong className="text-slate-800">"নিবন্ধন করুন"</strong> বা আপনার তৈরি অ্যাকাউন্ট দিয়ে <strong className="text-slate-800">"লগইন করুন"</strong>। এটি সম্পূর্ণ সুরক্ষিত এবং কোনো পাসওয়ার্ড ছাড়া কেউ আপনার ডাটা দেখতে পারবে না!
+                                {isCapacitor && (
+                                  <>
+                                    <br /><br />
+                                    <span className="text-amber-700 font-extrabold">মোবাইল অ্যাপ (APK) ব্যবহারকারীদের জন্য:</span>
+                                    <br />
+                                    গুগল সিকিউরিটি পলিসি অনুযায়ী ইনস্টলড মোবাইল অ্যাপের ভেতর সরাসরি গুগল সাইন-ইন বাটন সাময়িকভাবে সাপোর্ট করে না। 
+                                    <br />
+                                    তাই নিচে পাসওয়ার্ড দিয়ে একাউন্ট তৈরি করে ব্যবহার করুন, এটি ১০০% নিরাপদ।
+                                  </>
+                                )}
+                                {isIframe && (
+                                  <>
+                                    <br /><br />
+                                    <span className="text-amber-700 font-extrabold">অথবা, সরাসরি গুগল সাইন-ইন করতে চান?</span>
+                                    <br />
+                                    নিচে "নতুন ট্যাবে অ্যাপ খুলুন" বাটনে ক্লিক করে অ্যাপটি নতুন ট্যাবে ওপেন করুন। সেখানে সরাসরি গুগল সাইন-ইন করা যাবে!
+                                    <a
+                                      href={window.location.href}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="mt-2 inline-flex w-full items-center justify-center gap-1.5 py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[10px] transition-colors shadow-xs"
+                                    >
+                                      <Globe className="h-3.5 w-3.5" />
+                                      <span>নতুন ট্যাবে অ্যাপটি খুলুন</span>
+                                    </a>
+                                  </>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                Google Chrome restricts cross-domain popups on temporary test environments due to third-party cookie and storage-partitioning security policies.
+                                <br /><br />
+                                <span className="text-teal-700 font-extrabold">Guaranteed Easy Alternative:</span>
+                                <br />
+                                Use the Email and Password option below. Register a new account or sign in with your password. It is 100% secure, and no one else can read your data without your password!
+                                {isIframe && (
+                                  <>
+                                    <br /><br />
+                                    <span className="text-amber-700 font-extrabold">Or, want to use Google Sign-In directly?</span>
+                                    <br />
+                                    Click the button below to open this app in a new tab where Google Sign-In is fully supported.
+                                    <a
+                                      href={window.location.href}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="mt-2 inline-flex w-full items-center justify-center gap-1.5 py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[10px] transition-colors shadow-xs"
+                                    >
+                                      <Globe className="h-3.5 w-3.5" />
+                                      <span>Open App in New Tab</span>
+                                    </a>
+                                  </>
+                                )}
+                              </>
+                            )}
+                          </p>
+                          <div className="flex justify-end pt-1 border-t border-indigo-100">
+                            <button
+                              type="button"
+                              onClick={() => setShowAuthHelp(false)}
+                              className="text-[10px] font-black text-indigo-700 hover:text-indigo-900 underline cursor-pointer"
+                            >
+                              {isBangla ? 'বুঝেছি, এটি লুকান' : 'Got it, hide this'}
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      <div className="relative flex py-1 items-center">
+                        <div className="flex-grow border-t border-slate-150"></div>
+                        <span className="flex-shrink mx-3 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                          {isBangla ? 'অথবা পাসওয়ার্ড দিয়ে সিঙ্ক করুন' : 'or sync with password'}
+                        </span>
+                        <div className="flex-grow border-t border-slate-150"></div>
+                      </div>
+
+                      {/* Email Password Form */}
+                      <form onSubmit={isRegisterMode ? handleEmailRegister : handleEmailLogin} className="space-y-3">
+                        <div className="flex border-b border-slate-100 pb-1.5 mb-2 gap-4">
+                          <button
+                            type="button"
+                            onClick={() => setIsRegisterMode(false)}
+                            className={`text-xs font-black pb-1.5 px-1 border-b-2 transition-all cursor-pointer ${
+                              !isRegisterMode 
+                                ? 'text-teal-600 border-teal-500' 
+                                : 'text-slate-400 hover:text-slate-600 border-transparent'
+                            }`}
+                          >
+                            {isBangla ? 'লগইন (Login)' : 'Login'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsRegisterMode(true)}
+                            className={`text-xs font-black pb-1.5 px-1 border-b-2 transition-all cursor-pointer ${
+                              isRegisterMode 
+                                ? 'text-teal-600 border-teal-500' 
+                                : 'text-slate-400 hover:text-slate-600 border-transparent'
+                            }`}
+                          >
+                            {isBangla ? 'নিবন্ধন (Register)' : 'Register'}
+                          </button>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                            {isBangla ? 'ইমেইল আইডি' : 'Email ID'}
+                          </label>
+                          <input
+                            type="email"
+                            required
+                            placeholder="your-email@example.com"
+                            value={userEmail}
+                            onChange={(e) => {
+                              setUserEmail(e.target.value);
+                              localStorage.setItem('hisab_khata_sync_email', e.target.value);
+                            }}
+                            className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-semibold font-sans bg-slate-50/30"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                            {isBangla ? 'পাসওয়ার্ড (কমপক্ষে ৬ ডিজিট)' : 'Password (Min 6 digits)'}
+                          </label>
+                          <input
+                            type="password"
+                            required
+                            placeholder="••••••"
+                            value={syncPassword}
+                            onChange={(e) => setSyncPassword(e.target.value)}
+                            className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-semibold font-sans bg-slate-50/30"
+                          />
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={isSyncing}
+                          className="w-full py-2 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-600 text-white rounded-xl text-xs font-bold transition-all shadow-3xs cursor-pointer"
+                        >
+                          {isSyncing ? (
+                            <span className="flex items-center justify-center gap-1">
+                              <span className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                              <span>{isBangla ? 'লোড হচ্ছে...' : 'Loading...'}</span>
+                            </span>
+                          ) : (
+                            <span>
+                              {isRegisterMode 
+                                ? (isBangla ? 'নিবন্ধন ও সিঙ্ক চালু করুন' : 'Register & Enable Sync') 
+                                : (isBangla ? 'লগইন ও সিঙ্ক চালু করুন' : 'Login & Enable Sync')}
+                            </span>
+                          )}
+                        </button>
+                      </form>
+                    </div>
                   )}
-
-                  <div className="relative flex py-1 items-center">
-                    <div className="flex-grow border-t border-slate-150"></div>
-                    <span className="flex-shrink mx-3 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                      {isBangla ? 'অথবা নিজে লিখুন' : 'or enter manually'}
-                    </span>
-                    <div className="flex-grow border-t border-slate-150"></div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-600 mb-1">
-                      {isBangla ? 'সিঙ্ক ইমেইল আইডি' : 'Sync Email ID'}
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="e.g. jony@example.com"
-                      value={userEmail}
-                      onChange={(e) => {
-                        setUserEmail(e.target.value);
-                        localStorage.setItem('hisab_khata_sync_email', e.target.value);
-                      }}
-                      className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-bold font-sans"
-                      id="sync-email-input"
-                    />
-                  </div>
                 </div>
-
-                <div className="p-3 bg-slate-50 border border-slate-150 rounded-xl flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {isSyncActive ? (
-                      <Cloud className="h-4 w-4 text-emerald-600 animate-pulse" />
-                    ) : (
-                      <CloudOff className="h-4 w-4 text-rose-500" />
-                    )}
-                    <span className="text-xs font-bold text-slate-700">
-                      {isSyncActive ? (isBangla ? 'সিঙ্ক সক্রিয় আছে' : 'Sync Active') : (isBangla ? 'সিঙ্ক নিষ্ক্রিয় আছে' : 'Sync Inactive')}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => toggleSyncState(userEmail)}
-                    disabled={isSyncing}
-                    className={`px-3 py-1.5 text-xs font-black rounded-lg border transition-colors cursor-pointer ${
-                      isSyncActive
-                        ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
-                        : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
-                    }`}
-                  >
-                    {isSyncActive ? (isBangla ? 'বন্ধ করুন' : 'Disable') : (isBangla ? 'চালু করুন' : 'Enable')}
-                  </button>
-                </div>
-
-                {isSyncActive && (
-                  <button
-                    type="button"
-                    onClick={() => triggerCloudSync(transactions, expenses, shopName, userEmail)}
-                    disabled={isSyncing}
-                    className="w-full py-2.5 bg-teal-600 hover:bg-teal-500 disabled:bg-teal-400 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
-                  >
-                    <Cloud className="h-4 w-4 text-white" />
-                    <span>{isBangla ? 'এখনই সিঙ্ক করুন (Force Sync)' : 'Sync Now (Force Sync)'}</span>
-                  </button>
-                )}
 
                 {isSyncing && (
                   <div className="text-center py-1 text-xs text-indigo-600 font-bold animate-pulse flex items-center justify-center gap-1.5">

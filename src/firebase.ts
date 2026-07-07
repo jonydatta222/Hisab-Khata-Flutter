@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { initializeFirestore, doc, setDoc, getDoc, getDocFromCache, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import firebaseConfig from '../firebase-applet-config.json';
 import { Transaction, Expense, OutOfStockItem, ProductRateItem } from './types';
 
@@ -211,6 +211,42 @@ export async function logOutFromGoogle(): Promise<void> {
     await signOut(auth);
   } catch (error) {
     console.error('Sign-Out Error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Sign in with Email and Password
+ */
+export async function loginWithEmailAndPassword(email: string, pass: string): Promise<string> {
+  try {
+    const result = await signInWithEmailAndPassword(auth, email, pass);
+    const resultEmail = result.user.email;
+    if (!resultEmail) {
+      throw new Error('No email found.');
+    }
+    localStorage.setItem('hisab_khata_sync_email', resultEmail);
+    return resultEmail;
+  } catch (error) {
+    console.error('Email Sign-In Error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Register with Email and Password
+ */
+export async function registerWithEmailAndPassword(email: string, pass: string): Promise<string> {
+  try {
+    const result = await createUserWithEmailAndPassword(auth, email, pass);
+    const resultEmail = result.user.email;
+    if (!resultEmail) {
+      throw new Error('No email found.');
+    }
+    localStorage.setItem('hisab_khata_sync_email', resultEmail);
+    return resultEmail;
+  } catch (error) {
+    console.error('Email Registration Error:', error);
     throw error;
   }
 }
