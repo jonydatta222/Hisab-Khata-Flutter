@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { initializeFirestore, doc, setDoc, getDoc, getDocFromCache, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import firebaseConfig from '../firebase-applet-config.json';
-import { Transaction, Expense } from './types';
+import { Transaction, Expense, OutOfStockItem, ProductRateItem } from './types';
 
 // Initialize Firebase App
 const app = initializeApp({
@@ -77,6 +77,8 @@ export interface UserLedgerData {
   expenses: Expense[];
   shopName: string;
   updatedAt: number; // timestamp
+  outOfStockItems?: OutOfStockItem[];
+  productRates?: ProductRateItem[];
 }
 
 /**
@@ -86,7 +88,9 @@ export async function uploadLedgerToCloud(
   email: string,
   transactions: Transaction[],
   expenses: Expense[],
-  shopName: string
+  shopName: string,
+  outOfStockItems?: OutOfStockItem[],
+  productRates?: ProductRateItem[]
 ): Promise<void> {
   if (!email || !email.trim()) {
     throw new Error('Email is required for syncing');
@@ -101,6 +105,8 @@ export async function uploadLedgerToCloud(
     expenses,
     shopName,
     updatedAt: Date.now(),
+    outOfStockItems,
+    productRates,
   };
   
   try {

@@ -29,3 +29,17 @@ export interface CustomerDue {
   lastDate?: string;
   lastTime?: string;
 }
+
+export interface OutOfStockItem {
+  id: string;
+  name: string;
+  dateAdded: string; // YYYY-MM-DD
+}
+
+export interface ProductRateItem {
+  id: string;
+  name: string;
+  buyingPrice: number;
+  dateAdded: string; // YYYY-MM-DD
+}
+

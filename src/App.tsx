@@ -32,7 +32,7 @@ import {
   User
 } from 'lucide-react';
 
-import { Transaction, Expense, CustomerDue, DailySummary } from './types';
+import { Transaction, Expense, CustomerDue, DailySummary, OutOfStockItem, ProductRateItem } from './types';
 import {
   toBanglaNumber,
   formatDate,
@@ -106,11 +106,46 @@ export default function App() {
     return [];
   });
   
+  // Out of stock & Product rates state
+  const [outOfStockItems, setOutOfStockItems] = useState<OutOfStockItem[]>(() => {
+    const localOos = localStorage.getItem('hisab_khata_out_of_stock');
+    if (localOos) {
+      try {
+        return JSON.parse(localOos);
+      } catch (e) {
+        console.error('Failed to parse out of stock items', e);
+      }
+    }
+    return [];
+  });
+  const [productRates, setProductRates] = useState<ProductRateItem[]>(() => {
+    const localRates = localStorage.getItem('hisab_khata_product_rates');
+    if (localRates) {
+      try {
+        return JSON.parse(localRates);
+      } catch (e) {
+        console.error('Failed to parse product rates', e);
+      }
+    }
+    return [];
+  });
+  
   // Interactive UI States
   const [activeTab, setActiveTab] = useState<'dues' | 'expenses'>('dues');
   const [isCalcOpen, setIsCalcOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isDueListModalOpen, setIsDueListModalOpen] = useState(false);
+  const [isOutOfStockModalOpen, setIsOutOfStockModalOpen] = useState(false);
+  const [isProductRateModalOpen, setIsProductRateModalOpen] = useState(false);
+  const [oosItemName, setOosItemName] = useState('');
+  const [rateItemName, setRateItemName] = useState('');
+  const [rateItemPrice, setRateItemPrice] = useState('');
+  const [oosPage, setOosPage] = useState(1);
+  const [ratePage, setRatePage] = useState(1);
+  const [showAllOos, setShowAllOos] = useState(false);
+  const [showAllRates, setShowAllRates] = useState(false);
+  const [oosSearch, setOosSearch] = useState('');
+  const [rateSearch, setRateSearch] = useState('');
   const [modalSearchQuery, setModalSearchQuery] = useState('');
   const [depositingCustomerName, setDepositingCustomerName] = useState<string | null>(null);
   const [modalDepositValue, setModalDepositValue] = useState('');
@@ -177,7 +212,7 @@ export default function App() {
   const [driveSyncMessage, setDriveSyncMessage] = useState('');
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [showAuthHelp, setShowAuthHelp] = useState(false);
-  const [currentNavTab, setCurrentNavTab] = useState<'home' | 'monthly' | 'history' | 'settings'>('home');
+  const [currentNavTab, setCurrentNavTab] = useState<'home' | 'info' | 'monthly' | 'history' | 'settings'>('home');
   const [showAllHistoryTxs, setShowAllHistoryTxs] = useState(false);
   const [showAllTopProducts, setShowAllTopProducts] = useState(false);
   const [activeSliceIndex, setActiveSliceIndex] = useState<number | null>(null);
@@ -194,6 +229,8 @@ export default function App() {
   const [deleteDateTarget, setDeleteDateTarget] = useState('');
   const [selectedProductForDetail, setSelectedProductForDetail] = useState<string | null>(null);
   const [deletingTxId, setDeletingTxId] = useState<string | null>(null);
+  const [deletingOosId, setDeletingOosId] = useState<string | null>(null);
+  const [deletingRateId, setDeletingRateId] = useState<string | null>(null);
 
   // Input references for auto-focusing and fluid mobile workflow
   const productInputRef = useRef<HTMLInputElement>(null);
@@ -216,12 +253,18 @@ export default function App() {
       const localTxsStr = localStorage.getItem('hisab_khata_transactions');
       const localExpensesStr = localStorage.getItem('hisab_khata_expenses');
       const localShopName = localStorage.getItem('hisab_khata_shop_name') || '';
+      const localOosStr = localStorage.getItem('hisab_khata_out_of_stock');
+      const localRatesStr = localStorage.getItem('hisab_khata_product_rates');
       
       const freshLocalTxs = localTxsStr ? JSON.parse(localTxsStr) : transactions;
       const freshLocalExs = localExpensesStr ? JSON.parse(localExpensesStr) : expenses;
+      const freshLocalOos = localOosStr ? JSON.parse(localOosStr) : outOfStockItems;
+      const freshLocalRates = localRatesStr ? JSON.parse(localRatesStr) : productRates;
       
       setTransactions(freshLocalTxs);
       setExpenses(freshLocalExs);
+      setOutOfStockItems(freshLocalOos);
+      setProductRates(freshLocalRates);
       setShopName(localShopName);
       
       // 2. If sync is active, perform cloud download
@@ -236,23 +279,27 @@ export default function App() {
             // Cloud is newer or equal, so download and apply
             setTransactions(cloudData.transactions || []);
             setExpenses(cloudData.expenses || []);
+            setOutOfStockItems(cloudData.outOfStockItems || []);
+            setProductRates(cloudData.productRates || []);
             if (cloudData.shopName !== undefined) {
               setShopName(cloudData.shopName);
               localStorage.setItem('hisab_khata_shop_name', cloudData.shopName);
             }
             localStorage.setItem('hisab_khata_transactions', JSON.stringify(cloudData.transactions || []));
             localStorage.setItem('hisab_khata_expenses', JSON.stringify(cloudData.expenses || []));
+            localStorage.setItem('hisab_khata_out_of_stock', JSON.stringify(cloudData.outOfStockItems || []));
+            localStorage.setItem('hisab_khata_product_rates', JSON.stringify(cloudData.productRates || []));
             localStorage.setItem('hisab_khata_last_updated', String(cloudUpdateTime));
             showToast(isBangla ? 'ক্লাউড থেকে নতুন তথ্য সফলভাবে রিফ্রেশ হয়েছে!' : 'Data refreshed and synced from cloud!');
           } else {
             // Local is newer, so push fresh local data to cloud
-            await uploadLedgerToCloud(userEmail, freshLocalTxs, freshLocalExs, localShopName);
+            await uploadLedgerToCloud(userEmail, freshLocalTxs, freshLocalExs, localShopName, freshLocalOos, freshLocalRates);
             localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
             showToast(isBangla ? 'সর্বশেষ লোকাল ডাটা ক্লাউডে সিঙ্ক করা হয়েছে!' : 'Local data synced to cloud!');
           }
         } else {
           // Cloud doc doesn't exist yet, push fresh local data
-          await uploadLedgerToCloud(userEmail, freshLocalTxs, freshLocalExs, localShopName);
+          await uploadLedgerToCloud(userEmail, freshLocalTxs, freshLocalExs, localShopName, freshLocalOos, freshLocalRates);
           localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
           showToast(isBangla ? 'সফলভাবে রিফ্রেশ সম্পন্ন হয়েছে!' : 'Refresh completed successfully!');
         }
@@ -345,20 +392,24 @@ export default function App() {
             if (cloudUpdateTime > localUpdateTime) {
               setTransactions(cloudData.transactions || []);
               setExpenses(cloudData.expenses || []);
+              setOutOfStockItems(cloudData.outOfStockItems || []);
+              setProductRates(cloudData.productRates || []);
               if (cloudData.shopName) {
                 setShopName(cloudData.shopName);
                 localStorage.setItem('hisab_khata_shop_name', cloudData.shopName);
               }
               localStorage.setItem('hisab_khata_transactions', JSON.stringify(cloudData.transactions || []));
               localStorage.setItem('hisab_khata_expenses', JSON.stringify(cloudData.expenses || []));
+              localStorage.setItem('hisab_khata_out_of_stock', JSON.stringify(cloudData.outOfStockItems || []));
+              localStorage.setItem('hisab_khata_product_rates', JSON.stringify(cloudData.productRates || []));
               localStorage.setItem('hisab_khata_last_updated', String(cloudUpdateTime));
               showToast(isBangla ? 'ক্লাউড থেকে নতুন ডাটা আপডেট করা হয়েছে!' : 'Newer data synced from cloud!');
             } else if (localUpdateTime > cloudUpdateTime) {
-              await uploadLedgerToCloud(userEmail, transactions, expenses, shopName);
+              await uploadLedgerToCloud(userEmail, transactions, expenses, shopName, outOfStockItems, productRates);
               localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
             }
           } else {
-            await uploadLedgerToCloud(userEmail, transactions, expenses, shopName);
+            await uploadLedgerToCloud(userEmail, transactions, expenses, shopName, outOfStockItems, productRates);
             localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
           }
         } catch (e) {
@@ -381,7 +432,7 @@ export default function App() {
     const now = Date.now();
     localStorage.setItem('hisab_khata_last_updated', String(now));
     if (isSyncActive) {
-      triggerCloudSync(txList, expenses, shopName, userEmail);
+      triggerCloudSync(txList, expenses, shopName, userEmail, outOfStockItems, productRates);
     }
     if (isDriveAutoBackupActive && driveAccessToken) {
       triggerDriveBackup(txList, expenses, shopName, true);
@@ -394,10 +445,30 @@ export default function App() {
     const now = Date.now();
     localStorage.setItem('hisab_khata_last_updated', String(now));
     if (isSyncActive) {
-      triggerCloudSync(transactions, expList, shopName, userEmail);
+      triggerCloudSync(transactions, expList, shopName, userEmail, outOfStockItems, productRates);
     }
     if (isDriveAutoBackupActive && driveAccessToken) {
       triggerDriveBackup(transactions, expList, shopName, true);
+    }
+  };
+
+  const saveOutOfStockItemsToStorage = (oosList: OutOfStockItem[]) => {
+    setOutOfStockItems(oosList);
+    localStorage.setItem('hisab_khata_out_of_stock', JSON.stringify(oosList));
+    const now = Date.now();
+    localStorage.setItem('hisab_khata_last_updated', String(now));
+    if (isSyncActive) {
+      triggerCloudSync(transactions, expenses, shopName, userEmail, oosList, productRates);
+    }
+  };
+
+  const saveProductRatesToStorage = (ratesList: ProductRateItem[]) => {
+    setProductRates(ratesList);
+    localStorage.setItem('hisab_khata_product_rates', JSON.stringify(ratesList));
+    const now = Date.now();
+    localStorage.setItem('hisab_khata_last_updated', String(now));
+    if (isSyncActive) {
+      triggerCloudSync(transactions, expenses, shopName, userEmail, outOfStockItems, ratesList);
     }
   };
 
@@ -448,7 +519,7 @@ export default function App() {
     };
   }, [currentNavTab]);
 
-  const handleNavTabChange = (tab: 'home' | 'monthly' | 'history' | 'settings') => {
+  const handleNavTabChange = (tab: 'home' | 'info' | 'monthly' | 'history' | 'settings') => {
     setCurrentNavTab(tab);
     if (tab !== 'home') {
       window.history.pushState({ tab }, '');
@@ -460,7 +531,9 @@ export default function App() {
     currentTxs: Transaction[] = transactions,
     currentExs: Expense[] = expenses,
     currentShopName: string = shopName,
-    currentEmail: string = userEmail
+    currentEmail: string = userEmail,
+    currentOos: OutOfStockItem[] = outOfStockItems,
+    currentRates: ProductRateItem[] = productRates
   ) => {
     if (!isSyncActive || !currentEmail || !currentEmail.trim()) return;
     setIsSyncing(true);
@@ -468,7 +541,7 @@ export default function App() {
     
     try {
       const now = Date.now();
-      await uploadLedgerToCloud(currentEmail, currentTxs, currentExs, currentShopName);
+      await uploadLedgerToCloud(currentEmail, currentTxs, currentExs, currentShopName, currentOos, currentRates);
       localStorage.setItem('hisab_khata_last_updated', String(now));
       setIsSyncing(false);
       setSyncMessage('');
@@ -514,12 +587,16 @@ export default function App() {
           if (cloudUpdateTime > localUpdateTime) {
             setTransactions(cloudData.transactions || []);
             setExpenses(cloudData.expenses || []);
+            setOutOfStockItems(cloudData.outOfStockItems || []);
+            setProductRates(cloudData.productRates || []);
             if (cloudData.shopName) {
               setShopName(cloudData.shopName);
               localStorage.setItem('hisab_khata_shop_name', cloudData.shopName);
             }
             localStorage.setItem('hisab_khata_transactions', JSON.stringify(cloudData.transactions || []));
             localStorage.setItem('hisab_khata_expenses', JSON.stringify(cloudData.expenses || []));
+            localStorage.setItem('hisab_khata_out_of_stock', JSON.stringify(cloudData.outOfStockItems || []));
+            localStorage.setItem('hisab_khata_product_rates', JSON.stringify(cloudData.productRates || []));
             localStorage.setItem('hisab_khata_last_updated', String(cloudUpdateTime));
             
             showToast(
@@ -528,7 +605,7 @@ export default function App() {
                 : 'Latest data successfully downloaded from cloud!'
             );
           } else {
-            await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName);
+            await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName, outOfStockItems, productRates);
             localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
             showToast(
               isBangla 
@@ -537,7 +614,7 @@ export default function App() {
             );
           }
         } else {
-          await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName);
+          await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName, outOfStockItems, productRates);
           localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
           showToast(
             isBangla 
@@ -1110,13 +1187,6 @@ export default function App() {
 
   // Delete expense
   const handleDeleteExpense = (id: string) => {
-    const confirmation = window.confirm(
-      isBangla
-        ? 'আপনি কি নিশ্চিতভাবে এই খরচের হিসাবটি মুছে ফেলতে চান?'
-        : 'Are you sure you want to delete this expense?'
-    );
-    if (!confirmation) return;
-
     const updated = expenses.filter((ex) => ex.id !== id);
     saveExpensesToStorage(updated);
     showToast(isBangla ? 'খরচের হিসাবটি মুছে ফেলা হয়েছে' : 'Expense entry deleted');
@@ -1127,6 +1197,66 @@ export default function App() {
     const updated = expenses.map((ex) => (ex.id === updatedEx.id ? updatedEx : ex));
     saveExpensesToStorage(updated);
     showToast(isBangla ? 'খরচের হিসাবটি আপডেট করা হয়েছে' : 'Expense entry updated');
+  };
+
+  // Add Out of Stock item
+  const handleAddOutOfStock = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!oosItemName.trim()) return;
+
+    const newItem: OutOfStockItem = {
+      id: generateId(),
+      name: oosItemName.trim(),
+      dateAdded: selectedDate // YYYY-MM-DD
+    };
+
+    const updated = [newItem, ...outOfStockItems];
+    saveOutOfStockItemsToStorage(updated);
+
+    // Reset Form & Close Modal
+    setOosItemName('');
+    setIsOutOfStockModalOpen(false);
+
+    showToast(isBangla ? 'আইটেমটি তালিকায় যুক্ত হয়েছে!' : 'Item added to list!');
+  };
+
+  // Delete Out of Stock item
+  const handleDeleteOutOfStock = (id: string) => {
+    const updated = outOfStockItems.filter(item => item.id !== id);
+    saveOutOfStockItemsToStorage(updated);
+    showToast(isBangla ? 'আইটেমটি তালিকা থেকে মুছে ফেলা হয়েছে!' : 'Item deleted from list!');
+  };
+
+  // Add Product rate item
+  const handleAddProductRate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rateItemName.trim() || !rateItemPrice) return;
+    const price = parseFloat(rateItemPrice);
+    if (isNaN(price) || price < 0) return;
+
+    const newItem: ProductRateItem = {
+      id: generateId(),
+      name: rateItemName.trim(),
+      buyingPrice: price,
+      dateAdded: selectedDate // YYYY-MM-DD
+    };
+
+    const updated = [newItem, ...productRates];
+    saveProductRatesToStorage(updated);
+
+    // Reset Form & Close Modal
+    setRateItemName('');
+    setRateItemPrice('');
+    setIsProductRateModalOpen(false);
+
+    showToast(isBangla ? 'মালের রেট যুক্ত হয়েছে!' : 'Product rate added!');
+  };
+
+  // Delete Product rate item
+  const handleDeleteProductRate = (id: string) => {
+    const updated = productRates.filter(item => item.id !== id);
+    saveProductRatesToStorage(updated);
+    showToast(isBangla ? 'মালের রেট মুছে ফেলা হয়েছে!' : 'Product rate deleted!');
   };
 
   // Handle Due Deposit (বাকির টাকা জমা)
@@ -1197,6 +1327,8 @@ export default function App() {
     const backupData = {
       transactions,
       expenses,
+      outOfStockItems,
+      productRates,
       exportDate: new Date().toISOString(),
       creator: userEmail
     };
@@ -1224,10 +1356,18 @@ export default function App() {
         if (Array.isArray(parsed.transactions) && Array.isArray(parsed.expenses)) {
           setTransactions(parsed.transactions);
           setExpenses(parsed.expenses);
+          const oos = Array.isArray(parsed.outOfStockItems) ? parsed.outOfStockItems : [];
+          const rates = Array.isArray(parsed.productRates) ? parsed.productRates : [];
+          setOutOfStockItems(oos);
+          setProductRates(rates);
+          
           localStorage.setItem('hisab_khata_transactions', JSON.stringify(parsed.transactions));
           localStorage.setItem('hisab_khata_expenses', JSON.stringify(parsed.expenses));
+          localStorage.setItem('hisab_khata_out_of_stock', JSON.stringify(oos));
+          localStorage.setItem('hisab_khata_product_rates', JSON.stringify(rates));
+          
           showToast(isBangla ? 'ব্যাকআপ সফলভাবে রিস্টোর হয়েছে!' : 'Backup restored successfully!');
-          triggerCloudSync();
+          triggerCloudSync(parsed.transactions, parsed.expenses, shopName, userEmail, oos, rates);
         } else {
           alert(isBangla ? 'ভুল ফরম্যাট! সঠিক ব্যাকআপ ফাইল নির্বাচন করুন।' : 'Invalid backup format!');
         }
@@ -1249,10 +1389,14 @@ export default function App() {
 
     setTransactions([]);
     setExpenses([]);
+    setOutOfStockItems([]);
+    setProductRates([]);
     localStorage.removeItem('hisab_khata_transactions');
     localStorage.removeItem('hisab_khata_expenses');
+    localStorage.removeItem('hisab_khata_out_of_stock');
+    localStorage.removeItem('hisab_khata_product_rates');
     showToast(isBangla ? 'সমস্ত হিসাব মুছে খাতা খালি করা হয়েছে।' : 'All ledger data cleared.');
-    triggerCloudSync();
+    triggerCloudSync([], [], shopName, userEmail, [], []);
   };
 
   return (
@@ -1463,19 +1607,35 @@ export default function App() {
               
               {/* 1. Add Transaction Form Card */}
               <div className="bg-white rounded-2xl border-2 border-slate-100 p-5 shadow-xs">
-                <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
-                  <span className="text-[12px] font-black uppercase text-slate-500 tracking-wider">
-                    {isBangla ? 'বেচাকেনা খতিয়ান ভুক্তি' : 'Transaction Entry'}
-                  </span>
-                  {/* Small & simple Expense Button */}
+                <div className="grid grid-cols-3 gap-1.5 mb-4 pb-3 border-b border-slate-100 w-full">
+                  <button
+                    type="button"
+                    onClick={() => setIsOutOfStockModalOpen(true)}
+                    className="w-full py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[10px] sm:text-xs font-black rounded-lg border border-amber-200/50 transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs active:scale-95"
+                    id="oos-trigger-btn"
+                  >
+                    <PlusCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                    <span className="truncate">{isBangla ? 'মাল নেই' : 'No Goods'}</span>
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => setIsProductRateModalOpen(true)}
+                    className="w-full py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-800 text-[10px] sm:text-xs font-black rounded-lg border border-sky-200/50 transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs active:scale-95"
+                    id="rates-trigger-btn"
+                  >
+                    <PlusCircle className="h-3.5 w-3.5 text-sky-600 shrink-0" />
+                    <span className="truncate">{isBangla ? 'মালের রেট' : 'Rates'}</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => setIsExpenseModalOpen(true)}
-                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-black rounded-lg border border-rose-200/40 transition-colors flex items-center gap-1 cursor-pointer"
+                    className="w-full py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] sm:text-xs font-black rounded-lg border border-rose-200/40 transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs active:scale-95"
                     id="small-expense-btn"
                   >
-                    <PlusCircle className="h-3 w-3" />
-                    <span>{isBangla ? 'খরচ যোগ করুন' : 'Add Expense'}</span>
+                    <PlusCircle className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+                    <span className="truncate">{isBangla ? 'খরচ যোগ' : 'Add Expense'}</span>
                   </button>
                 </div>
 
@@ -1681,6 +1841,322 @@ export default function App() {
                   />
                 )}
               </div>
+          </motion.div>
+        )}
+
+        {/* --- INFO / "তথ্য" TAB VIEW --- */}
+        {currentNavTab === 'info' && (
+          <motion.div
+            key="info"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className="max-w-4xl mx-auto w-full px-4 py-4 space-y-6"
+          >
+            {/* Page Header */}
+            <div className="bg-white rounded-2xl border-2 border-slate-100 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
+                  <Info className="h-5 w-5 text-teal-600" />
+                  <span>{isBangla ? 'প্রয়োজনীয় খতিয়ান ও তথ্য' : 'Ledger Info & Lists'}</span>
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  {isBangla 
+                    ? 'দোকানের ঘাটতি পণ্য (মাল নেই) এবং বিভিন্ন মালের পাইকারি কেনা দামের তালিকা।' 
+                    : 'List of out of stock goods and product wholesale/buying rates.'}
+                </p>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsOutOfStockModalOpen(true)}
+                  className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold rounded-xl border border-amber-200/50 transition-all cursor-pointer flex items-center gap-1.5 shadow-3xs"
+                >
+                  <PlusCircle className="h-4 w-4 text-amber-600" />
+                  <span>{isBangla ? 'ঘাটতি পণ্য যোগ' : 'Add Out Of Stock'}</span>
+                </button>
+                <button
+                  onClick={() => setIsProductRateModalOpen(true)}
+                  className="px-3.5 py-2 bg-sky-50 hover:bg-sky-100 text-sky-800 text-xs font-bold rounded-xl border border-sky-200/50 transition-all cursor-pointer flex items-center gap-1.5 shadow-3xs"
+                >
+                  <PlusCircle className="h-4 w-4 text-sky-600" />
+                  <span>{isBangla ? 'মালের রেট যোগ' : 'Add Product Rate'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* Box 1: দোকানে মাল নেই */}
+              <div className="bg-white rounded-2xl border-2 border-slate-100 p-5 shadow-xs flex flex-col min-h-[460px]">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 bg-amber-50 rounded-lg text-amber-700">
+                      <AlertCircle className="h-4 w-4" />
+                    </span>
+                    <h3 className="font-bold text-slate-800 text-sm">
+                      {isBangla ? 'দোকানে মাল নেই' : 'Out of Stock Goods'}
+                    </h3>
+                  </div>
+                  <span className="text-xs font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-sans">
+                    {isBangla ? toBanglaNumber(outOfStockItems.length) : outOfStockItems.length}
+                  </span>
+                </div>
+
+                {/* Local Search for Out Of Stock */}
+                <div className="mb-4">
+                  <input
+                    type="text"
+                    placeholder={isBangla ? 'মালের নাম দিয়ে খুঁজুন...' : 'Search goods...'}
+                    value={oosSearch}
+                    onChange={(e) => {
+                      setOosSearch(e.target.value);
+                      setOosPage(1);
+                      setShowAllOos(false);
+                    }}
+                    className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+
+                {/* List Container */}
+                <div className="flex-1 space-y-2 flex flex-col justify-between">
+                  {(() => {
+                    const filteredOos = outOfStockItems.filter(item => 
+                      item.name.toLowerCase().includes(oosSearch.toLowerCase())
+                    );
+                    
+                    const itemsToShow = showAllOos ? filteredOos : filteredOos.slice(0, 6);
+
+                    if (filteredOos.length === 0) {
+                      return (
+                        <div className="flex flex-col items-center justify-center text-center py-16 flex-1 text-slate-400">
+                          <AlertCircle className="h-10 w-10 text-slate-300 mb-2" />
+                          <p className="text-xs font-semibold">
+                            {isBangla ? 'কোনো তথ্য খুঁজে পাওয়া যায়নি!' : 'No out of stock items found!'}
+                          </p>
+                          <button
+                            onClick={() => setIsOutOfStockModalOpen(true)}
+                            className="mt-3 text-xs text-amber-600 hover:text-amber-700 font-bold underline cursor-pointer"
+                          >
+                            {isBangla ? 'নতুন যোগ করুন' : 'Add new item'}
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="flex-1 flex flex-col justify-between">
+                        <div className={`space-y-2.5 ${showAllOos ? 'max-h-[350px] overflow-y-auto pr-1' : ''}`}>
+                          {itemsToShow.map((item) => (
+                            <div 
+                              key={item.id} 
+                              className="flex items-center justify-between p-3 bg-amber-50/40 rounded-xl border border-amber-100 hover:bg-amber-50/80 transition-colors"
+                            >
+                              <div>
+                                <h4 className="text-xs font-extrabold text-slate-800">{item.name}</h4>
+                                <span className="text-[10px] text-slate-400 font-sans block mt-0.5">
+                                  {isBangla ? 'যুক্ত করা হয়েছে: ' : 'Added: '} 
+                                  {formatDate(item.dateAdded, isBangla)}
+                                </span>
+                              </div>
+                              {deletingOosId === item.id ? (
+                                <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 p-1 rounded-lg shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      handleDeleteOutOfStock(item.id);
+                                      setDeletingOosId(null);
+                                    }}
+                                    className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-black text-[9px] rounded-md transition-colors cursor-pointer"
+                                  >
+                                    {isBangla ? 'হ্যাঁ' : 'Yes'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeletingOosId(null)}
+                                    className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-black text-[9px] rounded-md transition-colors cursor-pointer"
+                                  >
+                                    {isBangla ? 'না' : 'No'}
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setDeletingOosId(item.id)}
+                                  className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer shrink-0"
+                                  title={isBangla ? 'মুছে ফেলুন' : 'Delete'}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* See More Button */}
+                        {filteredOos.length > 6 && (
+                          <div className="flex justify-center pt-4 border-t border-slate-100 mt-4">
+                            <button
+                              onClick={() => setShowAllOos(!showAllOos)}
+                              className="px-4 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100/60 rounded-xl border border-amber-200/50 flex items-center gap-1.5 cursor-pointer transition-all shadow-3xs"
+                            >
+                              <span>
+                                {showAllOos 
+                                  ? (isBangla ? 'কম দেখুন' : 'Show Less') 
+                                  : (isBangla ? 'আরও দেখুন' : 'See More')}
+                              </span>
+                              {showAllOos ? (
+                                <ChevronLeft className="h-3.5 w-3.5 rotate-90" />
+                              ) : (
+                                <ChevronRight className="h-3.5 w-3.5 rotate-90" />
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Box 2: মালের রেট ও কেনা দাম */}
+              <div className="bg-white rounded-2xl border-2 border-slate-100 p-5 shadow-xs flex flex-col min-h-[460px]">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 bg-sky-50 rounded-lg text-sky-700">
+                      <Coins className="h-4 w-4" />
+                    </span>
+                    <h3 className="font-bold text-slate-800 text-sm">
+                      {isBangla ? 'মালের রেট ও কেনা দাম' : 'Product Wholesale Rates'}
+                    </h3>
+                  </div>
+                  <span className="text-xs font-bold bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full font-sans">
+                    {isBangla ? toBanglaNumber(productRates.length) : productRates.length}
+                  </span>
+                </div>
+
+                {/* Local Search for Product Rates */}
+                <div className="mb-4">
+                  <input
+                    type="text"
+                    placeholder={isBangla ? 'মালের নাম দিয়ে খুঁজুন...' : 'Search product...'}
+                    value={rateSearch}
+                    onChange={(e) => {
+                      setRateSearch(e.target.value);
+                      setRatePage(1);
+                      setShowAllRates(false);
+                    }}
+                    className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                  />
+                </div>
+
+                {/* List Container */}
+                <div className="flex-1 space-y-2 flex flex-col justify-between">
+                  {(() => {
+                    const filteredRates = productRates.filter(item => 
+                      item.name.toLowerCase().includes(rateSearch.toLowerCase())
+                    );
+                    
+                    const itemsToShow = showAllRates ? filteredRates : filteredRates.slice(0, 6);
+
+                    if (filteredRates.length === 0) {
+                      return (
+                        <div className="flex flex-col items-center justify-center text-center py-16 flex-1 text-slate-400">
+                          <Coins className="h-10 w-10 text-slate-300 mb-2" />
+                          <p className="text-xs font-semibold">
+                            {isBangla ? 'কোনো তথ্য খুঁজে পাওয়া যায়নি!' : 'No product rates found!'}
+                          </p>
+                          <button
+                            onClick={() => setIsProductRateModalOpen(true)}
+                            className="mt-3 text-xs text-sky-600 hover:text-sky-700 font-bold underline cursor-pointer"
+                          >
+                            {isBangla ? 'নতুন যোগ করুন' : 'Add new rate'}
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="flex-1 flex flex-col justify-between">
+                        <div className={`space-y-2.5 ${showAllRates ? 'max-h-[350px] overflow-y-auto pr-1' : ''}`}>
+                          {itemsToShow.map((item) => (
+                            <div 
+                              key={item.id} 
+                              className="flex items-center justify-between p-3 bg-sky-50/40 rounded-xl border border-sky-100 hover:bg-sky-50/80 transition-colors"
+                            >
+                              <div>
+                                <h4 className="text-xs font-extrabold text-slate-800">{item.name}</h4>
+                                <span className="text-[10px] text-slate-400 font-sans block mt-0.5">
+                                  {isBangla ? 'যুক্ত করা হয়েছে: ' : 'Added: '} 
+                                  {formatDate(item.dateAdded, isBangla)}
+                                </span>
+                              </div>
+                              
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-xs font-black text-sky-700 font-sans bg-sky-100/60 px-2 py-1 rounded-lg">
+                                  {formatCurrency(item.buyingPrice, isBangla)}
+                                </span>
+                                {deletingRateId === item.id ? (
+                                  <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 p-1 rounded-lg">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleDeleteProductRate(item.id);
+                                        setDeletingRateId(null);
+                                      }}
+                                      className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-black text-[9px] rounded-md transition-colors cursor-pointer"
+                                    >
+                                      {isBangla ? 'হ্যাঁ' : 'Yes'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeletingRateId(null)}
+                                      className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-black text-[9px] rounded-md transition-colors cursor-pointer"
+                                    >
+                                      {isBangla ? 'না' : 'No'}
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => setDeletingRateId(item.id)}
+                                    className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                    title={isBangla ? 'মুছে ফেলুন' : 'Delete'}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* See More Button */}
+                        {filteredRates.length > 6 && (
+                          <div className="flex justify-center pt-4 border-t border-slate-100 mt-4">
+                            <button
+                              onClick={() => setShowAllRates(!showAllRates)}
+                              className="px-4 py-2 text-xs font-bold text-sky-800 hover:bg-sky-100/60 rounded-xl border border-sky-200/50 flex items-center gap-1.5 cursor-pointer transition-all shadow-3xs"
+                            >
+                              <span>
+                                {showAllRates 
+                                  ? (isBangla ? 'কম দেখুন' : 'Show Less') 
+                                  : (isBangla ? 'আরও দেখুন' : 'See More')}
+                              </span>
+                              {showAllRates ? (
+                                <ChevronLeft className="h-3.5 w-3.5 rotate-90" />
+                              ) : (
+                                <ChevronRight className="h-3.5 w-3.5 rotate-90" />
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+            </div>
           </motion.div>
         )}
 
@@ -3222,6 +3698,168 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* --- ADD OUT OF STOCK ITEM MODAL --- */}
+      <AnimatePresence>
+        {isOutOfStockModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsOutOfStockModalOpen(false)}
+              className="fixed inset-0 bg-black"
+            />
+
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 border border-slate-100 overflow-hidden"
+              id="oos-modal-box"
+            >
+              <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                <h3 className="font-bold text-slate-800 text-base flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse"></span>
+                  {isBangla ? 'দোকানে যে মাল নেই তা লিখুন' : 'Add Out Of Stock Item'}
+                </h3>
+                <button
+                  onClick={() => setIsOutOfStockModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer text-xs font-bold p-1 hover:bg-slate-100 rounded-full"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleAddOutOfStock} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">
+                    {isBangla ? 'মালের নাম' : 'Goods Name'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder={isBangla ? 'যেমন: লাক্স সাবান, সয়াবিন ১ লিটার' : 'e.g. Lux Soap, Soybean 1L'}
+                    value={oosItemName}
+                    onChange={(e) => setOosItemName(e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    id="oos-item-name-input"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsOutOfStockModalOpen(false)}
+                    className="px-4 py-2 text-xs text-slate-500 hover:bg-slate-100 rounded-lg cursor-pointer"
+                  >
+                    {isBangla ? 'বাতিল' : 'Cancel'}
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 text-xs text-white font-bold bg-amber-600 hover:bg-amber-500 rounded-lg shadow-sm cursor-pointer"
+                    id="oos-submit-btn"
+                  >
+                    {isBangla ? 'তালিকায় যোগ করুন' : 'Add to List'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- ADD PRODUCT RATE MODAL --- */}
+      <AnimatePresence>
+        {isProductRateModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsProductRateModalOpen(false)}
+              className="fixed inset-0 bg-black"
+            />
+
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 border border-slate-100 overflow-hidden"
+              id="product-rate-modal-box"
+            >
+              <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                <h3 className="font-bold text-slate-800 text-base flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 bg-sky-500 rounded-full animate-pulse"></span>
+                  {isBangla ? 'মালের রেট ও কেনা দাম' : 'Add Product Buying Rate'}
+                </h3>
+                <button
+                  onClick={() => setIsProductRateModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer text-xs font-bold p-1 hover:bg-slate-100 rounded-full"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleAddProductRate} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">
+                    {isBangla ? 'মালের নাম' : 'Product Name'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder={isBangla ? 'যেমন: পেঁয়াজ (১ কেজি), মিনিকেট চাল ৫০ কেজি' : 'e.g. Onion (1kg), Rice 50kg'}
+                    value={rateItemName}
+                    onChange={(e) => setRateItemName(e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                    id="rate-item-name-input"
+                    autoFocus
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">
+                    {isBangla ? 'কেনা দাম (টাকা)' : 'Buying Price (৳)'}
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    placeholder={isBangla ? 'যেমন: ১২০' : 'e.g. 120'}
+                    value={rateItemPrice}
+                    onChange={(e) => setRateItemPrice(e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500 font-sans"
+                    id="rate-item-price-input"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsProductRateModalOpen(false)}
+                    className="px-4 py-2 text-xs text-slate-500 hover:bg-slate-100 rounded-lg cursor-pointer"
+                  >
+                    {isBangla ? 'বাতিল' : 'Cancel'}
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 text-xs text-white font-bold bg-sky-600 hover:bg-sky-500 rounded-lg shadow-sm cursor-pointer"
+                    id="rate-submit-btn"
+                  >
+                    {isBangla ? 'সংরক্ষণ করুন' : 'Save Rate'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* --- CONFIRM DELETE DATE MODAL OVERLAY DIALOG --- */}
       <AnimatePresence>
         {isDeleteDateModalOpen && (
@@ -3652,59 +4290,74 @@ export default function App() {
       </AnimatePresence>
 
       {/* --- PERSISTENT STICKY BOTTOM NAVIGATION BAR --- */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200/80 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] px-4 py-3 flex items-center justify-around">
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200/80 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] px-2 py-3 grid grid-cols-5 text-center">
         <button
           onClick={() => setCurrentNavTab('home')}
-          className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
+          className={`flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
             currentNavTab === 'home'
               ? 'text-teal-600 scale-105'
               : 'text-slate-400 hover:text-slate-600'
           }`}
         >
           <Home className="h-5 w-5 stroke-[2.5]" />
-          <span className="text-[10px] font-black">
+          <span className="text-[10px] font-black truncate w-full">
             {isBangla ? 'হোম' : 'Home'}
           </span>
         </button>
 
         <button
+          onClick={() => setCurrentNavTab('info')}
+          className={`flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+            currentNavTab === 'info'
+              ? 'text-teal-600 scale-105'
+              : 'text-slate-400 hover:text-slate-600'
+          }`}
+          id="info-nav-tab"
+        >
+          <Info className="h-5 w-5 stroke-[2.5]" />
+          <span className="text-[10px] font-black truncate w-full">
+            {isBangla ? 'তথ্য' : 'Info'}
+          </span>
+        </button>
+
+        <button
           onClick={() => setCurrentNavTab('monthly')}
-          className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
+          className={`flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
             currentNavTab === 'monthly'
               ? 'text-teal-600 scale-105'
               : 'text-slate-400 hover:text-slate-600'
           }`}
         >
           <Database className="h-5 w-5 stroke-[2.5]" />
-          <span className="text-[10px] font-black">
-            {isBangla ? 'মাসিক রিপোর্ট' : 'Monthly'}
+          <span className="text-[10px] font-black truncate w-full">
+            {isBangla ? 'মাসিক' : 'Monthly'}
           </span>
         </button>
 
         <button
           onClick={() => setCurrentNavTab('history')}
-          className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
+          className={`flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
             currentNavTab === 'history'
               ? 'text-teal-600 scale-105'
               : 'text-slate-400 hover:text-slate-600'
           }`}
         >
           <History className="h-5 w-5 stroke-[2.5]" />
-          <span className="text-[10px] font-black">
-            {isBangla ? 'পুরোনো হিসাব' : 'Old Hisab'}
+          <span className="text-[10px] font-black truncate w-full">
+            {isBangla ? 'ইতিহাস' : 'History'}
           </span>
         </button>
 
         <button
           onClick={() => setCurrentNavTab('settings')}
-          className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
+          className={`flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
             currentNavTab === 'settings'
               ? 'text-teal-600 scale-105'
               : 'text-slate-400 hover:text-slate-600'
           }`}
         >
           <SettingsIcon className="h-5 w-5 stroke-[2.5]" />
-          <span className="text-[10px] font-black">
+          <span className="text-[10px] font-black truncate w-full">
             {isBangla ? 'সেটিংস' : 'Settings'}
           </span>
         </button>

@@ -37,11 +37,10 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Initialize & Sync Capacitor Android
+      - name: Sync Capacitor Android & Generate Assets
         run: |
-          rm -rf android
-          npx cap add android
           npx cap sync android
+          npx @capacitor/assets generate --android
 
       - name: Build Android Debug APK
         run: |

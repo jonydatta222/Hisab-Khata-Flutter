@@ -1,4 +1,4 @@
-import { Transaction, Expense } from '../types';
+import { Transaction, Expense, OutOfStockItem, ProductRateItem } from '../types';
 
 export interface DriveBackupData {
   transactions: Transaction[];
@@ -7,6 +7,8 @@ export interface DriveBackupData {
   updatedAt: number;
   exportDate: string;
   creator?: string;
+  outOfStockItems?: OutOfStockItem[];
+  productRates?: ProductRateItem[];
 }
 
 /**
