@@ -42,10 +42,19 @@ jobs:
           npx cap sync android
           npx @capacitor/assets generate --android
 
+      - name: Restore and Fix Gradle Wrapper
+        run: |
+          cd android
+          # Ensure correct wrapper jar directly from official Gradle repo to bypass any Git corruption
+          mkdir -p gradle/wrapper
+          curl -sLo gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.14.3/gradle/wrapper/gradle-wrapper.jar
+          # Safeguard against CRLF carriage returns in gradlew
+          sed -i -e 's/\r$//' gradlew
+          chmod +x gradlew
+
       - name: Build Android Debug APK
         run: |
           cd android
-          chmod +x gradlew
           ./gradlew assembleDebug
 
       - name: Upload Hisab Khata APK
