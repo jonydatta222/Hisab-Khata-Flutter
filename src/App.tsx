@@ -61,6 +61,12 @@ import {
   DriveBackupData 
 } from './utils/driveBackup';
 
+// Native Capacitor Chrome Custom Tabs & Deep Linking callback imports
+import { Browser } from '@capacitor/browser';
+import { App as CapApp } from '@capacitor/app';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
+import { GoogleAuthProvider, signInWithCredential, signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
+
 import logoImg from './assets/logo.png';
 
 import Calculator from './components/Calculator';
@@ -83,6 +89,11 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState('');
   const [currentDateFormatted, setCurrentDateFormatted] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  
+  // --- Native & Hosted Chrome Custom Tab Web Authentication States ---
+  const [appAuthMode, setAppAuthMode] = useState<'none' | 'auth' | 'drive'>('none');
+  const [appAuthStatus, setAppAuthStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [appAuthError, setAppAuthError] = useState('');
   
   // Database state
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
@@ -373,6 +384,160 @@ export default function App() {
 
   const [currentUser, setCurrentUser] = useState<any>(null);
 
+  // --- Capacitor App Deep Link Listener ---
+  useEffect(() => {
+    if (isCapacitor) {
+      const handleAppUrlOpen = async (event: { url: string }) => {
+        console.log('App opened with URL:', event.url);
+        
+        try {
+          const urlObj = new URL(event.url);
+          if (urlObj.protocol === 'hisabkhata:') {
+            try {
+              await Browser.close();
+            } catch (closeErr) {
+              console.warn('Browser.close failed (already closed or web environment):', closeErr);
+            }
+            
+            if (urlObj.host === 'auth-callback') {
+              const params = new URLSearchParams(urlObj.search);
+              const idToken = params.get('idToken');
+              const accessToken = params.get('accessToken');
+              const email = params.get('email');
+              
+              if (idToken) {
+                setIsSyncing(true);
+                setSyncMessage(isBangla ? 'গুগল দিয়ে লগইন করা হচ্ছে...' : 'Logging in with Google...');
+                
+                const credential = GoogleAuthProvider.credential(idToken, accessToken || undefined);
+                const userCredential = await signInWithCredential(auth, credential);
+                const loggedInEmail = userCredential.user.email;
+                
+                if (loggedInEmail) {
+                  setUserEmail(loggedInEmail);
+                  localStorage.setItem('hisab_khata_sync_email', loggedInEmail);
+                  showToast(isBangla ? `লগইন সফল হয়েছে: ${loggedInEmail}` : `Login successful: ${loggedInEmail}`);
+                  
+                  // Automatically toggle sync if not active
+                  if (!isSyncActive) {
+                    await toggleSyncState(loggedInEmail);
+                  }
+                }
+              }
+            } else if (urlObj.host === 'drive-callback') {
+              const params = new URLSearchParams(urlObj.search);
+              const accessToken = params.get('accessToken');
+              const email = params.get('email');
+              
+              if (accessToken && email) {
+                setDriveEmail(email);
+                updateDriveAccessToken(accessToken);
+                localStorage.setItem('hisab_khata_drive_email', email);
+                showToast(isBangla ? `গুগল ড্রাইভ সংযুক্ত হয়েছে: ${email}` : `Connected Google Drive: ${email}`);
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Error handling deep link URL:', e);
+        } finally {
+          setIsSyncing(false);
+          setSyncMessage('');
+        }
+      };
+
+      const listenerPromise = CapApp.addListener('appUrlOpen', handleAppUrlOpen);
+      
+      return () => {
+        listenerPromise.then(l => l.remove());
+      };
+    }
+  }, [isCapacitor, isSyncActive, isBangla]);
+
+  // --- Hosted Web Auth Mode detection and execution ---
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get('mode');
+    if (mode === 'app-auth') {
+      setAppAuthMode('auth');
+    } else if (mode === 'app-drive') {
+      setAppAuthMode('drive');
+    }
+  }, []);
+
+  const triggerAuthFlow = async () => {
+    const provider = new GoogleAuthProvider();
+    if (appAuthMode === 'drive') {
+      provider.addScope('https://www.googleapis.com/auth/drive.file');
+    }
+    
+    try {
+      const popResult = await signInWithPopup(auth, provider);
+      await handleWebAuthResult(popResult);
+    } catch (popupError: any) {
+      console.log('Popup failed or blocked, trying redirect...', popupError);
+      await signInWithRedirect(auth, provider);
+    }
+  };
+
+  const handleStartWebAuth = async () => {
+    setAppAuthStatus('loading');
+    setAppAuthError('');
+    await triggerAuthFlow();
+  };
+
+  const handleWebAuthResult = async (result: any) => {
+    try {
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const idToken = credential?.idToken;
+      const accessToken = credential?.accessToken;
+      const email = result.user?.email;
+
+      if (!email) {
+        throw new Error('No email found in Google account.');
+      }
+
+      setAppAuthStatus('success');
+
+      if (appAuthMode === 'drive') {
+        if (!accessToken) {
+          throw new Error('Failed to obtain Google Drive Access Token.');
+        }
+        window.location.href = `hisabkhata://drive-callback?accessToken=${encodeURIComponent(accessToken)}&email=${encodeURIComponent(email)}`;
+      } else {
+        if (!idToken) {
+          throw new Error('Failed to obtain Google ID Token.');
+        }
+        window.location.href = `hisabkhata://auth-callback?idToken=${encodeURIComponent(idToken)}&accessToken=${encodeURIComponent(accessToken || '')}&email=${encodeURIComponent(email)}`;
+      }
+    } catch (e: any) {
+      console.error('Error in handling web auth result:', e);
+      setAppAuthStatus('error');
+      setAppAuthError(e?.message || String(e));
+    }
+  };
+
+  useEffect(() => {
+    if (appAuthMode !== 'none') {
+      const checkRedirect = async () => {
+        setAppAuthStatus('loading');
+        try {
+          const redirectResult = await getRedirectResult(auth);
+          if (redirectResult) {
+            await handleWebAuthResult(redirectResult);
+          } else {
+            await triggerAuthFlow();
+          }
+        } catch (err: any) {
+          console.error('Redirect check error:', err);
+          setAppAuthStatus('error');
+          setAppAuthError(err?.message || String(err));
+        }
+      };
+      
+      checkRedirect();
+    }
+  }, [appAuthMode]);
+
   // --- Listen for Firebase Auth changes ---
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -660,13 +825,45 @@ export default function App() {
 
   const handleGoogleLogin = async () => {
     if (isCapacitor) {
-      setShowAuthHelp(true);
-      setIsRegisterMode(true);
-      alert(
-        isBangla
-          ? '⚠️ গুগল সিকিউরিটি পলিসি অনুযায়ী মোবাইল অ্যাপের (APK) ভেতর সরাসরি গুগল সাইন-ইন বাটন সাপোর্ট করে না।\n\nএটি এড়াতে অনুগ্রহ করে নিচের "ইমেইল ও পাসওয়ার্ড" ঘরে আপনার ইমেইল এবং যেকোনো পাসওয়ার্ড দিয়ে "নিবন্ধন করুন" অথবা আপনার তৈরি অ্যাকাউন্ট দিয়ে "লগইন করুন"। এটি সম্পূর্ণ সুরক্ষিত এবং ১০০% কার্যকরী!'
-          : '⚠️ Google security policies block Google Sign-In inside mobile WebViews (APKs).\n\nPlease use the "Email & Password" form below to register a new account or log in with your existing account. It is fully secure and 100% functional!'
-      );
+      setIsSyncing(true);
+      setSyncMessage(isBangla ? 'গুগল সাইন-ইন করা হচ্ছে...' : 'Signing in with Google...');
+      try {
+        // Try Native Google Sign-In SDK first
+        const result = await FirebaseAuthentication.signInWithGoogle();
+        const idToken = result.credential?.idToken;
+        if (idToken) {
+          const credential = GoogleAuthProvider.credential(idToken, result.credential?.accessToken || undefined);
+          const userCredential = await signInWithCredential(auth, credential);
+          const loggedInEmail = userCredential.user.email;
+          if (loggedInEmail) {
+            setUserEmail(loggedInEmail);
+            localStorage.setItem('hisab_khata_sync_email', loggedInEmail);
+            showToast(isBangla ? `লগইন সফল হয়েছে: ${loggedInEmail}` : `Login successful: ${loggedInEmail}`);
+            if (!isSyncActive) {
+              await toggleSyncState(loggedInEmail);
+            }
+          }
+          setIsSyncing(false);
+          setSyncMessage('');
+          return;
+        } else {
+          throw new Error('No ID Token received from Native SDK');
+        }
+      } catch (nativeErr: any) {
+        console.warn('Native Sign-In failed or not configured (missing google-services.json/SHA-1), falling back to Chrome Custom Tabs:', nativeErr);
+        // Fallback automatically to Chrome Custom Tabs (very reliable)
+        setSyncMessage(isBangla ? 'গুগল ব্রাউজার ওপেন করা হচ্ছে...' : 'Opening Google browser...');
+        try {
+          const url = 'https://ais-pre-ubhqkvzgdwmiuzrvrwvhgc-273317504244.asia-southeast1.run.app/?mode=app-auth';
+          await Browser.open({ url });
+        } catch (e: any) {
+          console.error('Error launching Custom Tab:', e);
+          showToast(isBangla ? 'গুগল কানেক্ট ওপেন করতে ব্যর্থ হয়েছে!' : 'Failed to launch Google Connect!');
+        } finally {
+          setIsSyncing(false);
+          setSyncMessage('');
+        }
+      }
       return;
     }
     setIsSyncing(true);
@@ -906,11 +1103,41 @@ export default function App() {
 
   const handleDriveConnect = async () => {
     if (isCapacitor) {
-      alert(
-        isBangla
-          ? '⚠️ গুগল ড্রাইভ ব্যাকআপ ও রিস্টোর করার জন্য গুগল সাইন-ইন প্রয়োজন, যা গুগল পলিসি অনুযায়ী মোবাইল অ্যাপের (APK) ভেতর সরাসরি ব্যবহার করা যায় না।\n\nসুরক্ষিত ক্লাউড ব্যাকআপের জন্য দয়া করে আমাদের অনলাইন "ফায়ারবেস ক্লাউড সিঙ্ক" অপশনটি ব্যবহার করুন এবং পাসওয়ার্ড দিয়ে অ্যাকাউন্ট খুলে সিঙ্ক করুন।'
-          : '⚠️ Google Drive backup requires Google Sign-In, which Google blocks inside mobile apps (APKs) due to security policies.\n\nPlease use the Firebase Cloud Sync option with Email & Password, which is fully supported and secure!'
-      );
+      setIsDriveSyncing(true);
+      setDriveSyncMessage(isBangla ? 'গুগল ড্রাইভ কানেক্ট করা হচ্ছে...' : 'Connecting Google Drive...');
+      try {
+        // Try Native Google Sign-In SDK with drive scopes first
+        const result = await FirebaseAuthentication.signInWithGoogle({
+          scopes: ['https://www.googleapis.com/auth/drive.file']
+        });
+        const accessToken = result.credential?.accessToken;
+        const email = result.user?.email;
+        if (accessToken && email) {
+          setDriveEmail(email);
+          updateDriveAccessToken(accessToken);
+          localStorage.setItem('hisab_khata_drive_email', email);
+          showToast(isBangla ? `গুগল ড্রাইভ সংযুক্ত হয়েছে: ${email}` : `Connected Google Drive: ${email}`);
+          setIsDriveSyncing(false);
+          setDriveSyncMessage('');
+          return;
+        } else {
+          throw new Error('No Access Token or Email received from Native SDK for Google Drive');
+        }
+      } catch (nativeErr: any) {
+        console.warn('Native Google Drive Auth failed, falling back to Chrome Custom Tabs:', nativeErr);
+        // Fallback automatically to Chrome Custom Tabs
+        setDriveSyncMessage(isBangla ? 'গুগল ব্রাউজার ওপেন করা হচ্ছে...' : 'Opening Google browser...');
+        try {
+          const url = 'https://ais-pre-ubhqkvzgdwmiuzrvrwvhgc-273317504244.asia-southeast1.run.app/?mode=app-drive';
+          await Browser.open({ url });
+        } catch (e: any) {
+          console.error('Error launching Custom Tab for Drive:', e);
+          showToast(isBangla ? 'গুগল কানেক্ট ওপেন করতে ব্যর্থ হয়েছে!' : 'Failed to launch Google Connect!');
+        } finally {
+          setIsDriveSyncing(false);
+          setDriveSyncMessage('');
+        }
+      }
       return;
     }
     setIsDriveSyncing(true);
@@ -1507,6 +1734,84 @@ export default function App() {
     showToast(isBangla ? 'সমস্ত হিসাব মুছে খাতা খালি করা হয়েছে।' : 'All ledger data cleared.');
     triggerCloudSync([], [], shopName, userEmail, [], []);
   };
+
+  if (appAuthMode !== 'none') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-slate-800 antialiased font-sans">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-100 p-8 flex flex-col items-center text-center">
+          <img
+            src={logoImg}
+            alt="হিসাব খাতা"
+            className="h-16 w-16 rounded-2xl object-cover shadow-md mb-6 border border-slate-150 animate-bounce"
+            referrerPolicy="no-referrer"
+          />
+          <h2 className="text-xl font-extrabold text-slate-900 mb-2">
+            {isBangla ? 'হিসাব খাতা গুগল কানেক্ট' : 'Hisab Khata Google Connect'}
+          </h2>
+          
+          {appAuthStatus === 'loading' && (
+            <div className="flex flex-col items-center mt-4">
+              <div className="w-12 h-12 rounded-full border-4 border-teal-500 border-t-transparent animate-spin mb-6"></div>
+              <p className="text-sm font-medium text-slate-600 animate-pulse">
+                {appAuthMode === 'auth'
+                  ? (isBangla ? 'গুগল দিয়ে মোবাইল অ্যাপে লগইন করা হচ্ছে...' : 'Logging into mobile app via Google...')
+                  : (isBangla ? 'গুগল ড্রাইভ ব্যাকআপ সংযোগ করা হচ্ছে...' : 'Connecting Google Drive Backup...')}
+              </p>
+              <p className="text-xs text-slate-400 mt-2">
+                {isBangla ? 'অনুগ্রহ করে অপেক্ষা করুন, এই স্ক্রিনটি স্বয়ংক্রিয়ভাবে বন্ধ হয়ে যাবে।' : 'Please wait, this screen will close automatically.'}
+              </p>
+            </div>
+          )}
+
+          {appAuthStatus === 'idle' && (
+            <div className="mt-4 w-full">
+              <p className="text-sm text-slate-600 mb-6">
+                {isBangla 
+                  ? 'গুগল কানেক্ট শুরু করতে নিচের বাটনে চাপ দিন।' 
+                  : 'Press the button below to initiate Google Connect.'}
+              </p>
+              <button
+                onClick={handleStartWebAuth}
+                className="w-full py-3.5 px-6 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer border-0"
+              >
+                {isBangla ? 'কানেক্ট করুন' : 'Connect Now'}
+              </button>
+            </div>
+          )}
+
+          {appAuthStatus === 'success' && (
+            <div className="flex flex-col items-center mt-4">
+              <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 mb-4 font-black text-2xl">✓</div>
+              <p className="text-sm font-bold text-emerald-700">
+                {isBangla ? 'সফলভাবে গুগল কানেক্ট হয়েছে!' : 'Google Connect Successful!'}
+              </p>
+              <p className="text-xs text-slate-500 mt-2">
+                {isBangla ? 'আপনাকে মোবাইল অ্যাপে ফিরিয়ে নেওয়া হচ্ছে...' : 'Returning you to the mobile app...'}
+              </p>
+            </div>
+          )}
+
+          {appAuthStatus === 'error' && (
+            <div className="mt-4 w-full flex flex-col items-center">
+              <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 mb-4 font-black text-2xl">✗</div>
+              <p className="text-sm font-bold text-rose-700">
+                {isBangla ? 'কানেক্ট করতে সমস্যা হয়েছে!' : 'Connection Failed!'}
+              </p>
+              <p className="text-xs text-slate-500 mt-2 mb-6 max-w-xs overflow-hidden text-ellipsis text-rose-500">
+                {appAuthError}
+              </p>
+              <button
+                onClick={handleStartWebAuth}
+                className="w-full py-3 px-6 bg-slate-800 hover:bg-slate-900 text-white font-semibold rounded-xl transition-all active:scale-95 flex items-center justify-center cursor-pointer border-0"
+              >
+                {isBangla ? 'আবার চেষ্টা করুন' : 'Try Again'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-slate-800 antialiased font-sans flex flex-col pb-24 relative overflow-x-hidden">
