@@ -469,7 +469,9 @@ export default function App() {
         // Since we now require secure Google/password login, we do not auto-authenticate in the background.
         // We disable sync if the user is not authenticated.
         setIsSyncActive(false);
+        setUserEmail('');
         localStorage.setItem('hisab_khata_sync', 'false');
+        localStorage.removeItem('hisab_khata_sync_email');
       }
     });
     return () => unsubscribe();
@@ -486,7 +488,18 @@ export default function App() {
             const localUpdateTime = localUpdated ? parseInt(localUpdated, 10) : 0;
             const cloudUpdateTime = cloudData.updatedAt || 0;
             
-            if (cloudUpdateTime > localUpdateTime) {
+            // Read latest raw local storage values to avoid stale closures
+            const localTxsStr = localStorage.getItem('hisab_khata_transactions');
+            const localExsStr = localStorage.getItem('hisab_khata_expenses');
+            const localTxs = localTxsStr ? JSON.parse(localTxsStr) : [];
+            const localExs = localExsStr ? JSON.parse(localExsStr) : [];
+            const isLocalEmpty = localTxs.length === 0 && localExs.length === 0;
+            const isCloudNotEmpty = (cloudData.transactions && cloudData.transactions.length > 0) || 
+                                    (cloudData.expenses && cloudData.expenses.length > 0) ||
+                                    (cloudData.outOfStockItems && cloudData.outOfStockItems.length > 0) ||
+                                    (cloudData.productRates && cloudData.productRates.length > 0);
+
+            if (cloudUpdateTime > localUpdateTime || (isLocalEmpty && isCloudNotEmpty)) {
               setTransactions(cloudData.transactions || []);
               setExpenses(cloudData.expenses || []);
               setOutOfStockItems(cloudData.outOfStockItems || []);
@@ -502,11 +515,15 @@ export default function App() {
               localStorage.setItem('hisab_khata_last_updated', String(cloudUpdateTime));
               showToast(isBangla ? 'ক্লাউড থেকে নতুন ডাটা আপডেট করা হয়েছে!' : 'Newer data synced from cloud!');
             } else if (localUpdateTime > cloudUpdateTime) {
-              await uploadLedgerToCloud(userEmail, transactions, expenses, shopName, outOfStockItems, productRates);
+              await uploadLedgerToCloud(userEmail, localTxs, localExs, shopName, outOfStockItems, productRates);
               localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
             }
           } else {
-            await uploadLedgerToCloud(userEmail, transactions, expenses, shopName, outOfStockItems, productRates);
+            const localTxsStr = localStorage.getItem('hisab_khata_transactions');
+            const localExsStr = localStorage.getItem('hisab_khata_expenses');
+            const localTxs = localTxsStr ? JSON.parse(localTxsStr) : [];
+            const localExs = localExsStr ? JSON.parse(localExsStr) : [];
+            await uploadLedgerToCloud(userEmail, localTxs, localExs, shopName, outOfStockItems, productRates);
             localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
           }
         } catch (e) {
@@ -691,7 +708,19 @@ export default function App() {
           const localUpdateTime = localUpdated ? parseInt(localUpdated, 10) : 0;
           const cloudUpdateTime = cloudData.updatedAt || 0;
           
-          if (cloudUpdateTime > localUpdateTime) {
+          // Read actual synchronous local values directly from localStorage to prevent any React state stales/closures
+          const localTxsStr = localStorage.getItem('hisab_khata_transactions');
+          const localExsStr = localStorage.getItem('hisab_khata_expenses');
+          const localTxs = localTxsStr ? JSON.parse(localTxsStr) : [];
+          const localExs = localExsStr ? JSON.parse(localExsStr) : [];
+          
+          const isLocalEmpty = localTxs.length === 0 && localExs.length === 0;
+          const isCloudNotEmpty = (cloudData.transactions && cloudData.transactions.length > 0) || 
+                                  (cloudData.expenses && cloudData.expenses.length > 0) ||
+                                  (cloudData.outOfStockItems && cloudData.outOfStockItems.length > 0) ||
+                                  (cloudData.productRates && cloudData.productRates.length > 0);
+
+          if (cloudUpdateTime > localUpdateTime || (isLocalEmpty && isCloudNotEmpty)) {
             setTransactions(cloudData.transactions || []);
             setExpenses(cloudData.expenses || []);
             setOutOfStockItems(cloudData.outOfStockItems || []);
@@ -704,7 +733,7 @@ export default function App() {
             localStorage.setItem('hisab_khata_expenses', JSON.stringify(cloudData.expenses || []));
             localStorage.setItem('hisab_khata_out_of_stock', JSON.stringify(cloudData.outOfStockItems || []));
             localStorage.setItem('hisab_khata_product_rates', JSON.stringify(cloudData.productRates || []));
-            localStorage.setItem('hisab_khata_last_updated', String(cloudUpdateTime));
+            localStorage.setItem('hisab_khata_last_updated', String(cloudUpdateTime || Date.now()));
             
             showToast(
               isBangla 
@@ -712,7 +741,14 @@ export default function App() {
                 : 'Latest data successfully downloaded from cloud!'
             );
           } else {
-            await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName, outOfStockItems, productRates);
+            // Read latest local values to avoid uploading stale state variables
+            const localOosStr = localStorage.getItem('hisab_khata_out_of_stock');
+            const localRatesStr = localStorage.getItem('hisab_khata_product_rates');
+            const localOos = localOosStr ? JSON.parse(localOosStr) : [];
+            const localRates = localRatesStr ? JSON.parse(localRatesStr) : [];
+            const localShopName = localStorage.getItem('hisab_khata_shop_name') || shopName;
+
+            await uploadLedgerToCloud(emailToUse, localTxs, localExs, localShopName, localOos, localRates);
             localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
             showToast(
               isBangla 
@@ -721,7 +757,18 @@ export default function App() {
             );
           }
         } else {
-          await uploadLedgerToCloud(emailToUse, transactions, expenses, shopName, outOfStockItems, productRates);
+          // Read latest local values to avoid uploading stale state variables
+          const localTxsStr = localStorage.getItem('hisab_khata_transactions');
+          const localExsStr = localStorage.getItem('hisab_khata_expenses');
+          const localOosStr = localStorage.getItem('hisab_khata_out_of_stock');
+          const localRatesStr = localStorage.getItem('hisab_khata_product_rates');
+          const localTxs = localTxsStr ? JSON.parse(localTxsStr) : [];
+          const localExs = localExsStr ? JSON.parse(localExsStr) : [];
+          const localOos = localOosStr ? JSON.parse(localOosStr) : [];
+          const localRates = localRatesStr ? JSON.parse(localRatesStr) : [];
+          const localShopName = localStorage.getItem('hisab_khata_shop_name') || shopName;
+
+          await uploadLedgerToCloud(emailToUse, localTxs, localExs, localShopName, localOos, localRates);
           localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
           showToast(
             isBangla 
@@ -1423,6 +1470,7 @@ export default function App() {
         localStorage.removeItem('hisab_khata_expenses');
         localStorage.removeItem('hisab_khata_out_of_stock');
         localStorage.removeItem('hisab_khata_product_rates');
+        localStorage.removeItem('hisab_khata_last_updated');
         showToast(isBangla ? 'সমস্ত হিসাব মুছে খাতা খালি করা হয়েছে।' : 'All ledger data cleared.');
         triggerCloudSync([], [], shopName, userEmail, [], []);
       }
