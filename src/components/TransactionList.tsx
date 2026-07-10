@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Trash2, Edit2, Check, X, Tag, User, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Transaction } from '../types';
-import { formatCurrency, formatTimeStr } from '../utils';
+import { formatCurrency, formatTimeStr, toBanglaNumber } from '../utils';
 
 interface TransactionListProps {
   transactions: Transaction[];
@@ -18,6 +18,7 @@ export default function TransactionList({
   onUpdate,
 }: TransactionListProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [showAll, setShowAll] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   
@@ -33,6 +34,8 @@ export default function TransactionList({
     const customerMatch = tx.customer ? tx.customer.toLowerCase().includes(term) : false;
     return productMatch || customerMatch;
   });
+
+  const displayedTransactions = showAll ? filteredTransactions : filteredTransactions.slice(0, 8);
 
   const startEditing = (tx: Transaction) => {
     setEditingId(tx.id);
@@ -65,30 +68,30 @@ export default function TransactionList({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-3xs">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-        <div>
-          <h3 className="text-base font-bold text-slate-800 tracking-tight">
+    <div className="w-full px-3 sm:px-4">
+      <div className="flex flex-col items-center justify-center gap-2 mb-4">
+        <div className="text-center">
+          <h3 className="text-xs sm:text-sm font-black text-slate-700 tracking-tight">
             {isBangla ? 'আজকের বিক্রির তালিকা' : "Today's Sales"}
           </h3>
-          <p className="text-xs text-slate-500">
+          <p className="text-[10px] sm:text-xs text-slate-400 font-bold">
             {isBangla 
-              ? `মোট ${filteredTransactions.length} টি হিসাব পাওয়া গেছে` 
+              ? `মোট ${toBanglaNumber(filteredTransactions.length)} টি হিসাব পাওয়া গেছে` 
               : `Found ${filteredTransactions.length} ledger records`}
           </p>
         </div>
 
         {/* Search input */}
-        <div className="relative">
+        <div className="relative w-full max-w-sm">
           <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
-            <Search className="h-4 w-4" />
+            <Search className="h-3.5 w-3.5" />
           </span>
           <input
             type="text"
             placeholder={isBangla ? 'পণ্য বা ক্রেতার নাম খুঁজুন...' : 'Search product or customer...'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full sm:w-60 pl-9 pr-4 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 focus:border-teal-500 bg-slate-50/50"
+            className="w-full pl-9 pr-4 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 focus:border-teal-500 bg-slate-50/50 font-medium"
           />
         </div>
       </div>
@@ -100,19 +103,19 @@ export default function TransactionList({
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto max-h-[440px] overflow-y-auto border border-slate-150 rounded-xl shadow-3xs bg-white">
+        <div className="overflow-x-auto max-h-[440px] overflow-y-auto no-scrollbar border border-slate-200 rounded-xl shadow-3xs bg-white">
           <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-500 font-bold bg-slate-50/80 sticky top-0 z-10">
-                <th className="py-3 px-3 text-slate-600 font-extrabold">{isBangla ? 'পণ্য' : 'Product'}</th>
-                <th className="py-3 px-3 text-slate-600 font-extrabold">{isBangla ? 'পেমেন্ট' : 'Payment'}</th>
-                <th className="py-3 px-3 text-slate-600 font-extrabold text-right">{isBangla ? 'পরিমাণ' : 'Amount'}</th>
-                <th className="py-3 px-3 text-slate-600 font-extrabold text-center">{isBangla ? 'অ্যাকশন' : 'Actions'}</th>
+            <thead className="sticky top-0 z-20 bg-slate-100 border-b border-slate-200">
+              <tr className="text-slate-600 font-extrabold">
+                <th className="py-2.5 px-2">{isBangla ? 'পণ্য' : 'Product'}</th>
+                <th className="py-2.5 px-2 w-[65px] min-w-[65px] text-center">{isBangla ? 'পেমেন্ট' : 'Payment'}</th>
+                <th className="py-2.5 px-2 text-right w-[75px] min-w-[75px]">{isBangla ? 'পরিমাণ' : 'Amount'}</th>
+                <th className="py-2.5 px-2 text-center w-[85px] min-w-[85px]">{isBangla ? 'অ্যাকশন' : 'Actions'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
               <AnimatePresence initial={false}>
-                {filteredTransactions.map((tx) => {
+                {displayedTransactions.map((tx) => {
                   const isEditing = editingId === tx.id;
 
                   return (
@@ -215,59 +218,59 @@ export default function TransactionList({
                       ) : (
                         /* Normal Table Row */
                         <>
-                          <td className="py-2.5 px-3">
+                          <td className="py-2 px-2">
                             <div className="flex flex-col gap-0.5">
                               <div className="flex items-center flex-wrap gap-1.5">
-                                <span className="font-bold text-slate-800 text-xs sm:text-[13px]">{tx.product}</span>
-                                <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-400 font-bold font-mono">
+                                <span className="font-bold text-slate-800 text-xs sm:text-[13px] break-words whitespace-normal leading-tight">{tx.product}</span>
+                                <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-400 font-bold font-mono shrink-0">
                                   <Clock className="h-2.5 w-2.5 shrink-0" />
                                   {tx.time}
                                 </span>
                               </div>
                               {!tx.isCash && tx.customer && (
-                                <span className="text-[10px] text-rose-600 font-extrabold bg-rose-50 px-1.5 py-0.2 rounded w-fit border border-rose-100/40">
+                                <span className="text-[10px] text-rose-600 font-extrabold bg-rose-50 px-1.5 py-0.2 rounded w-fit border border-rose-100/40 break-words whitespace-normal leading-tight">
                                   👤 {tx.customer}
                                 </span>
                               )}
                             </div>
                           </td>
-                          <td className="py-2.5 px-3">
+                          <td className="py-2 px-2 w-[65px] min-w-[65px] text-center">
                             {tx.isCash ? (
-                              <span className="inline-flex items-center gap-0.5 text-[9px] font-black bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100">
-                                <CheckCircle2 className="h-2.5 w-2.5" />
+                              <span className="inline-flex items-center justify-center gap-0.5 text-[9px] font-black bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100">
+                                <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
                                 {isBangla ? 'নগদ' : 'Cash'}
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-0.5 text-[9px] font-black bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded border border-rose-100">
-                                <AlertCircle className="h-2.5 w-2.5" />
+                              <span className="inline-flex items-center justify-center gap-0.5 text-[9px] font-black bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded border border-rose-100">
+                                <AlertCircle className="h-2.5 w-2.5 shrink-0" />
                                 {isBangla ? 'বাকি' : 'Due'}
                               </span>
                             )}
                           </td>
-                          <td className="py-2.5 px-3 text-right">
+                          <td className="py-2 px-2 text-right w-[75px] min-w-[75px]">
                             <span className="font-extrabold text-slate-900 text-xs sm:text-[13px] font-sans">
                               {formatCurrency(tx.amount, isBangla)}
                             </span>
                           </td>
-                          <td className="py-2.5 px-3">
-                            <div className="flex items-center justify-center gap-1">
+                          <td className="py-2 px-2 w-[85px] min-w-[85px] text-center">
+                            <div className="flex items-center justify-center gap-1 flex-nowrap">
                               {deletingId === tx.id ? (
-                                <div className="flex items-center gap-1 bg-rose-50 border border-rose-100 p-1 rounded-lg">
-                                  <span className="text-[9px] text-rose-700 font-bold">{isBangla ? 'মুছবেন?' : 'Sure?'}</span>
+                                <div className="flex items-center justify-center gap-0.5 bg-rose-50 border border-rose-100 p-0.5 px-1 rounded-md shrink-0">
+                                  <span className="text-[9px] text-rose-700 font-black">{isBangla ? 'মুছবেন?' : 'Sure?'}</span>
                                   <button
                                     type="button"
                                     onClick={() => {
                                       onDelete(tx.id);
                                       setDeletingId(null);
                                     }}
-                                    className="px-1.5 py-0.5 bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-bold rounded cursor-pointer"
+                                    className="px-1 py-0.5 bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-bold rounded cursor-pointer shrink-0"
                                   >
                                     {isBangla ? 'হ্যাঁ' : 'Yes'}
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => setDeletingId(null)}
-                                    className="px-1.5 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[9px] font-bold rounded cursor-pointer"
+                                    className="px-1 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[9px] font-bold rounded cursor-pointer shrink-0"
                                   >
                                     {isBangla ? 'না' : 'No'}
                                   </button>
@@ -277,7 +280,7 @@ export default function TransactionList({
                                   <button
                                     type="button"
                                     onClick={() => startEditing(tx)}
-                                    className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-md transition-colors cursor-pointer"
+                                    className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-md transition-colors cursor-pointer shrink-0"
                                     title={isBangla ? 'হিসাব পরিবর্তন' : 'Edit'}
                                   >
                                     <Edit2 className="h-3.5 w-3.5" />
@@ -285,7 +288,7 @@ export default function TransactionList({
                                   <button
                                     type="button"
                                     onClick={() => setDeletingId(tx.id)}
-                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer shrink-0"
                                     title={isBangla ? 'হিসাব মুছুন' : 'Delete'}
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
@@ -302,6 +305,20 @@ export default function TransactionList({
               </AnimatePresence>
             </tbody>
           </table>
+        </div>
+      )}
+
+      {filteredTransactions.length > 8 && (
+        <div className="flex justify-center mt-4">
+          <button
+            type="button"
+            onClick={() => setShowAll(!showAll)}
+            className="px-4 py-1.5 text-xs text-teal-700 hover:text-white bg-teal-50 hover:bg-teal-600 rounded-xl border border-teal-100 transition-all font-extrabold cursor-pointer shadow-3xs flex items-center justify-center gap-1 active:scale-95"
+          >
+            {showAll 
+              ? (isBangla ? 'কম দেখান' : 'Show Less') 
+              : (isBangla ? 'আরো দেখুন' : 'Show More')}
+          </button>
         </div>
       )}
     </div>

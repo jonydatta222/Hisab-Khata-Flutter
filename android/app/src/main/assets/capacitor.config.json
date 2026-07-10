@@ -7,5 +7,21 @@
 	},
 	"android": {
 		"overrideUserAgent": "Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36 Capacitor"
+	},
+	"plugins": {
+		"FirebaseAuthentication": {
+			"skipNativeAuth": false,
+			"providers": [
+				"google.com"
+			]
+		},
+		"SplashScreen": {
+			"launchShowDuration": 500,
+			"launchAutoHide": true,
+			"launchFadeOutDuration": 150,
+			"backgroundColor": "#ffffff",
+			"androidScaleType": "CENTER_CROP",
+			"showSpinner": false
+		}
 	}
 }

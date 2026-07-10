@@ -10,9 +10,10 @@ interface DueListProps {
   onDeposit: (customerName: string, amount: number) => void;
   onDelete: (customerName: string) => void;
   onRename: (oldName: string, newName: string) => void;
+  onViewDetail?: (customerName: string) => void;
 }
 
-export default function DueList({ dueList, isBangla, onDeposit, onDelete, onRename }: DueListProps) {
+export default function DueList({ dueList, isBangla, onDeposit, onDelete, onRename, onViewDetail }: DueListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [depositingCustomer, setDepositingCustomer] = useState<string | null>(null);
   const [depositAmount, setDepositAmount] = useState<string>('');
@@ -153,13 +154,20 @@ export default function DueList({ dueList, isBangla, onDeposit, onDelete, onRena
                       <span className="p-1 bg-rose-50 text-rose-600 rounded-md shrink-0 mt-0.5">
                         <Landmark className="h-3.5 w-3.5" />
                       </span>
-                      <div className="min-w-0">
-                        <h4 className="text-xs font-bold text-slate-800 truncate" title={cd.name}>{cd.name}</h4>
+                      <div 
+                        className="min-w-0 cursor-pointer group flex-1"
+                        onClick={() => onViewDetail?.(cd.name)}
+                        title={isBangla ? 'বিস্তারিত খতিয়ান দেখতে ক্লিক করুন' : 'Click to view detailed ledger'}
+                      >
+                        <h4 className="text-xs font-bold text-slate-800 group-hover:text-rose-600 group-hover:underline truncate" title={cd.name}>
+                          {cd.name}
+                        </h4>
                         <div className="flex items-center gap-1 text-[10px] text-slate-500 font-bold">
                           <span>{isBangla ? 'বাকি:' : 'Due:'}</span>
-                          <span className="text-rose-600 font-black">{formatCurrency(cd.amount, isBangla)}</span>
+                          <span className="text-rose-600 font-black group-hover:text-rose-700">
+                            {formatCurrency(cd.amount, isBangla)}
+                          </span>
                         </div>
-
                       </div>
                     </div>
 
