@@ -70,6 +70,7 @@ import StatCard from './components/StatCard';
 import TransactionList from './components/TransactionList';
 import DueList from './components/DueList';
 import ExpenseList from './components/ExpenseList';
+import MemoTab from './components/MemoTab';
 
 export default function App() {
   // --- States ---
@@ -421,7 +422,7 @@ export default function App() {
   const [editRateName, setEditRateName] = useState('');
   const [editRatePrice, setEditRatePrice] = useState('');
   const [activeInfoTab, setActiveInfoTab] = useState<'oos' | 'rates' | 'dues' | 'expenses'>('oos');
-  const [settingsSubTab, setSettingsSubTab] = useState<'store' | 'sync' | 'history' | 'about'>('store');
+  const [settingsSubTab, setSettingsSubTab] = useState<'store' | 'sync' | 'history' | 'about' | 'memo'>('store');
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -3984,14 +3985,14 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
-            className={`${settingsSubTab === 'history' ? 'max-w-4xl' : 'max-w-xl'} mx-auto w-full px-4 py-4 space-y-5 transition-all duration-300`}
+            className={`${(settingsSubTab === 'history' || settingsSubTab === 'memo') ? 'max-w-4xl' : 'max-w-xl'} mx-auto w-full px-4 py-4 space-y-5 transition-all duration-300`}
           >
             {/* Settings Tab Navigation Header */}
-            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-3xs">
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-3xs overflow-x-auto whitespace-nowrap scrollbar-none">
               <button
                 type="button"
                 onClick={() => setSettingsSubTab('store')}
-                className={`flex-1 py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                className={`flex-1 min-w-[70px] py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
                   settingsSubTab === 'store'
                     ? 'bg-white text-teal-700 shadow-3xs'
                     : 'text-slate-500 hover:text-slate-800 font-bold'
@@ -4002,7 +4003,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setSettingsSubTab('sync')}
-                className={`flex-1 py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                className={`flex-1 min-w-[70px] py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
                   settingsSubTab === 'sync'
                     ? 'bg-white text-teal-700 shadow-3xs'
                     : 'text-slate-500 hover:text-slate-800 font-bold'
@@ -4013,7 +4014,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setSettingsSubTab('history')}
-                className={`flex-1 py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                className={`flex-1 min-w-[70px] py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
                   settingsSubTab === 'history'
                     ? 'bg-white text-teal-700 shadow-3xs'
                     : 'text-slate-500 hover:text-slate-800 font-bold'
@@ -4023,8 +4024,19 @@ export default function App() {
               </button>
               <button
                 type="button"
+                onClick={() => setSettingsSubTab('memo')}
+                className={`flex-1 min-w-[90px] py-2 px-3 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                  settingsSubTab === 'memo'
+                    ? 'bg-white text-teal-700 shadow-3xs'
+                    : 'text-slate-500 hover:text-slate-800 font-bold'
+                }`}
+              >
+                {isBangla ? 'মেমো/রশিদ' : 'Memo/Receipt'}
+              </button>
+              <button
+                type="button"
                 onClick={() => setSettingsSubTab('about')}
-                className={`flex-1 py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                className={`flex-1 min-w-[110px] py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
                   settingsSubTab === 'about'
                     ? 'bg-white text-teal-700 shadow-3xs'
                     : 'text-slate-500 hover:text-slate-800 font-bold'
@@ -4541,6 +4553,15 @@ export default function App() {
                   </div>
                 </div>
               </motion.div>
+            )}
+
+            {settingsSubTab === 'memo' && (
+              <MemoTab
+                transactions={transactions}
+                productRates={productRates}
+                shopName={shopName}
+                isBangla={isBangla}
+              />
             )}
           </motion.div>
         )}
