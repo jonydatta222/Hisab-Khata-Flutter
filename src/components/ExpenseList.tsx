@@ -20,6 +20,7 @@ export default function ExpenseList({
   todayExpenseTotal,
 }: ExpenseListProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editDesc, setEditDesc] = useState('');
   const [editAmount, setEditAmount] = useState<string>('');
 
@@ -161,20 +162,45 @@ export default function ExpenseList({
                         </span>
 
                         <div className="flex items-center gap-1 border-l border-amber-100/60 pl-2">
-                          <button
-                            onClick={() => startEditing(ex)}
-                            className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors cursor-pointer"
-                            title={isBangla ? 'খরচ পরিবর্তন' : 'Edit Expense'}
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={() => onDelete(ex.id)}
-                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                            title={isBangla ? 'খরচ মুছুন' : 'Delete Expense'}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          {deletingId === ex.id ? (
+                            <div className="flex items-center justify-center gap-0.5 bg-rose-50 border border-rose-100 p-0.5 px-1 rounded-md shrink-0 animate-pulse">
+                              <span className="text-[9px] text-rose-700 font-black">{isBangla ? 'মুছবেন?' : 'Sure?'}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onDelete(ex.id);
+                                  setDeletingId(null);
+                                }}
+                                className="px-1.5 py-0.5 bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-black rounded cursor-pointer shrink-0"
+                              >
+                                {isBangla ? 'হ্যাঁ' : 'Yes'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeletingId(null)}
+                                className="px-1.5 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[9px] font-black rounded cursor-pointer shrink-0"
+                              >
+                                {isBangla ? 'না' : 'No'}
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => startEditing(ex)}
+                                className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors cursor-pointer"
+                                title={isBangla ? 'খরচ পরিবর্তন' : 'Edit Expense'}
+                              >
+                                <Edit2 className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setDeletingId(ex.id)}
+                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                title={isBangla ? 'খরচ মুছুন' : 'Delete Expense'}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
