@@ -64,12 +64,38 @@
         "productRates": { "type": "array" }
       },
       "required": ["transactions", "expenses", "shopName", "updatedAt"]
+    },
+    "VerifiedMemo": {
+      "title": "Verified Memo",
+      "description": "Memo details stored for public validation and anti-AI-forgery protection",
+      "type": "object",
+      "properties": {
+        "invoiceNo": { "type": "string" },
+        "shopName": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "date": { "type": "string" },
+        "subTotal": { "type": "number" },
+        "discount": { "type": "number" },
+        "netTotal": { "type": "number" },
+        "paid": { "type": "number" },
+        "due": { "type": "number" },
+        "items": { "type": "array" },
+        "verifiedText": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["invoiceNo", "shopName", "customerName", "date", "netTotal", "verifiedText", "createdBy"]
     }
   },
   "firestore": {
     "users/{email}": {
       "schema": "UserLedgerData",
       "description": "User ledger document identified by clean lower-case email"
+    },
+    "verified_memos/{invoiceNo}": {
+      "schema": "VerifiedMemo",
+      "description": "Publicly readable memo validation document"
     }
   }
 }

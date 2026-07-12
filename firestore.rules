@@ -38,11 +38,35 @@ service cloud.firestore {
           && (!('productRates' in data) || data.productRates is list);
     }
 
+    // Helper to validate VerifiedMemo schema
+    function isValidVerifiedMemo(data) {
+      return data.keys().hasAll(['invoiceNo', 'shopName', 'customerName', 'date', 'netTotal', 'verifiedText', 'createdBy'])
+          && data.invoiceNo is string
+          && data.invoiceNo.size() <= 100
+          && data.shopName is string
+          && data.shopName.size() <= 150
+          && data.customerName is string
+          && data.customerName.size() <= 150
+          && data.date is string
+          && data.netTotal is number
+          && data.verifiedText is string
+          && data.verifiedText.size() <= 1000
+          && data.createdBy is string;
+    }
+
     match /users/{email} {
       allow get: if isOwner(email) && isValidEmail(email);
       allow create, update: if isOwner(email) 
                              && isValidEmail(email) 
                              && isValidUserLedgerData(request.resource.data);
+      allow delete: if false;
+    }
+
+    match /verified_memos/{invoiceNo} {
+      allow get: if true; // anyone can retrieve a memo for validation
+      allow create, update: if isSignedIn()
+                             && request.auth.token.email.lower() == request.resource.data.createdBy.lower()
+                             && isValidVerifiedMemo(request.resource.data);
       allow delete: if false;
     }
   }

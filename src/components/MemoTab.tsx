@@ -13,30 +13,35 @@ import {
   MapPin, 
   Hash, 
   Check, 
-  AlertCircle 
+  AlertCircle,
+  ShieldCheck,
+  QrCode
 } from 'lucide-react';
-import { Transaction, ProductRateItem } from '../types';
+import { Transaction, ProductRateItem, MemoItem } from '../types';
 import { toBanglaNumber, formatDate, formatCurrency, generateId } from '../utils';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 
 interface MemoTabProps {
+  key?: any;
   transactions: Transaction[];
   productRates: ProductRateItem[];
   shopName: string;
   isBangla: boolean;
+  initialCustomerName?: string;
+  initialItems?: MemoItem[];
 }
 
-interface MemoItem {
-  id: string;
-  name: string;
-  quantity: number;
-  rate: number;
-  total: number;
-  unit: string;
-}
-
-export default function MemoTab({ transactions, productRates, shopName, isBangla }: MemoTabProps) {
+export default function MemoTab({ 
+  transactions, 
+  productRates, 
+  shopName, 
+  isBangla,
+  initialCustomerName = '',
+  initialItems = []
+}: MemoTabProps) {
   const isCapacitor = typeof window !== 'undefined' && (
     (window as any).Capacitor || 
     window.location.protocol === 'file:' || 
@@ -63,9 +68,17 @@ export default function MemoTab({ transactions, productRates, shopName, isBangla
       });
 
       triggerToast(isBangla ? 'রশিদ শেয়ার করার জন্য প্রস্তুত!' : 'Receipt ready for sharing/printing!');
-    } catch (error) {
-      console.error('Failed to save or share file via Capacitor:', error);
-      triggerToast(isBangla ? 'ফাইল সংরক্ষণে বা শেয়ার করতে সমস্যা হয়েছে!' : 'Error saving or sharing file!');
+    } catch (error: any) {
+      const errorStr = String(error).toLowerCase();
+      const isCanceled = errorStr.includes('cancel') || errorStr.includes('canceled') || errorStr.includes('cancelled');
+      
+      if (isCanceled) {
+        console.log('Share action was canceled by user/system.');
+        triggerToast(isBangla ? 'শেয়ারিং বাতিল করা হয়েছে।' : 'Sharing cancelled.');
+      } else {
+        console.error('Failed to save or share file via Capacitor:', error);
+        triggerToast(isBangla ? 'ফাইল সংরক্ষণে বা শেয়ার করতে সমস্যা হয়েছে!' : 'Error saving or sharing file!');
+      }
     }
   };
 
@@ -93,8 +106,17 @@ export default function MemoTab({ transactions, productRates, shopName, isBangla
   // --- Billing Settings ---
   const [invoiceNo, setInvoiceNo] = useState('');
   const [memoDate, setMemoDate] = useState('');
-  const [customerName, setCustomerName] = useState('');
+  const [customerName, setCustomerName] = useState(initialCustomerName);
   const [customerPhone, setCustomerPhone] = useState('');
+
+  // Update states reactively when props change
+  useEffect(() => {
+    setCustomerName(initialCustomerName);
+  }, [initialCustomerName]);
+
+  useEffect(() => {
+    setItems(initialItems);
+  }, [initialItems]);
 
   // Initializing default invoice and date
   useEffect(() => {
@@ -111,13 +133,85 @@ export default function MemoTab({ transactions, productRates, shopName, isBangla
 
   // --- Memo Size & Units State ---
   const [memoSize, setMemoSize] = useState<'a4' | 'a5' | 'pos'>('pos');
+  
+  // --- QR & Cloud Verification States ---
+  const [qrCodeImg, setQrCodeImg] = useState<HTMLImageElement | null>(null);
+  const [isCloudSaving, setIsCloudSaving] = useState(false);
+  const [isCloudSaved, setIsCloudSaved] = useState(false);
+
+  // Auto-load QR code image object for canvas rendering
+  useEffect(() => {
+    const verifyUrl = `${window.location.origin}?verify=${invoiceNo}`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(verifyUrl)}`;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      setQrCodeImg(img);
+    };
+    img.onerror = () => {
+      setQrCodeImg(null);
+    };
+    img.src = qrUrl;
+  }, [invoiceNo]);
+
+  // Function to save memo to Firestore
+  const saveMemoToFirebase = async () => {
+    setIsCloudSaving(true);
+    try {
+      const email = auth.currentUser?.email || localStorage.getItem('hisab_khata_sync_email') || 'anonymous';
+      const memoRef = doc(db, 'verified_memos', invoiceNo);
+      
+      const discountVal = parseFloat(discount) || 0;
+      const subTotal = items.reduce((sum, item) => sum + item.total, 0);
+      const netTotal = Math.max(0, subTotal - discountVal);
+      const paidVal = parseFloat(paid) || 0;
+      const dueVal = Math.max(0, netTotal - paidVal);
+
+      const verifiedTextStr = isBangla 
+        ? `নিশ্চিত ক্যাশ মেমো! দোকান: ${memoShopName}, রশিদ নং: ${invoiceNo}, তারিখ: ${formatDate(memoDate, true)}, ক্রেতা: ${customerName || 'সাধারণ ক্রেতা'}, সর্বমোট মূল্য: ৳${netTotal}, পরিশোধ: ৳${paidVal}, বকেয়া: ৳${dueVal}।`
+        : `Verified Invoice! Shop: ${memoShopName}, Inv No: ${invoiceNo}, Date: ${formatDate(memoDate, false)}, Customer: ${customerName || 'General Customer'}, Total Amount: ৳${netTotal}, Paid: ৳${paidVal}, Due: ৳${dueVal}.`;
+
+      const payload = {
+        invoiceNo,
+        shopName: memoShopName,
+        customerName: customerName || (isBangla ? 'সাধারণ ক্রেতা' : 'General Customer'),
+        customerPhone: customerPhone || '',
+        date: memoDate,
+        subTotal: subTotal,
+        discount: discountVal,
+        netTotal: netTotal,
+        paid: paidVal,
+        due: dueVal,
+        items: items.map(it => ({
+          name: it.name,
+          quantity: it.quantity,
+          rate: it.rate,
+          total: it.total,
+          unit: it.unit
+        })),
+        verifiedText: verifiedTextStr,
+        createdBy: email,
+        createdAt: Date.now()
+      };
+
+      await setDoc(memoRef, payload, { merge: true });
+      setIsCloudSaved(true);
+      triggerToast(isBangla ? 'মেমো ভেরিফিকেশন ডাটা ক্লাউডে সফলভাবে সেভ করা হয়েছে!' : 'Memo verification data successfully saved to cloud!');
+    } catch (err: any) {
+      console.error("Failed to save memo verification to cloud:", err);
+      triggerToast(isBangla ? 'মেমো ক্লাউডে সেভ করতে ব্যর্থ হয়েছে! অনুগ্রহ করে লগইন চেক করুন।' : 'Failed to save memo to cloud! Please check connection.');
+    } finally {
+      setIsCloudSaving(false);
+    }
+  };
+
   const unitsList = isBangla 
     ? ['পিছ', 'কেজি', 'গ্রাম', 'লিটার', 'গজ', 'ফুট', 'ব্যাগ', 'প্যাকেট', 'ডজন', 'টি', 'বস্তা', 'লিঃ']
     : ['pcs', 'kg', 'g', 'L', 'yd', 'ft', 'bag', 'pkt', 'doz', 'pcs', 'sack', 'Ltr'];
   const [newItemUnit, setNewItemUnit] = useState(isBangla ? 'পিছ' : 'pcs');
 
   // --- Memo Items State ---
-  const [items, setItems] = useState<MemoItem[]>([]);
+  const [items, setItems] = useState<MemoItem[]>(initialItems);
   
   // New Item Form State
   const [newItemName, setNewItemName] = useState('');
@@ -139,6 +233,11 @@ export default function MemoTab({ transactions, productRates, shopName, isBangla
 
   // Success toast
   const [successMsg, setSuccessMsg] = useState('');
+
+  // Track edits to invalidate cloud sync status until re-saved
+  useEffect(() => {
+    setIsCloudSaved(false);
+  }, [invoiceNo, customerName, customerPhone, items, discount, paid, memoShopName, memoDate]);
 
   const triggerToast = (msg: string) => {
     setSuccessMsg(msg);
@@ -445,6 +544,59 @@ export default function MemoTab({ transactions, productRates, shopName, isBangla
     ctx.font = sizeType === 'pos' ? 'italic 9px sans-serif' : 'italic 12px sans-serif';
     ctx.fillText(`${isBangla ? 'মন্তব্য: ' : 'Notes: '}${memoNote}`, marginX + 10, summaryStartY + 12);
 
+    // DRAW VERIFICATION QR CODE (Bottom left)
+    const qrSize = sizeType === 'pos' ? 55 : 75;
+    const qrX = marginX + 10;
+    const qrY = summaryStartY + (sizeType === 'pos' ? 24 : 32);
+
+    if (qrCodeImg) {
+      ctx.drawImage(qrCodeImg, qrX, qrY, qrSize, qrSize);
+      
+      // Draw border around QR code
+      ctx.strokeStyle = '#0F766E';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4);
+    } else {
+      // Draw placeholder border with text
+      ctx.strokeStyle = '#94A3B8';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(qrX, qrY, qrSize, qrSize);
+      
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = sizeType === 'pos' ? '8px sans-serif' : '10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(isBangla ? 'ভেরিফাই QR' : 'Verify QR', qrX + qrSize / 2, qrY + qrSize / 2 + 3);
+    }
+
+    // Little caption under QR code
+    ctx.fillStyle = '#64748B';
+    ctx.font = sizeType === 'pos' ? '7px sans-serif' : '9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(isBangla ? 'স্ক্যান করে যাচাই করুন' : 'Scan to Verify', qrX + qrSize / 2, qrY + qrSize + 11);
+
+    // OVERLAPPING ANTI-AI WATERMARK OVERALL
+    ctx.save();
+    ctx.fillStyle = 'rgba(15, 118, 110, 0.05)'; // very pale transparent teal
+    ctx.font = sizeType === 'pos' ? 'bold 11px sans-serif' : 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // Translate and rotate canvas around center
+    ctx.translate(width / 2, height / 2);
+    ctx.rotate(-20 * Math.PI / 180); // -20 degrees
+    ctx.translate(-width / 2, -height / 2);
+    
+    // Draw grid pattern of shop name text
+    const watermarkText = memoShopName.toUpperCase();
+    const xStep = sizeType === 'pos' ? 120 : 160;
+    const yStep = sizeType === 'pos' ? 70 : 100;
+    for (let x = -width; x < width * 2; x += xStep) {
+      for (let y = -height; y < height * 2; y += yStep) {
+        ctx.fillText(watermarkText, x, y);
+      }
+    }
+    ctx.restore();
+
     // Footer lines & signatures section
     const sigY = summaryStartY + calcSpacing * 5 + (sizeType === 'pos' ? 30 : 60);
     ctx.strokeStyle = '#94A3B8';
@@ -725,6 +877,31 @@ export default function MemoTab({ transactions, productRates, shopName, isBangla
               font-size: 10px;
               color: #94a3b8;
             }
+            .watermark-overlay {
+              position: absolute;
+              top: 0;
+              left: 0;
+              width: 100%;
+              height: 100%;
+              overflow: hidden;
+              pointer-events: none;
+              z-index: 1; /* overlapping on top of card details, but background is underneath */
+              opacity: 0.05;
+              display: flex;
+              flex-wrap: wrap;
+              justify-content: center;
+              align-content: center;
+              gap: 40px;
+              transform: rotate(-20deg) scale(1.2);
+            }
+            .watermark-text {
+              font-size: 11px;
+              font-weight: 900;
+              color: #0f766e;
+              white-space: nowrap;
+              text-transform: uppercase;
+              letter-spacing: 2px;
+            }
             @page {
               size: ${memoSize === 'a4' ? 'A4 portrait' : memoSize === 'a5' ? 'A5 portrait' : '80mm auto'};
               margin: ${memoSize === 'pos' ? '0' : '15mm 10mm'};
@@ -749,6 +926,12 @@ export default function MemoTab({ transactions, productRates, shopName, isBangla
         </head>
         <body>
           <div class="memo-container">
+            <!-- OVERLAPPING WATERMARK FOR SECURITY -->
+            <div class="watermark-overlay">
+              ${Array.from({ length: 16 }).map(() => `
+                <div class="watermark-text">${memoShopName}</div>
+              `).join('')}
+            </div>
             <div class="shop-header">
               <div class="shop-title">${memoShopName}</div>
               <div class="memo-label">${isBangla ? 'ক্যাশ মেমো / রশিদ' : 'CASH MEMO / RECEIPT'}</div>
@@ -803,6 +986,16 @@ export default function MemoTab({ transactions, productRates, shopName, isBangla
 
             <div class="notes-container">
               <strong>${isBangla ? 'মন্তব্য: ' : 'Notes:'}</strong> ${memoNote}
+              
+              <div style="margin-top: 15px; display: flex; align-items: center; gap: 10px; border: 1px solid #e2e8f0; padding: 6px; border-radius: 8px; background: #fdfdfd; width: fit-content; max-width: 250px;">
+                <div style="border: 1px solid #0f766e; padding: 2px; background: white; border-radius: 4px; flex-shrink: 0;">
+                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${window.location.origin}?verify=${invoiceNo}`)}" style="width: 50px; height: 50px; display: block;" />
+                </div>
+                <div style="font-size: 8px; font-weight: bold; color: #475569; line-height: 1.3; font-style: normal; text-align: left;">
+                  <span style="color: #0f766e; font-weight: 900; display: block; font-size: 9px; margin-bottom: 2px;">${isBangla ? 'সত্যতা যাচাই কিউআর' : 'Verification QR'}</span>
+                  ${isBangla ? 'মোবাইলে স্ক্যান করে আসল রশিদ যাচাই করুন।' : 'Scan with phone camera to verify receipt authenticity.'}
+                </div>
+              </div>
             </div>
 
             <div class="totals-container">
@@ -1374,6 +1567,15 @@ export default function MemoTab({ transactions, productRates, shopName, isBangla
             })()}
             id="printable-cash-memo-sheet"
           >
+            {/* OVERLAPPING ANTI-AI WATERMARK OVERLAY (High Z-Index, pointer-events-none so it overlaps but does not block clicks) */}
+            <div className="absolute inset-0 pointer-events-none select-none overflow-hidden opacity-[0.06] z-10 flex flex-wrap items-center justify-center gap-x-12 gap-y-16 rotate-[-20deg] py-12 px-6">
+              {Array.from({ length: 16 }).map((_, i) => (
+                <span key={i} className="text-[10px] font-black tracking-widest text-teal-900 uppercase whitespace-nowrap select-none">
+                  {memoShopName}
+                </span>
+              ))}
+            </div>
+
             {/* Header decor lines */}
             <div className="absolute top-2.5 left-2.5 right-2.5 bottom-2.5 border border-teal-800/20 pointer-events-none rounded-lg" />
             <div className="absolute top-3 left-3 right-3 bottom-3 border border-teal-800/60 pointer-events-none rounded-lg" />
@@ -1459,11 +1661,32 @@ export default function MemoTab({ transactions, productRates, shopName, isBangla
               </div>
 
               {/* Bottom calculations rows */}
-              <div className="mt-3.5 flex justify-between items-start text-[10px]">
-                <div className="w-1/2 pr-3">
-                  <div className="text-slate-500 leading-relaxed font-bold">
+              <div className="mt-3.5 flex justify-between items-start text-[10px] relative z-20">
+                <div className="w-1/2 pr-3 flex flex-col justify-between h-full">
+                  <div className="text-slate-500 leading-relaxed font-bold mb-3">
                     <p className="font-extrabold text-slate-600 mb-0.5">{isBangla ? 'মন্তব্য:' : 'Note:'}</p>
                     <p className="italic text-slate-400">{memoNote}</p>
+                  </div>
+
+                  {/* QR Code Validation Display */}
+                  <div className="mt-2 flex items-center gap-2 border border-slate-100 p-1.5 bg-slate-50/50 rounded-xl">
+                    <div className="relative border border-teal-700/20 p-1 bg-white rounded-lg inline-block shadow-3xs">
+                      <img 
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${window.location.origin}?verify=${invoiceNo}`)}`}
+                        alt="Verification QR Code"
+                        className="h-14 w-14"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                    <div className="text-[8px] text-slate-400 font-bold space-y-0.5 leading-snug">
+                      <p className="font-black text-teal-700 text-[9px]">{isBangla ? 'সত্যতা যাচাই করুন' : 'Verify Receipt'}</p>
+                      <p>{isBangla ? 'কিউআর স্ক্যান করুন' : 'Scan the QR code'}</p>
+                      {isCloudSaved ? (
+                        <p className="text-emerald-600 font-black flex items-center gap-0.5">✓ {isBangla ? 'ক্লাউড ভেরিফাইড' : 'Cloud Verified'}</p>
+                      ) : (
+                        <p className="text-amber-500 font-black">{isBangla ? 'সেভ করা হয়নি' : 'Not Saved Yet'}</p>
+                      )}
+                    </div>
                   </div>
                 </div>
                 
@@ -1511,6 +1734,42 @@ export default function MemoTab({ transactions, productRates, shopName, isBangla
             <div className="text-center text-[7px] text-slate-300 pt-2 border-t border-slate-100/50 mt-1">
               {isBangla ? 'ডিজিটাল হিসাব খাতা ক্যাশ মেমো সিস্টেম' : 'Digital Hisab Khata Cash Memo system'}
             </div>
+          </div>
+
+          {/* Cloud Verification Sync Button */}
+          <div className="max-w-[440px] mx-auto mb-3.5">
+            <button
+              type="button"
+              onClick={saveMemoToFirebase}
+              disabled={isCloudSaving}
+              className={`w-full py-3 px-4 rounded-xl font-black text-xs transition-all shadow-sm flex items-center justify-center gap-2 border cursor-pointer ${
+                isCloudSaved 
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                  : 'bg-teal-600 border-teal-500 text-white hover:bg-teal-700 hover:shadow-md'
+              }`}
+            >
+              {isCloudSaving ? (
+                <>
+                  <div className="h-4 w-4 border-2 border-slate-300 border-t-white rounded-full animate-spin" />
+                  <span>{isBangla ? 'ভেরিফিকেশন ডাটা সেভ হচ্ছে...' : 'Saving verification details...'}</span>
+                </>
+              ) : isCloudSaved ? (
+                <>
+                  <ShieldCheck className="h-4 w-4 text-emerald-600 animate-bounce" />
+                  <span>{isBangla ? '✓ মেমো ভেরিফিকেশন ক্লাউডে সুরক্ষিত আছে' : '✓ Memo Verification Secure in Cloud'}</span>
+                </>
+              ) : (
+                <>
+                  <QrCode className="h-4 w-4" />
+                  <span>{isBangla ? 'মেমো ভেরিফিকেশন ক্লাউডে সেভ করুন' : 'Save Memo Verification to Cloud'}</span>
+                </>
+              )}
+            </button>
+            <p className="text-[9px] text-slate-400 font-bold text-center mt-1.5 leading-relaxed">
+              {isBangla 
+                ? 'রশিদে থাকা QR কোড স্ক্যান করে যাতে আসল ক্যাশ মেমো যাচাই করা যায়, সেজন্য ক্লাউড ডেটাবেজে মেমো সংরক্ষণ করুন।'
+                : 'Save receipt details to our secure cloud database so anyone scanning the QR code can instantly verify its authenticity.'}
+            </p>
           </div>
 
           {/* Action buttons to trigger print and download */}

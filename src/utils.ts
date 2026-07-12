@@ -49,10 +49,8 @@ export function formatDate(dateStr: string, isBangla: boolean): string {
 export function formatTimeStr(timeStr: string, isBangla: boolean): string {
   if (!isBangla) return timeStr;
   
-  let result = timeStr;
-  result = result.replace('AM', 'এএম');
-  result = result.replace('PM', 'পিএম');
-  return toBanglaNumber(result);
+  // Keep AM and PM in English format as requested
+  return toBanglaNumber(timeStr);
 }
 
 /**

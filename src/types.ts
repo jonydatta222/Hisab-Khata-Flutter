@@ -43,3 +43,13 @@ export interface ProductRateItem {
   dateAdded: string; // YYYY-MM-DD
 }
 
+export interface MemoItem {
+  id: string;
+  name: string;
+  quantity: number;
+  rate: number;
+  total: number;
+  unit: string;
+}
+
+

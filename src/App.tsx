@@ -37,10 +37,11 @@ import {
   Linkedin,
   Search,
   Eye,
-  EyeOff
+  EyeOff,
+  ShieldCheck
 } from 'lucide-react';
 
-import { Transaction, Expense, CustomerDue, DailySummary, OutOfStockItem, ProductRateItem } from './types';
+import { Transaction, Expense, CustomerDue, DailySummary, OutOfStockItem, ProductRateItem, MemoItem } from './types';
 import {
   toBanglaNumber,
   formatDate,
@@ -77,6 +78,65 @@ import ExpenseList from './components/ExpenseList';
 import MemoTab from './components/MemoTab';
 
 export default function App() {
+  // --- QR Verification States & Handlers ---
+  const [verificationInvoiceId, setVerificationInvoiceId] = useState<string | null>(null);
+  const [verifiedMemoData, setVerifiedMemoData] = useState<any | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
+
+  const fetchVerifiedMemo = async (id: string) => {
+    setIsVerifying(true);
+    setVerificationError(null);
+    setVerifiedMemoData(null);
+    try {
+      const { doc, getDoc } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      
+      const docRef = doc(db, 'verified_memos', id);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        setVerifiedMemoData(docSnap.data());
+      } else {
+        setVerificationError('not_found');
+      }
+    } catch (err) {
+      console.error('Error fetching verified memo:', err);
+      setVerificationError('failed');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleCloseVerification = () => {
+    setVerificationInvoiceId(null);
+    setVerifiedMemoData(null);
+    setVerificationError(null);
+    window.history.pushState({}, document.title, window.location.pathname);
+  };
+
+  // --- Check for Invoice QR verification link on load ---
+  useEffect(() => {
+    const checkVerifyLink = () => {
+      const params = new URLSearchParams(window.location.search);
+      let verifyId = params.get('verify');
+      
+      if (!verifyId && window.location.hash.includes('verify=')) {
+        const hashPart = window.location.hash.split('?')[1] || window.location.hash;
+        const hashParams = new URLSearchParams(hashPart);
+        verifyId = hashParams.get('verify');
+      }
+
+      if (verifyId) {
+        setVerificationInvoiceId(verifyId);
+        fetchVerifiedMemo(verifyId);
+      }
+    };
+
+    checkVerifyLink();
+    window.addEventListener('popstate', checkVerifyLink);
+    return () => window.removeEventListener('popstate', checkVerifyLink);
+  }, []);
+
   // --- States ---
   const isIframe = typeof window !== 'undefined' && window.self !== window.top;
   const isCapacitor = typeof window !== 'undefined' && (
@@ -199,6 +259,35 @@ export default function App() {
   const [amount, setAmount] = useState('');
   const [isCashTransaction, setIsCashTransaction] = useState(true);
   const [customerName, setCustomerName] = useState('');
+
+  // Memo Pre-fill state
+  const [initialMemoCustomer, setInitialMemoCustomer] = useState('');
+  const [initialMemoItems, setInitialMemoItems] = useState<MemoItem[]>([]);
+  const [memoKey, setMemoKey] = useState(0);
+
+  const handleOpenMemoWithData = () => {
+    const items: MemoItem[] = [];
+    if (productName.trim()) {
+      const rate = parseFloat(amount) || 0;
+      items.push({
+        id: generateId(),
+        name: productName.trim(),
+        quantity: 1,
+        rate: rate,
+        total: rate,
+        unit: isBangla ? 'টি' : 'pcs'
+      });
+    }
+    setInitialMemoCustomer(customerName.trim());
+    setInitialMemoItems(items);
+    setMemoKey(prev => prev + 1);
+    
+    // Switch to settings nav tab and select memo subtab
+    setCurrentNavTab('settings');
+    setSettingsSubTab('memo');
+    
+    showToast(isBangla ? 'মেমো তৈরি করার পৃষ্ঠা খোলা হয়েছে!' : 'Memo creation page opened!');
+  };
   
   // Form states (Expense)
   const [expenseDesc, setExpenseDesc] = useState('');
@@ -1939,6 +2028,187 @@ export default function App() {
 
 
 
+  if (verificationInvoiceId !== null) {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-800 antialiased font-sans flex flex-col p-4 sm:p-6 md:p-8 relative justify-center items-center">
+        <div className="max-w-xl w-full bg-white border border-slate-200 shadow-lg rounded-3xl p-6 sm:p-8 flex flex-col justify-between">
+          
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-teal-50 rounded-xl">
+                <ShieldCheck className="h-6 w-6 text-teal-700" />
+              </div>
+              <div>
+                <h2 className="text-sm font-black text-slate-900 leading-none">
+                  {isBangla ? 'ক্যাশ মেমো সত্যতা যাচাই' : 'Receipt Authenticity Verification'}
+                </h2>
+                <p className="text-[10px] text-slate-400 font-bold mt-1">
+                  {isBangla ? 'ডিজিটাল হিসাব খাতা সিকিউরিটি' : 'Digital Hisab Khata Security'}
+                </p>
+              </div>
+            </div>
+            
+            <button
+              onClick={handleCloseVerification}
+              className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-all cursor-pointer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Loading state */}
+          {isVerifying && (
+            <div className="flex flex-col items-center justify-center py-16 space-y-4">
+              <div className="h-8 w-8 border-3 border-teal-600 border-t-transparent rounded-full animate-spin" />
+              <p className="text-xs font-extrabold text-slate-500 animate-pulse text-center">
+                {isBangla ? 'রশিদের তথ্য অনুসন্ধান করা হচ্ছে...' : 'Fetching receipt validation records...'}
+              </p>
+            </div>
+          )}
+
+          {/* Verification Failed or Unregistered state */}
+          {!isVerifying && verificationError && (
+            <div className="text-center py-10 space-y-5">
+              <div className="h-16 w-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto shadow-sm">
+                <AlertCircle className="h-8 w-8" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-base font-black text-rose-700">
+                  {isBangla ? 'অনিবন্ধিত বা নকল মেমো!' : 'Unverified or Fake Invoice!'}
+                </h3>
+                <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                  {isBangla 
+                    ? `রশিদ নং ${verificationInvoiceId} আমাদের সুরক্ষিত ক্লাউড ডেটাবেজে নিবন্ধিত পাওয়া যায়নি। এই মেমোটি নকল অথবা পরবর্তীকালে কৃত্রিম উপায়ে (AI বা এডিটিং সফটওয়্যার দিয়ে) পরিবর্তন করা হয়ে থাকতে পারে!`
+                    : `Invoice number ${verificationInvoiceId} was not found in our secure cloud database. This memo might be fake, modified, or forged using photo-editing or AI tools.`}
+                </p>
+              </div>
+              <div className="pt-4">
+                <button
+                  onClick={handleCloseVerification}
+                  className="px-6 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-black rounded-xl transition-all shadow-xs cursor-pointer"
+                >
+                  {isBangla ? 'হিসাব খাতায় ফিরে যান' : 'Back to Ledger'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Verification Successful state */}
+          {!isVerifying && verifiedMemoData && (
+            <div className="space-y-6">
+              
+              {/* Success Badge */}
+              <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex items-center gap-3.5 shadow-3xs">
+                <div className="h-11 w-11 bg-emerald-600 text-white rounded-full flex items-center justify-center flex-shrink-0 shadow-xs">
+                  <Check className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-emerald-800">
+                    {isBangla ? '✓ আসল ক্যাশ মেমো নিশ্চিত!' : '✓ Authentic Cash Memo Confirmed!'}
+                  </h3>
+                  <p className="text-[10px] text-emerald-600 font-extrabold mt-0.5 leading-snug">
+                    {isBangla 
+                      ? 'এই ক্যাশ মেমোটির তথ্য ক্লাউডে সংরক্ষিত আছে এবং এটি দোকান মালিক দ্বারা যাচাইকৃত।' 
+                      : 'This invoice matches the official records in our secure cloud and is safe.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Verified details text summary */}
+              <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl text-[11px] font-bold text-slate-600 space-y-1.5 leading-relaxed">
+                <p className="text-[10px] font-black uppercase text-teal-800 tracking-wider">
+                  {isBangla ? 'অফিসিয়াল সত্যতা রেকর্ড' : 'Official Verification Record'}
+                </p>
+                <p className="italic text-slate-800">"{verifiedMemoData.verifiedText}"</p>
+              </div>
+
+              {/* Full Memo Data Breakdown */}
+              <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-3xs bg-slate-50/30">
+                <div className="bg-slate-100 px-4 py-2 text-[10px] font-black text-slate-600 uppercase tracking-wider flex justify-between">
+                  <span>{isBangla ? 'রশিদ মেটা তথ্য' : 'Invoice Metadata'}</span>
+                  <span className="text-teal-700 font-black">{verifiedMemoData.invoiceNo}</span>
+                </div>
+                
+                <div className="p-4 space-y-2.5 text-xs font-bold text-slate-600">
+                  <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                    <span>{isBangla ? 'দোকানের নাম:' : 'Shop Name:'}</span>
+                    <span className="text-slate-800 font-black">{verifiedMemoData.shopName}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                    <span>{isBangla ? 'ক্রেতার নাম:' : 'Customer:'}</span>
+                    <span className="text-slate-800 font-extrabold">{verifiedMemoData.customerName}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                    <span>{isBangla ? 'তারিখ:' : 'Date:'}</span>
+                    <span className="text-slate-800">{verifiedMemoData.date ? formatDate(verifiedMemoData.date, isBangla) : ''}</span>
+                  </div>
+                  
+                  {/* Items list */}
+                  <div className="mt-3.5 space-y-1 bg-white p-2.5 rounded-xl border border-slate-100 max-h-[160px] overflow-y-auto">
+                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-wider mb-1.5">
+                      {isBangla ? 'ক্রয়কৃত পণ্যের তালিকা' : 'Purchased Products'}
+                    </p>
+                    {verifiedMemoData.items && verifiedMemoData.items.map((item: any, idx: number) => (
+                      <div key={idx} className="flex justify-between text-[11px] py-1 border-b border-slate-50 last:border-0 font-extrabold text-slate-700">
+                        <span>{item.name} <span className="text-[8px] text-slate-400">({isBangla ? toBanglaNumber(item.quantity) : item.quantity} {item.unit || ''})</span></span>
+                        <span>৳{isBangla ? toBanglaNumber(item.total) : item.total}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Pricing summaries */}
+                  <div className="pt-2 space-y-1.5 text-slate-500 font-extrabold">
+                    <div className="flex justify-between text-[11px]">
+                      <span>{isBangla ? 'উপ-মোট মূল্য:' : 'Subtotal:'}</span>
+                      <span>৳{isBangla ? toBanglaNumber(verifiedMemoData.subTotal) : verifiedMemoData.subTotal}</span>
+                    </div>
+                    {verifiedMemoData.discount > 0 && (
+                      <div className="flex justify-between text-[11px]">
+                        <span>{isBangla ? 'ডিসকাউন্ট:' : 'Discount:'}</span>
+                        <span>- ৳{isBangla ? toBanglaNumber(verifiedMemoData.discount) : verifiedMemoData.discount}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-teal-800 font-black text-sm border-t border-slate-100 pt-1.5">
+                      <span>{isBangla ? 'সর্বমোট মূল্য:' : 'Net Payable:'}</span>
+                      <span>৳{isBangla ? toBanglaNumber(verifiedMemoData.netTotal) : verifiedMemoData.netTotal}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px]">
+                      <span>{isBangla ? 'পরিশোধিত টাকা:' : 'Paid Amount:'}</span>
+                      <span className="text-slate-800">৳{isBangla ? toBanglaNumber(verifiedMemoData.paid) : verifiedMemoData.paid}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px]" style={{ color: verifiedMemoData.due > 0 ? '#b91c1c' : '#047857' }}>
+                      <span>{isBangla ? 'বাকি বা বকেয়া:' : 'Due balance:'}</span>
+                      <span>৳{isBangla ? toBanglaNumber(verifiedMemoData.due) : verifiedMemoData.due}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="pt-2 flex gap-3">
+                <button
+                  onClick={handleCloseVerification}
+                  className="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white text-xs font-black rounded-xl transition-all shadow-3xs cursor-pointer text-center"
+                >
+                  {isBangla ? 'হিসাব খাতায় প্রবেশ করুন' : 'Enter Ledger Web App'}
+                </button>
+              </div>
+
+            </div>
+          )}
+
+          {/* Footer branding */}
+          <div className="text-center text-[9px] text-slate-300 font-bold border-t border-slate-100 pt-4 mt-8 flex items-center justify-center gap-1">
+            <ShieldCheck className="h-3 w-3 text-emerald-500" />
+            <span>{isBangla ? 'ডিজিটাল হিসাব খাতা সিকিউরড ভেরিফিকেশন' : 'Digital Hisab Khata Secured Verification'}</span>
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-slate-800 antialiased font-sans flex flex-col pb-24 relative overflow-x-hidden">
       
@@ -2263,45 +2533,58 @@ export default function App() {
 
                   {/* Payment Type Selection (Mini capsule toggle) */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-slate-50">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-bold text-slate-500">
-                        {isBangla ? 'পেমেন্ট ধরন:' : 'Payment:'}
-                      </span>
-                      <div className="inline-flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/50">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsCashTransaction(true);
-                            setCustomerName('');
-                          }}
-                          className={`px-3 py-1 text-[10px] font-black rounded-md transition-all cursor-pointer ${
-                            isCashTransaction
-                              ? 'bg-emerald-600 text-white shadow-3xs'
-                              : 'text-slate-500 hover:text-slate-600'
-                          }`}
-                          id="type-cash-btn"
-                        >
-                          <span>{isBangla ? 'নগদ' : 'Cash'}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsCashTransaction(false);
-                            // Auto focus customer input
-                            setTimeout(() => {
-                              customerInputRef.current?.focus();
-                            }, 100);
-                          }}
-                          className={`px-3 py-1 text-[10px] font-black rounded-md transition-all cursor-pointer ${
-                            !isCashTransaction
-                              ? 'bg-[#E91E63] text-white shadow-3xs'
-                              : 'text-slate-500 hover:text-slate-600'
-                          }`}
-                          id="type-due-btn"
-                        >
-                          <span>{isBangla ? 'বাকি' : 'Due'}</span>
-                        </button>
+                    <div className="flex items-center justify-between sm:justify-start gap-3 flex-wrap w-full sm:w-auto">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold text-slate-500">
+                          {isBangla ? 'পেমেন্ট ধরন:' : 'Payment:'}
+                        </span>
+                        <div className="inline-flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/50">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCashTransaction(true);
+                              setCustomerName('');
+                            }}
+                            className={`px-3 py-1 text-[10px] font-black rounded-md transition-all cursor-pointer ${
+                              isCashTransaction
+                                ? 'bg-emerald-600 text-white shadow-3xs'
+                                : 'text-slate-500 hover:text-slate-600'
+                            }`}
+                            id="type-cash-btn"
+                          >
+                            <span>{isBangla ? 'নগদ' : 'Cash'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCashTransaction(false);
+                              // Auto focus customer input
+                              setTimeout(() => {
+                                customerInputRef.current?.focus();
+                              }, 100);
+                            }}
+                            className={`px-3 py-1 text-[10px] font-black rounded-md transition-all cursor-pointer ${
+                              !isCashTransaction
+                                ? 'bg-[#E91E63] text-white shadow-3xs'
+                                : 'text-slate-500 hover:text-slate-600'
+                            }`}
+                            id="type-due-btn"
+                          >
+                            <span>{isBangla ? 'বাকি' : 'Due'}</span>
+                          </button>
+                        </div>
                       </div>
+
+                      {/* Memo/Receipt Shortcut Button - shifted slightly to the right with beautiful soft click design */}
+                      <button
+                        type="button"
+                        onClick={handleOpenMemoWithData}
+                        className="ml-auto sm:ml-4 px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 text-[10px] sm:text-xs font-black rounded-lg border border-teal-200/50 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs active:scale-95"
+                        id="dashboard-open-memo-btn"
+                      >
+                        <span className="text-xs">📝</span>
+                        <span>{isBangla ? 'মেমো তৈরি করুন' : 'Create Memo'}</span>
+                      </button>
                     </div>
 
                     {/* Conditional Customer Name Input inline when space is narrow */}
@@ -4773,10 +5056,13 @@ export default function App() {
 
             {settingsSubTab === 'memo' && (
               <MemoTab
+                key={memoKey}
                 transactions={transactions}
                 productRates={productRates}
                 shopName={shopName}
                 isBangla={isBangla}
+                initialCustomerName={initialMemoCustomer}
+                initialItems={initialMemoItems}
               />
             )}
           </motion.div>
