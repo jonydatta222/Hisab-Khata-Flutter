@@ -41,6 +41,7 @@ export interface ProductRateItem {
   name: string;
   buyingPrice: number;
   dateAdded: string; // YYYY-MM-DD
+  keywords?: string;
 }
 
 export interface MemoItem {

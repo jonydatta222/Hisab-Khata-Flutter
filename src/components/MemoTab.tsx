@@ -159,7 +159,8 @@ export default function MemoTab({
     setIsCloudSaving(true);
     try {
       const email = auth.currentUser?.email || localStorage.getItem('hisab_khata_sync_email') || 'anonymous';
-      const memoRef = doc(db, 'verified_memos', invoiceNo);
+      const cleanInvoiceNo = invoiceNo.trim();
+      const memoRef = doc(db, 'verified_memos', cleanInvoiceNo);
       
       const discountVal = parseFloat(discount) || 0;
       const subTotal = items.reduce((sum, item) => sum + item.total, 0);
@@ -168,11 +169,11 @@ export default function MemoTab({
       const dueVal = Math.max(0, netTotal - paidVal);
 
       const verifiedTextStr = isBangla 
-        ? `নিশ্চিত ক্যাশ মেমো! দোকান: ${memoShopName}, রশিদ নং: ${invoiceNo}, তারিখ: ${formatDate(memoDate, true)}, ক্রেতা: ${customerName || 'সাধারণ ক্রেতা'}, সর্বমোট মূল্য: ৳${netTotal}, পরিশোধ: ৳${paidVal}, বকেয়া: ৳${dueVal}।`
-        : `Verified Invoice! Shop: ${memoShopName}, Inv No: ${invoiceNo}, Date: ${formatDate(memoDate, false)}, Customer: ${customerName || 'General Customer'}, Total Amount: ৳${netTotal}, Paid: ৳${paidVal}, Due: ৳${dueVal}.`;
+        ? `নিশ্চিত ক্যাশ মেমো! দোকান: ${memoShopName}, রশিদ নং: ${cleanInvoiceNo}, তারিখ: ${formatDate(memoDate, true)}, ক্রেতা: ${customerName || 'সাধারণ ক্রেতা'}, সর্বমোট মূল্য: ৳${netTotal}, পরিশোধ: ৳${paidVal}, বকেয়া: ৳${dueVal}।`
+        : `Verified Invoice! Shop: ${memoShopName}, Inv No: ${cleanInvoiceNo}, Date: ${formatDate(memoDate, false)}, Customer: ${customerName || 'General Customer'}, Total Amount: ৳${netTotal}, Paid: ৳${paidVal}, Due: ৳${dueVal}.`;
 
       const payload = {
-        invoiceNo,
+        invoiceNo: cleanInvoiceNo,
         shopName: memoShopName,
         customerName: customerName || (isBangla ? 'সাধারণ ক্রেতা' : 'General Customer'),
         customerPhone: customerPhone || '',
@@ -210,7 +211,8 @@ export default function MemoTab({
       if (!auth.currentUser) return;
       const email = auth.currentUser.email;
       if (!email) return;
-      const memoRef = doc(db, 'verified_memos', invoiceNo);
+      const cleanInvoiceNo = invoiceNo.trim();
+      const memoRef = doc(db, 'verified_memos', cleanInvoiceNo);
       
       const discountVal = parseFloat(discount) || 0;
       const subTotal = items.reduce((sum, item) => sum + item.total, 0);
@@ -219,11 +221,11 @@ export default function MemoTab({
       const dueVal = Math.max(0, netTotal - paidVal);
 
       const verifiedTextStr = isBangla 
-        ? `নিশ্চিত ক্যাশ মেমো! দোকান: ${memoShopName}, রশিদ নং: ${invoiceNo}, তারিখ: ${formatDate(memoDate, true)}, ক্রেতা: ${customerName || 'সাধারণ ক্রেতা'}, সর্বমোট মূল্য: ৳${netTotal}, পরিশোধ: ৳${paidVal}, বকেয়া: ৳${dueVal}।`
-        : `Verified Invoice! Shop: ${memoShopName}, Inv No: ${invoiceNo}, Date: ${formatDate(memoDate, false)}, Customer: ${customerName || 'General Customer'}, Total Amount: ৳${netTotal}, Paid: ৳${paidVal}, Due: ৳${dueVal}.`;
+        ? `নিশ্চিত ক্যাশ মেমো! দোকান: ${memoShopName}, রশিদ নং: ${cleanInvoiceNo}, তারিখ: ${formatDate(memoDate, true)}, ক্রেতা: ${customerName || 'সাধারণ ক্রেতা'}, সর্বমোট মূল্য: ৳${netTotal}, পরিশোধ: ৳${paidVal}, বকেয়া: ৳${dueVal}।`
+        : `Verified Invoice! Shop: ${memoShopName}, Inv No: ${cleanInvoiceNo}, Date: ${formatDate(memoDate, false)}, Customer: ${customerName || 'General Customer'}, Total Amount: ৳${netTotal}, Paid: ৳${paidVal}, Due: ৳${dueVal}.`;
 
       const payload = {
-        invoiceNo,
+        invoiceNo: cleanInvoiceNo,
         shopName: memoShopName,
         customerName: customerName || (isBangla ? 'সাধারণ ক্রেতা' : 'General Customer'),
         customerPhone: customerPhone || '',

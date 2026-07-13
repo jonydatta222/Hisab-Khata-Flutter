@@ -27,6 +27,7 @@ import {
   LogOut,
   ChevronDown,
   Check,
+  CheckCircle2,
   X,
   Home,
   Settings as SettingsIcon,
@@ -82,7 +83,9 @@ export default function App() {
   const [verificationInvoiceId, setVerificationInvoiceId] = useState<string | null>(null);
   const [verifiedMemoData, setVerifiedMemoData] = useState<any | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [verificationError, setVerificationError] = useState<'not_found' | 'failed' | null>(null);
+  const [isVerificationOnlyMode, setIsVerificationOnlyMode] = useState(false);
+  const [verificationSessionEnded, setVerificationSessionEnded] = useState(false);
 
   const fetchVerifiedMemo = async (id: string) => {
     if (!id || !id.trim()) {
@@ -95,11 +98,20 @@ export default function App() {
     setVerificationError(null);
     setVerifiedMemoData(null);
     try {
-      const { doc, getDoc } = await import('firebase/firestore');
+      const { doc, getDoc, getDocFromServer } = await import('firebase/firestore');
       const { db } = await import('./firebase');
       
-      const docRef = doc(db, 'verified_memos', id);
-      const docSnap = await getDoc(docRef);
+      const cleanId = id.trim();
+      const docRef = doc(db, 'verified_memos', cleanId);
+      
+      let docSnap;
+      try {
+        docSnap = await getDocFromServer(docRef);
+      } catch (serverErr) {
+        console.warn('Failed to fetch from server, trying default getDoc:', serverErr);
+        docSnap = await getDoc(docRef);
+      }
+
       if (docSnap.exists()) {
         setVerifiedMemoData(docSnap.data());
       } else {
@@ -114,10 +126,14 @@ export default function App() {
   };
 
   const handleCloseVerification = () => {
-    setVerificationInvoiceId(null);
-    setVerifiedMemoData(null);
-    setVerificationError(null);
-    window.history.pushState({}, document.title, window.location.pathname);
+    if (isVerificationOnlyMode) {
+      setVerificationSessionEnded(true);
+    } else {
+      setVerificationInvoiceId(null);
+      setVerifiedMemoData(null);
+      setVerificationError(null);
+      window.history.pushState({}, document.title, window.location.pathname);
+    }
   };
 
   // --- Check for Invoice QR verification link on load ---
@@ -133,8 +149,10 @@ export default function App() {
       }
 
       if (verifyId !== null && verifyId !== undefined) {
-        setVerificationInvoiceId(verifyId);
-        fetchVerifiedMemo(verifyId);
+        const cleanId = decodeURIComponent(verifyId).trim();
+        setIsVerificationOnlyMode(true);
+        setVerificationInvoiceId(cleanId);
+        fetchVerifiedMemo(cleanId);
       } else {
         setVerificationInvoiceId(null);
       }
@@ -251,6 +269,7 @@ export default function App() {
   const [oosItemName, setOosItemName] = useState('');
   const [rateItemName, setRateItemName] = useState('');
   const [rateItemPrice, setRateItemPrice] = useState('');
+  const [rateItemKeywords, setRateItemKeywords] = useState('');
   const [oosPage, setOosPage] = useState(1);
   const [ratePage, setRatePage] = useState(1);
   const [showAllOos, setShowAllOos] = useState(false);
@@ -534,6 +553,7 @@ export default function App() {
   const [editingRateId, setEditingRateId] = useState<string | null>(null);
   const [editRateName, setEditRateName] = useState('');
   const [editRatePrice, setEditRatePrice] = useState('');
+  const [editRateKeywords, setEditRateKeywords] = useState('');
   const [activeInfoTab, setActiveInfoTab] = useState<'oos' | 'rates' | 'dues' | 'expenses'>('oos');
   const [settingsSubTab, setSettingsSubTab] = useState<'store' | 'sync' | 'history' | 'about' | 'memo'>('store');
   const [confirmModal, setConfirmModal] = useState<{
@@ -1747,7 +1767,8 @@ export default function App() {
       id: generateId(),
       name: rateItemName.trim(),
       buyingPrice: price,
-      dateAdded: selectedDate // YYYY-MM-DD
+      dateAdded: selectedDate, // YYYY-MM-DD
+      keywords: rateItemKeywords.trim() || undefined
     };
 
     const updated = [newItem, ...productRates];
@@ -1756,6 +1777,7 @@ export default function App() {
     // Reset Form & Close Modal
     setRateItemName('');
     setRateItemPrice('');
+    setRateItemKeywords('');
     setIsProductRateModalOpen(false);
 
     showToast(isBangla ? 'মালের রেট যুক্ত হয়েছে!' : 'Product rate added!');
@@ -1805,10 +1827,10 @@ export default function App() {
   };
 
   // Update Product rate item
-  const handleUpdateProductRate = (id: string, newName: string, newPrice: number) => {
+  const handleUpdateProductRate = (id: string, newName: string, newPrice: number, newKeywords?: string) => {
     if (!newName.trim() || isNaN(newPrice) || newPrice < 0) return;
     const updated = productRates.map(item => 
-      item.id === id ? { ...item, name: newName.trim(), buyingPrice: newPrice } : item
+      item.id === id ? { ...item, name: newName.trim(), buyingPrice: newPrice, keywords: newKeywords?.trim() || undefined } : item
     );
     saveProductRatesToStorage(updated);
     showToast(isBangla ? 'মালের রেট ও দাম আপডেট করা হয়েছে!' : 'Product rate updated!');
@@ -2042,7 +2064,7 @@ export default function App() {
 
 
 
-  if (verificationInvoiceId !== null) {
+  if (isVerificationOnlyMode) {
     return (
       <div className="min-h-screen bg-[#0B132B] text-slate-100 antialiased font-sans flex flex-col p-4 sm:p-6 md:p-8 relative justify-center items-center overflow-x-hidden">
         
@@ -2094,7 +2116,9 @@ export default function App() {
             </div>
             <div className="flex justify-between items-center">
               <span>[VERIFICATION_HASH]</span>
-              <span className="text-slate-300 select-all font-bold">SHA256-{verificationInvoiceId}</span>
+              <span className="text-slate-300 select-all font-bold">
+                {verificationSessionEnded ? 'SESSION_CLOSED_SECURE' : `SHA256-${verificationInvoiceId}`}
+              </span>
             </div>
             <div className="flex justify-between items-center">
               <span>[SECURITY_HANDSHAKE]</span>
@@ -2102,8 +2126,34 @@ export default function App() {
             </div>
           </div>
 
+          {/* Verification Session Ended state */}
+          {verificationSessionEnded && (
+            <div className="text-center py-8 space-y-5">
+              <div className="h-20 w-20 bg-teal-500/10 border-2 border-teal-500/30 text-teal-400 rounded-full flex items-center justify-center mx-auto shadow-lg shadow-teal-500/5">
+                <ShieldCheck className="h-10 w-10" />
+              </div>
+              <div className="space-y-3">
+                <h3 className="text-lg font-black text-teal-400 tracking-wide">
+                  {isBangla ? 'যাচাইকরণ সেশন শেষ' : 'Verification Session Closed'}
+                </h3>
+                <div className="bg-[#1C2541] border border-teal-500/20 px-4 py-3.5 rounded-2xl max-w-md mx-auto">
+                  <p className="text-[11px] text-slate-200 leading-relaxed font-bold">
+                    {isBangla 
+                      ? 'নিরাপত্তার স্বার্থে এই যাচাইকরণ সেশনটি বন্ধ করা হয়েছে এবং ওয়েব অ্যাপ্লিকেশনের অ্যাক্সেস অবরুদ্ধ করা হয়েছে। আপনি চাইলে এই ব্রাউজার উইন্ডো বা ট্যাবটি নিরাপদে বন্ধ করতে পারেন।'
+                      : 'For security reasons, this verification session has been closed and web application access is blocked. You may safely close this browser window or tab.'}
+                  </p>
+                </div>
+                <p className="text-[10px] text-slate-400 max-w-sm mx-auto leading-normal">
+                  {isBangla 
+                    ? 'হিসাব খাতার ক্যাশ মেমো যাচাইকরণে অংশগ্রহণ করার জন্য আপনাকে ধন্যবাদ।'
+                    : 'Thank you for using Digital Hisab Khata secure receipt verification service.'}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Loading state */}
-          {isVerifying && (
+          {!verificationSessionEnded && isVerifying && (
             <div className="flex flex-col items-center justify-center py-16 space-y-4">
               <div className="h-10 w-10 border-4 border-teal-400 border-t-transparent rounded-full animate-spin" />
               <div className="text-center space-y-1.5">
@@ -2118,20 +2168,26 @@ export default function App() {
           )}
 
           {/* Verification Failed or Unregistered state */}
-          {!isVerifying && verificationError && (
+          {!verificationSessionEnded && !isVerifying && verificationError && (
             <div className="text-center py-8 space-y-5">
               <div className="h-20 w-20 bg-rose-500/10 border-2 border-rose-500/30 text-rose-400 rounded-full flex items-center justify-center mx-auto shadow-lg shadow-rose-500/5">
                 <AlertCircle className="h-10 w-10" />
               </div>
               <div className="space-y-3">
                 <h3 className="text-lg font-black text-rose-400 tracking-wide">
-                  {isBangla ? 'নকল বা অনিবন্ধিত মেমো!' : 'Unregistered or Modified Memo!'}
+                  {verificationError === 'failed' 
+                    ? (isBangla ? 'সার্ভার সংযোগ ত্রুটি!' : 'Server Connection Error!')
+                    : (isBangla ? 'নকল বা অনিবন্ধিত মেমো!' : 'Unregistered or Modified Memo!')}
                 </h3>
                 <div className="bg-[#1C2541] border border-rose-500/20 px-4 py-3.5 rounded-2xl max-w-md mx-auto">
                   <p className="text-[11px] text-rose-200 leading-relaxed font-bold">
-                    {isBangla 
-                      ? `সতর্কতা: রশিদ নং ${verificationInvoiceId} ফায়ারবেস ক্লাউড সার্ভারে পাওয়া যায়নি! এই মেমোটি এডিটিং সফটওয়্যার বা এআই দিয়ে পরিবর্তন করা হয়ে থাকতে পারে অথবা দোকান মালিক মেমোটি তৈরি করার সময় ক্লাউডে ডাটা সংরক্ষণ করেননি!`
-                      : `Warning: Invoice ${verificationInvoiceId} is not registered in Firebase server! This memo may be modified, fake, or was not uploaded to the cloud ledger by the shop proprietor.`}
+                    {verificationError === 'failed'
+                      ? (isBangla 
+                          ? 'দুঃখিত, ক্লাউড সার্ভারের সাথে সংযোগ করা সম্ভব হয়নি। অনুগ্রহ করে ইন্টারনেট কানেকশন চেক করে আবার চেষ্টা করুন।'
+                          : 'Sorry, we couldn\'t connect to the secure verification server. Please check your internet connection and try again.')
+                      : (isBangla 
+                          ? `সতর্কতা: রশিদ নং ${verificationInvoiceId} ফায়ারবেস ক্লাউড সার্ভারে পাওয়া যায়নি! এই মেমোটি এডিটিং সফটওয়্যার বা এআই দিয়ে পরিবর্তন করা হয়ে থাকতে পারে অথবা দোকান মালিক মেমোটি তৈরি করার সময় ক্লাউডে ডাটা সংরক্ষণ করেননি!`
+                          : `Warning: Invoice ${verificationInvoiceId} is not registered in Firebase server! This memo may be modified, fake, or was not uploaded to the cloud ledger by the shop proprietor.`)}
                   </p>
                 </div>
                 <p className="text-[10px] text-slate-400 max-w-sm mx-auto leading-normal">
@@ -2260,12 +2316,6 @@ export default function App() {
                   className="w-full py-3 bg-[#3A506B] hover:bg-[#4A648C] text-white text-xs font-black rounded-xl transition-all cursor-pointer text-center"
                 >
                   {isBangla ? 'যাচাই সম্পন্ন করুন' : 'Finish Verification'}
-                </button>
-                <button
-                  onClick={handleCloseVerification}
-                  className="w-full py-3 bg-teal-500 hover:bg-teal-600 text-[#0B132B] text-xs font-black rounded-xl transition-all shadow-md cursor-pointer text-center"
-                >
-                  {isBangla ? 'হিসাব খাতায় প্রবেশ করুন' : 'Open Ledger Web App'}
                 </button>
               </div>
 
@@ -3128,7 +3178,10 @@ export default function App() {
                   <div className="flex-1 space-y-2 flex flex-col justify-between">
                     {(() => {
                       const filteredRates = productRates
-                        .filter(item => item.name.toLowerCase().includes(rateSearch.toLowerCase()))
+                        .filter(item => 
+                          item.name.toLowerCase().includes(rateSearch.toLowerCase()) ||
+                          (item.keywords && item.keywords.toLowerCase().includes(rateSearch.toLowerCase()))
+                        )
                         .sort((a, b) => b.dateAdded.localeCompare(a.dateAdded));
                       
                       const itemsToShow = showAllRates ? filteredRates : filteredRates.slice(0, 6);
@@ -3197,6 +3250,18 @@ export default function App() {
                                           />
                                         </div>
                                       </div>
+                                      <div>
+                                        <label className="block text-[9px] font-black text-slate-500 mb-0.5">
+                                          {isBangla ? 'কীওয়ার্ড / ট্যাগ (কমা দিয়ে আলাদা করুন)' : 'Keywords / Tags (comma separated)'}
+                                        </label>
+                                        <input
+                                          type="text"
+                                          value={editRateKeywords}
+                                          onChange={(e) => setEditRateKeywords(e.target.value)}
+                                          placeholder={isBangla ? 'যেমন: আলু, লাল আলু, potato' : 'e.g. potato, red potato'}
+                                          className="w-full text-xs p-1.5 rounded-lg border border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white font-medium text-slate-800"
+                                        />
+                                      </div>
                                       <div className="flex items-center gap-1.5 justify-end">
                                         <button
                                           type="button"
@@ -3211,7 +3276,7 @@ export default function App() {
                                           onClick={() => {
                                             const priceNum = parseFloat(editRatePrice);
                                             if (editRateName.trim() && !isNaN(priceNum) && priceNum >= 0) {
-                                              handleUpdateProductRate(item.id, editRateName, priceNum);
+                                              handleUpdateProductRate(item.id, editRateName, priceNum, editRateKeywords);
                                               setEditingRateId(null);
                                             }
                                           }}
@@ -3242,6 +3307,7 @@ export default function App() {
                                             setEditingRateId(item.id);
                                             setEditRateName(item.name);
                                             setEditRatePrice(String(item.buyingPrice));
+                                            setEditRateKeywords(item.keywords || '');
                                           }}
                                           className="p-1.5 hover:bg-sky-150 text-slate-400 hover:text-sky-600 rounded-lg transition-colors cursor-pointer"
                                           title={isBangla ? 'পরিবর্তন করুন' : 'Edit'}
@@ -4967,56 +5033,58 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      <div className={`border border-slate-150 rounded-xl shadow-4xs bg-white transition-all duration-300 ${
-                        isHistoryExpanded ? 'max-h-[420px] overflow-auto' : 'overflow-x-auto'
+                      <div className={`overflow-x-auto overflow-y-auto no-scrollbar border border-slate-200 rounded-xl shadow-3xs bg-white transition-all duration-300 ${
+                        isHistoryExpanded ? 'max-h-[440px]' : ''
                       }`}>
                         <table className="w-full text-left border-collapse text-xs table-fixed">
-                          <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-150">
-                            <tr className="text-slate-500 font-extrabold text-[10px] uppercase tracking-wider">
-                              <th className="py-2.5 px-3 w-[60%] sm:w-[70%] md:w-[76%]">{isBangla ? 'পণ্যের বিবরণ' : 'Product Details'}</th>
-                              <th className="py-2.5 px-3 w-[20%] sm:w-[15%] md:w-[12%] text-center">{isBangla ? 'ধরন' : 'Type'}</th>
-                              <th className="py-2.5 px-3 w-[20%] sm:w-[15%] md:w-[12%] text-right">{isBangla ? 'টাকা' : 'Amount'}</th>
+                          <thead className="sticky top-0 z-20 bg-slate-100 border-b border-slate-200">
+                            <tr className="text-slate-600 font-extrabold">
+                              <th className="py-2.5 px-2">{isBangla ? 'পণ্য' : 'Product'}</th>
+                              <th className="py-2.5 px-2 w-[70px] sm:w-[80px] text-center">{isBangla ? 'পেমেন্ট' : 'Payment'}</th>
+                              <th className="py-2.5 px-2 text-right w-[80px] sm:w-[95px]">{isBangla ? 'পরিমাণ' : 'Amount'}</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                             {(isHistoryExpanded ? filteredSoldTransactions : filteredSoldTransactions.slice(0, 7)).map((tx, idx) => (
                               <tr 
                                 key={tx.id || idx} 
-                                className="hover:bg-indigo-50/20 transition-colors text-slate-700"
+                                className="hover:bg-slate-50/50 transition-colors"
                               >
-                                <td className="py-2.5 px-3 w-[60%] sm:w-[70%] md:w-[76%]">
-                                  <div className="flex flex-col gap-1">
-                                    <span className="font-bold text-slate-900 text-[11.5px] sm:text-xs leading-snug break-words">
-                                      <span className="text-slate-400/80 mr-1.5 font-bold font-sans">
-                                        {isBangla ? toBanglaNumber(idx + 1) : idx + 1}.
+                                <td className="py-2 px-2">
+                                  <div className="flex flex-col gap-0.5">
+                                    <div className="flex items-center flex-wrap gap-1.5">
+                                      <span className="font-bold text-slate-800 text-xs sm:text-[13px] break-words whitespace-normal leading-tight">
+                                        <span className="text-slate-400 mr-1.5 font-bold font-sans">
+                                          {isBangla ? toBanglaNumber(idx + 1) : idx + 1}.
+                                        </span>
+                                        {tx.product}
                                       </span>
-                                      {tx.product}
-                                    </span>
-                                    <div className="flex flex-wrap items-center gap-1 text-[9px] text-slate-400">
-                                      <span className="bg-slate-100 font-bold px-1.5 py-0.5 rounded text-[8.5px] font-sans whitespace-nowrap">
+                                      <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-400 font-bold font-mono shrink-0">
                                         📅 {formatDate(tx.date, isBangla)}
                                       </span>
-                                      {!tx.isCash && tx.customer && (
-                                        <span className="text-[8.5px] text-rose-600 font-extrabold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100/40 truncate max-w-[100px] sm:max-w-[150px]">
-                                          👤 {tx.customer}
-                                        </span>
-                                      )}
                                     </div>
+                                    {!tx.isCash && tx.customer && (
+                                      <span className="text-[10px] text-rose-600 font-extrabold bg-rose-50 px-1.5 py-0.2 rounded w-fit border border-rose-100/40 break-words whitespace-normal leading-tight">
+                                        👤 {tx.customer}
+                                      </span>
+                                    )}
                                   </div>
                                 </td>
-                                <td className="py-2.5 px-3 text-center whitespace-nowrap w-[20%] sm:w-[15%] md:w-[12%]">
+                                <td className="py-2 px-2 w-[70px] sm:w-[80px] text-center">
                                   {tx.isCash ? (
-                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-black bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100">
-                                      {isBangla ? 'নগদ বিক্রি' : 'Cash'}
+                                    <span className="inline-flex items-center justify-center gap-0.5 text-[9px] font-black bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100 w-full">
+                                      <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
+                                      {isBangla ? 'নগদ' : 'Cash'}
                                     </span>
                                   ) : (
-                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-black bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded border border-rose-100">
-                                      {isBangla ? 'বাকি বিক্রি' : 'Due'}
+                                    <span className="inline-flex items-center justify-center gap-0.5 text-[9px] font-black bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded border border-rose-100 w-full">
+                                      <AlertCircle className="h-2.5 w-2.5 shrink-0" />
+                                      {isBangla ? 'বাকি' : 'Due'}
                                     </span>
                                   )}
                                 </td>
-                                <td className="py-2.5 px-3 text-right whitespace-nowrap w-[20%] sm:w-[15%] md:w-[12%]">
-                                  <span className="font-black text-slate-900 text-[11px] sm:text-xs font-sans">
+                                <td className="py-2 px-2 text-right w-[80px] sm:w-[95px]">
+                                  <span className="font-extrabold text-slate-900 text-xs sm:text-[13px] font-sans">
                                     {isBalancesHidden ? '৳ ••••' : formatCurrency(tx.amount, isBangla)}
                                   </span>
                                 </td>
@@ -5028,30 +5096,16 @@ export default function App() {
 
                       {/* Smooth See More / See Less Buttons */}
                       {filteredSoldTransactions.length > 7 && (
-                        <div className="flex justify-center pt-3 border-t border-slate-100 mt-2 gap-3">
-                          {isHistoryExpanded ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsHistoryExpanded(false);
-                              }}
-                              className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black rounded-xl transition-all duration-200 cursor-pointer flex items-center gap-1.5 shadow-3xs active:scale-95"
-                            >
-                              <span>{isBangla ? 'কম দেখুন' : 'See Less'}</span>
-                              <ChevronRight className="h-4 w-4 -rotate-90 text-slate-500" />
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsHistoryExpanded(true);
-                              }}
-                              className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white text-xs font-black rounded-xl transition-all duration-200 cursor-pointer flex items-center gap-1.5 shadow-sm hover:shadow active:scale-95"
-                            >
-                              <span>{isBangla ? 'আরও দেখুন' : 'See More'}</span>
-                              <ChevronRight className="h-4 w-4 rotate-90" />
-                            </button>
-                          )}
+                        <div className="flex justify-center mt-4">
+                          <button
+                            type="button"
+                            onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
+                            className="px-4 py-1.5 text-xs text-indigo-700 hover:text-white bg-indigo-50 hover:bg-indigo-600 rounded-xl border border-indigo-100 transition-all font-extrabold cursor-pointer shadow-3xs flex items-center justify-center gap-1 active:scale-95"
+                          >
+                            {isHistoryExpanded 
+                              ? (isBangla ? 'কম দেখান' : 'Show Less') 
+                              : (isBangla ? 'আরো দেখুন' : 'Show More')}
+                          </button>
                         </div>
                       )}
                     </div>
@@ -6312,6 +6366,20 @@ export default function App() {
                     }}
                     className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500 font-sans"
                     id="rate-item-price-input"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">
+                    {isBangla ? 'কীওয়ার্ড / ট্যাগ (কমা দিয়ে আলাদা করুন)' : 'Keywords / Tags (comma separated)'}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={isBangla ? 'যেমন: আলু, লাল আলু, potato' : 'e.g. potato, red potato'}
+                    value={rateItemKeywords}
+                    onChange={(e) => setRateItemKeywords(e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                    id="rate-item-keywords-input"
                   />
                 </div>
 

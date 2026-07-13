@@ -5,7 +5,7 @@ import path from 'path';
 async function generate() {
   console.log('Starting custom high-quality asset generation...');
 
-  const logoPath = 'public/logo.png';
+  const logoPath = 'logo.jpg';
   if (!fs.existsSync(logoPath)) {
     console.error(`Error: Source logo file not found at ${logoPath}`);
     process.exit(1);
@@ -25,7 +25,14 @@ async function generate() {
   icon.resize({ w: 1024, h: 1024 });
   await icon.write('assets/icon.png');
   await icon.write('icon.png');
-  console.log('Generated: assets/icon.png & icon.png');
+  
+  // Write to local web directories to fix corruption and ensure they match perfectly
+  await icon.write('public/logo.png');
+  await icon.write('src/assets/logo.png');
+  await icon.write('public/logo.jpg');
+  await icon.write('src/assets/logo.jpg');
+  
+  console.log('Generated: assets/icon.png, icon.png, public/logo.png, src/assets/logo.png, public/logo.jpg, src/assets/logo.jpg');
 
   // 2. Generate icon-only.png (1024x1024)
   const iconOnly = logo.clone();
