@@ -398,7 +398,8 @@ export default function MemoTab({
     } else if (sizeType === 'pos') {
       width = 420;
       // Thermal slips scale dynamically to avoid wasting paper!
-      height = 420 + Math.max(3, items.length) * 35 + 220;
+      const sealExtra = showOfficialSeal ? 100 : 0;
+      height = 420 + Math.max(3, items.length) * 35 + 220 + sealExtra;
     }
 
     const scale = 2;
@@ -472,7 +473,7 @@ export default function MemoTab({
 
     // Draw Items Table
     const startY = sizeType === 'pos' ? (customerPhone ? 220 : 202) : 300;
-    const tableHeight = sizeType === 'pos' ? Math.max(3, items.length) * 32 + 35 : (sizeType === 'a5' ? 320 : 420);
+    const tableHeight = sizeType === 'pos' ? Math.max(3, items.length) * 32 + 35 : (sizeType === 'a5' ? 240 : 420);
     const tableWidth = width - (marginX * 2);
 
     const colSl = marginX;
@@ -595,7 +596,7 @@ export default function MemoTab({
     ctx.fillText(`${isBangla ? 'মন্তব্য: ' : 'Notes: '}${memoNote}`, marginX + 10, summaryStartY + 12);
 
     // DRAW VERIFICATION QR CODE (Bottom left)
-    const qrSize = sizeType === 'pos' ? 55 : 75;
+    const qrSize = sizeType === 'pos' ? 55 : (sizeType === 'a5' ? 60 : 75);
     const qrX = marginX + 10;
     const qrY = summaryStartY + (sizeType === 'pos' ? 24 : 32);
 
@@ -647,48 +648,20 @@ export default function MemoTab({
     }
     ctx.restore();
 
-    // Footer lines & signatures section
-    const sigY = summaryStartY + calcSpacing * 5 + (sizeType === 'pos' ? 30 : 60);
-    ctx.strokeStyle = '#94A3B8';
-    ctx.lineWidth = 1;
-    ctx.font = sizeType === 'pos' ? '9px sans-serif' : '12px sans-serif';
-    ctx.fillStyle = '#475569';
-
-    const sigLineWidth = sizeType === 'pos' ? 90 : 155;
-
-    // Customer Signature Line
-    if (showBuyerSign) {
-      ctx.beginPath();
-      ctx.moveTo(marginX + 10, sigY);
-      ctx.lineTo(marginX + 10 + sigLineWidth, sigY);
-      ctx.stroke();
-      ctx.textAlign = 'center';
-      ctx.fillText(isBangla ? 'ক্রেতার স্বাক্ষর' : 'Customer Signature', marginX + 10 + sigLineWidth / 2, sigY + 15);
-    }
-
-    // Seller Signature Line
-    if (showSellerSign) {
-      ctx.beginPath();
-      ctx.moveTo(width - marginX - 10 - sigLineWidth, sigY);
-      ctx.lineTo(width - marginX - 10, sigY);
-      ctx.stroke();
-      ctx.textAlign = 'center';
-      ctx.fillText(isBangla ? 'বিক্রেতার স্বাক্ষর' : 'Seller Signature', width - marginX - 10 - sigLineWidth / 2, sigY + 15);
-    }
-
     // DRAW OFFICIAL PURPLE SEAL STAMP
+    let sealYBottom = 0;
     if (showOfficialSeal) {
-      const sealWidth = sizeType === 'pos' ? 140 : 220;
-      const sealHeight = sizeType === 'pos' ? 70 : 110;
+      const sealWidth = sizeType === 'pos' ? 130 : (sizeType === 'a5' ? 160 : 210);
+      const sealHeight = sizeType === 'pos' ? 65 : (sizeType === 'a5' ? 85 : 105);
       
-      // Place it next to/slightly overlapping the seller signature
-      const sealX = width - marginX - sealWidth - 5;
-      const sealY = sigY - sealHeight - (sizeType === 'pos' ? 12 : 20);
+      const sealX = marginX + 10;
+      const sealY = qrY + qrSize + (sizeType === 'pos' ? 18 : 24);
+      sealYBottom = sealY + sealHeight;
 
       ctx.save();
       // Draw the seal slightly rotated for authenticity (like a hand stamp!)
       ctx.translate(sealX + sealWidth / 2, sealY + sealHeight / 2);
-      ctx.rotate(-2 * Math.PI / 180); // -2 degrees rotation
+      ctx.rotate(-1 * Math.PI / 180); // -1 degrees rotation for hand-stamp feel
       ctx.translate(-(sealX + sealWidth / 2), -(sealY + sealHeight / 2));
 
       // Stamp styling: Semi-transparent purple/indigo with a hand-stamp feel
@@ -726,6 +699,39 @@ export default function MemoTab({
       ctx.fillText("রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।", sealX + sealWidth / 2, sealY + (sizeType === 'pos' ? 58 : 91));
 
       ctx.restore();
+    }
+
+    // Footer lines & signatures section
+    let sigY = summaryStartY + calcSpacing * 5 + (sizeType === 'pos' ? 30 : 60);
+    if (showOfficialSeal && sealYBottom > 0) {
+      sigY = Math.max(sigY, sealYBottom + (sizeType === 'pos' ? 20 : 35));
+    }
+
+    ctx.strokeStyle = '#94A3B8';
+    ctx.lineWidth = 1;
+    ctx.font = sizeType === 'pos' ? '9px sans-serif' : '12px sans-serif';
+    ctx.fillStyle = '#475569';
+
+    const sigLineWidth = sizeType === 'pos' ? 90 : 155;
+
+    // Customer Signature Line
+    if (showBuyerSign) {
+      ctx.beginPath();
+      ctx.moveTo(marginX + 10, sigY);
+      ctx.lineTo(marginX + 10 + sigLineWidth, sigY);
+      ctx.stroke();
+      ctx.textAlign = 'center';
+      ctx.fillText(isBangla ? 'ক্রেতার স্বাক্ষর' : 'Customer Signature', marginX + 10 + sigLineWidth / 2, sigY + 15);
+    }
+
+    // Seller Signature Line
+    if (showSellerSign) {
+      ctx.beginPath();
+      ctx.moveTo(width - marginX - 10 - sigLineWidth, sigY);
+      ctx.lineTo(width - marginX - 10, sigY);
+      ctx.stroke();
+      ctx.textAlign = 'center';
+      ctx.fillText(isBangla ? 'বিক্রেতার স্বাক্ষর' : 'Seller Signature', width - marginX - 10 - sigLineWidth / 2, sigY + 15);
     }
 
     // Brand Credit
@@ -1007,9 +1013,7 @@ export default function MemoTab({
               letter-spacing: 2px;
             }
             .print-official-seal {
-              position: absolute;
-              right: ${memoSize === 'pos' ? '15px' : '40px'};
-              bottom: ${memoSize === 'pos' ? '50px' : '75px'};
+              margin-top: 15px;
               width: ${memoSize === 'pos' ? '140px' : '220px'};
               height: ${memoSize === 'pos' ? '70px' : '110px'};
               border: ${memoSize === 'pos' ? '2px double rgba(76, 29, 149, 0.85)' : '3px double rgba(76, 29, 149, 0.85)'};
@@ -1018,7 +1022,7 @@ export default function MemoTab({
               color: rgba(76, 29, 149, 0.85);
               background: rgba(255, 255, 255, 0.9);
               text-align: center;
-              transform: rotate(-2deg);
+              transform: rotate(-1deg);
               opacity: 0.85;
               z-index: 10;
               display: flex;
@@ -1134,6 +1138,16 @@ export default function MemoTab({
                   ${isBangla ? 'মোবাইলে স্ক্যান করে আসল রশিদ যাচাই করুন।' : 'Scan with phone camera to verify receipt authenticity.'}
                 </div>
               </div>
+
+              ${showOfficialSeal ? `
+                <div class="print-official-seal" style="font-style: normal;">
+                  <div class="print-seal-title">মেসার্স রঞ্জু দত্ত এন্ড সন্স</div>
+                  <div class="print-seal-text">রনি: 01767-665446</div>
+                  <div class="print-seal-text">জনি: 01753-517899</div>
+                  <div class="print-seal-note">বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।</div>
+                  <div class="print-seal-text">রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।</div>
+                </div>
+              ` : ''}
             </div>
 
             <div class="totals-container">
@@ -1163,16 +1177,6 @@ export default function MemoTab({
               ${showBuyerSign ? `<div class="signature-line">${isBangla ? 'ক্রেতার স্বাক্ষর' : 'Customer Signature'}</div>` : '<div></div>'}
               ${showSellerSign ? `<div class="signature-line">${isBangla ? 'বিক্রেতার স্বাক্ষর' : 'Seller Signature'}</div>` : '<div></div>'}
             </div>
-
-            ${showOfficialSeal ? `
-              <div class="print-official-seal">
-                <div class="print-seal-title">মেসার্স রঞ্জু দত্ত এন্ড সন্স</div>
-                <div class="print-seal-text">রনি: 01767-665446</div>
-                <div class="print-seal-text">জনি: 01753-517899</div>
-                <div class="print-seal-note">বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।</div>
-                <div class="print-seal-text">রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।</div>
-              </div>
-            ` : ''}
 
             <div class="footer-credit" style="${memoSize === 'pos' ? 'position: relative; margin-top: 30px; bottom: 0;' : ''}">
               ${isBangla ? 'ডিজিটাল হিসাব খাতা দ্বারা সংকলিত' : 'Generated via Digital Hisab Khata'}
@@ -1867,6 +1871,27 @@ export default function MemoTab({
                       )}
                     </div>
                   </div>
+
+                  {/* ON-SCREEN DIGITAL PURPLE SEAL STAMP */}
+                  {showOfficialSeal && (
+                    <div 
+                      className="mt-3 border-[2.5px] border-double border-purple-700/80 text-purple-700/80 bg-white/95 rounded p-1.5 text-center pointer-events-none select-none z-30 transition-all shadow-sm rotate-[-1deg]"
+                      style={{
+                        lineHeight: '1.25',
+                        fontFamily: 'sans-serif'
+                      }}
+                    >
+                      <div className="font-extrabold text-[10px] sm:text-[11px]">মেসার্স রঞ্জু দত্ত এন্ড সন্স</div>
+                      <div className="text-[8px] sm:text-[9px]">রনি: 01767-665446</div>
+                      <div className="text-[8px] sm:text-[9px]">জনি: 01753-517899</div>
+                      <div className="font-semibold text-purple-600/90 text-[7px] sm:text-[8px] mt-0.5">
+                        বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।
+                      </div>
+                      <div className="text-[7.5px] sm:text-[8.5px] mt-0.5">
+                        রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।
+                      </div>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="w-1/2 space-y-1 font-bold text-slate-600">
@@ -1908,35 +1933,6 @@ export default function MemoTab({
                 </div>
               ) : <div />}
             </div>
-
-            {/* ON-SCREEN DIGITAL PURPLE SEAL STAMP */}
-            {showOfficialSeal && (
-              <div 
-                className="absolute border-[2.5px] border-double border-purple-700/80 text-purple-700/80 bg-white/95 rounded p-1.5 text-center pointer-events-none select-none z-30 transition-all shadow-sm"
-                style={(() => {
-                  const isPos = memoSize === 'pos';
-                  return {
-                    width: isPos ? '135px' : '210px',
-                    height: isPos ? '68px' : '105px',
-                    right: isPos ? '15px' : '30px',
-                    bottom: isPos ? '48px' : '75px',
-                    transform: 'rotate(-2.5deg)',
-                    lineHeight: '1.25',
-                    fontFamily: 'sans-serif'
-                  };
-                })()}
-              >
-                <div className="font-extrabold" style={{ fontSize: memoSize === 'pos' ? '8px' : '12px' }}>মেসার্স রঞ্জু দত্ত এন্ড সন্স</div>
-                <div style={{ fontSize: memoSize === 'pos' ? '6px' : '8.5px' }}>রনি: 01767-665446</div>
-                <div style={{ fontSize: memoSize === 'pos' ? '6px' : '8.5px' }}>জনি: 01753-517899</div>
-                <div className="font-semibold text-purple-600/90" style={{ fontSize: memoSize === 'pos' ? '4.5px' : '7.5px', marginTop: '1px' }}>
-                  বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।
-                </div>
-                <div style={{ fontSize: memoSize === 'pos' ? '5px' : '8px', marginTop: '1px' }}>
-                  রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।
-                </div>
-              </div>
-            )}
 
             {/* Bottom credit info */}
             <div className="text-center text-[7px] text-slate-300 pt-2 border-t border-slate-100/50 mt-1">
