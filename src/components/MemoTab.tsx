@@ -281,13 +281,57 @@ export default function MemoTab({
   const [showSellerSign, setShowSellerSign] = useState(true);
   const [showOfficialSeal, setShowOfficialSeal] = useState(true);
 
+  // --- Custom Seal States ---
+  const [sealType, setSealType] = useState<'official' | 'custom'>(
+    (localStorage.getItem('memo_seal_type') as 'official' | 'custom') || 'official'
+  );
+  const [customSealTitle, setCustomSealTitle] = useState(
+    localStorage.getItem('memo_custom_seal_title') || ''
+  );
+  const [customSealPhone1, setCustomSealPhone1] = useState(
+    localStorage.getItem('memo_custom_seal_phone1') || ''
+  );
+  const [customSealPhone2, setCustomSealPhone2] = useState(
+    localStorage.getItem('memo_custom_seal_phone2') || ''
+  );
+  const [customSealNB, setCustomSealNB] = useState(
+    localStorage.getItem('memo_custom_seal_nb') || ''
+  );
+  const [customSealAddress, setCustomSealAddress] = useState(
+    localStorage.getItem('memo_custom_seal_address') || ''
+  );
+
+  const getActiveSealDetails = () => {
+    if (sealType === 'official') {
+      return {
+        title: 'মেসার্স রঞ্জু দত্ত এন্ড সন্স',
+        phone1: 'রনি: 01767-665446',
+        phone2: 'জনি: 01753-517899',
+        nb: isBangla 
+          ? 'বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।' 
+          : 'N.B. All types of Kabiraji and herbal goods are available.',
+        address: isBangla 
+          ? 'রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।' 
+          : 'Railway Station Road, Barlekha, Moulvibazar.'
+      };
+    } else {
+      return {
+        title: customSealTitle || memoShopName,
+        phone1: customSealPhone1 || (isBangla ? 'রনি: 01767-665446' : 'Phone 1: 01767-665446'),
+        phone2: customSealPhone2,
+        nb: customSealNB || (isBangla ? 'বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।' : 'N.B. All types of Kabiraji and herbal goods are available.'),
+        address: customSealAddress || shopAddress
+      };
+    }
+  };
+
   // Success toast
   const [successMsg, setSuccessMsg] = useState('');
 
   // Track edits to invalidate cloud sync status until re-saved
   useEffect(() => {
     setIsCloudSaved(false);
-  }, [invoiceNo, customerName, customerPhone, items, discount, paid, memoShopName, memoDate]);
+  }, [invoiceNo, customerName, customerPhone, items, discount, paid, memoShopName, memoDate, sealType, customSealTitle, customSealPhone1, customSealPhone2, customSealNB, customSealAddress]);
 
   const triggerToast = (msg: string) => {
     setSuccessMsg(msg);
@@ -651,14 +695,72 @@ export default function MemoTab({
     // DRAW OFFICIAL PURPLE SEAL STAMP
     let sealYBottom = 0;
     if (showOfficialSeal) {
+      const activeSeal = getActiveSealDetails();
       const sealWidth = sizeType === 'pos' ? 130 : (sizeType === 'a5' ? 160 : 210);
-      const sealHeight = sizeType === 'pos' ? 65 : (sizeType === 'a5' ? 85 : 105);
-      
       const sealX = marginX + 10;
       const sealY = qrY + qrSize + (sizeType === 'pos' ? 18 : 24);
-      sealYBottom = sealY + sealHeight;
 
       ctx.save();
+      
+      const titleFont = sizeType === 'pos' ? 'bold 8px sans-serif' : 'bold 12px sans-serif';
+      const phoneFont = sizeType === 'pos' ? '6px sans-serif' : '9.5px sans-serif';
+      const nbFont = sizeType === 'pos' ? '5.5px sans-serif' : '8px sans-serif';
+      const addressFont = sizeType === 'pos' ? '6px sans-serif' : '9px sans-serif';
+      
+      const padding = sizeType === 'pos' ? 5 : 8;
+      const nbLineHeight = sizeType === 'pos' ? 7 : 10;
+      
+      // Calculate dynamic layout offsets
+      let currentOffsetY = padding;
+      
+      // 1. Title Y Position
+      const titleY = currentOffsetY + (sizeType === 'pos' ? 7 : 10);
+      currentOffsetY += (sizeType === 'pos' ? 10 : 14);
+      
+      // 2. Phone 1 Y Position
+      const phone1Y = currentOffsetY + (sizeType === 'pos' ? 6 : 9);
+      currentOffsetY += (sizeType === 'pos' ? 9 : 12);
+      
+      // 3. Phone 2 Y Position (only if phone2 is present)
+      let phone2Y = 0;
+      if (activeSeal.phone2 && activeSeal.phone2.trim()) {
+        phone2Y = currentOffsetY + (sizeType === 'pos' ? 6 : 9);
+        currentOffsetY += (sizeType === 'pos' ? 9 : 12);
+      }
+      
+      // 4. Note (বি.দ্র) Wrapping & Layout
+      ctx.font = nbFont;
+      const nbMaxWidth = sealWidth - (sizeType === 'pos' ? 10 : 16);
+      
+      // Split text into wrapped lines for the canvas
+      const words = activeSeal.nb.split(' ');
+      let line = '';
+      const nbLines: string[] = [];
+      for (let n = 0; n < words.length; n++) {
+        const testLine = line + (line ? ' ' : '') + words[n];
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > nbMaxWidth && n > 0) {
+          nbLines.push(line);
+          line = words[n];
+        } else {
+          line = testLine;
+        }
+      }
+      if (line) {
+        nbLines.push(line);
+      }
+      
+      const nbStartY = currentOffsetY + (sizeType === 'pos' ? 5 : 8);
+      currentOffsetY += nbLines.length * nbLineHeight + (sizeType === 'pos' ? 2 : 4);
+      
+      // 5. Address Y Position
+      const addressY = currentOffsetY + (sizeType === 'pos' ? 6 : 9);
+      currentOffsetY += (sizeType === 'pos' ? 10 : 14);
+      
+      // Compute total seal height dynamically
+      const sealHeight = currentOffsetY + padding;
+      sealYBottom = sealY + sealHeight;
+
       // Draw the seal slightly rotated for authenticity (like a hand stamp!)
       ctx.translate(sealX + sealWidth / 2, sealY + sealHeight / 2);
       ctx.rotate(-1 * Math.PI / 180); // -1 degrees rotation for hand-stamp feel
@@ -680,23 +782,27 @@ export default function MemoTab({
       ctx.textAlign = 'center';
       
       // Line 1: Shop Name
-      ctx.font = sizeType === 'pos' ? 'bold 8px sans-serif' : 'bold 12.5px sans-serif';
-      ctx.fillText("মেসার্স রঞ্জু দত্ত এন্ড সন্স", sealX + sealWidth / 2, sealY + (sizeType === 'pos' ? 15 : 24));
+      ctx.font = titleFont;
+      ctx.fillText(activeSeal.title, sealX + sealWidth / 2, sealY + titleY);
       
-      // Line 2: Roni Mobile
-      ctx.font = sizeType === 'pos' ? '6px sans-serif' : '9.5px sans-serif';
-      ctx.fillText("রনি: 01767-665446", sealX + sealWidth / 2, sealY + (sizeType === 'pos' ? 26 : 41));
+      // Line 2: Phone 1
+      ctx.font = phoneFont;
+      ctx.fillText(activeSeal.phone1, sealX + sealWidth / 2, sealY + phone1Y);
       
-      // Line 3: Joni Mobile
-      ctx.fillText("জনি: 01753-517899", sealX + sealWidth / 2, sealY + (sizeType === 'pos' ? 36 : 56));
+      // Line 3: Phone 2 (if present)
+      if (phone2Y > 0) {
+        ctx.fillText(activeSeal.phone2, sealX + sealWidth / 2, sealY + phone2Y);
+      }
       
       // Line 4: Note (বি.দ্র)
-      ctx.font = sizeType === 'pos' ? '5.5px sans-serif' : '8px sans-serif';
-      ctx.fillText("বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।", sealX + sealWidth / 2, sealY + (sizeType === 'pos' ? 47 : 73));
+      ctx.font = nbFont;
+      for (let i = 0; i < nbLines.length; i++) {
+        ctx.fillText(nbLines[i], sealX + sealWidth / 2, sealY + nbStartY + (i * nbLineHeight));
+      }
       
       // Line 5: Address
-      ctx.font = sizeType === 'pos' ? '6px sans-serif' : '9px sans-serif';
-      ctx.fillText("রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।", sealX + sealWidth / 2, sealY + (sizeType === 'pos' ? 58 : 91));
+      ctx.font = addressFont;
+      ctx.fillText(activeSeal.address, sealX + sealWidth / 2, sealY + addressY);
 
       ctx.restore();
     }
@@ -815,6 +921,8 @@ export default function MemoTab({
       downloadPDF();
       return;
     }
+
+    const activeSeal = getActiveSealDetails();
 
     // Generate styled print contents
     const formattedCust = customerName || (isBangla ? 'সাধারণ ক্রেতা' : 'General Customer');
@@ -1015,10 +1123,11 @@ export default function MemoTab({
             .print-official-seal {
               margin-top: 15px;
               width: ${memoSize === 'pos' ? '140px' : '220px'};
-              height: ${memoSize === 'pos' ? '70px' : '110px'};
+              height: auto;
+              min-height: ${memoSize === 'pos' ? '70px' : '110px'};
               border: ${memoSize === 'pos' ? '2px double rgba(76, 29, 149, 0.85)' : '3px double rgba(76, 29, 149, 0.85)'};
               box-sizing: border-box;
-              padding: ${memoSize === 'pos' ? '3px' : '5px'};
+              padding: ${memoSize === 'pos' ? '4px' : '8px'};
               color: rgba(76, 29, 149, 0.85);
               background: rgba(255, 255, 255, 0.9);
               text-align: center;
@@ -1035,14 +1144,17 @@ export default function MemoTab({
               font-size: ${memoSize === 'pos' ? '8px' : '12px'};
               font-weight: bold;
               margin-bottom: ${memoSize === 'pos' ? '1px' : '3px'};
+              word-break: break-word;
             }
             .print-seal-text {
               font-size: ${memoSize === 'pos' ? '6px' : '9px'};
+              word-break: break-word;
             }
             .print-seal-note {
               font-size: ${memoSize === 'pos' ? '5px' : '7.5px'};
               font-weight: 600;
               margin: ${memoSize === 'pos' ? '1px 0' : '2px 0'};
+              word-break: break-word;
             }
             @page {
               size: ${memoSize === 'a4' ? 'A4 portrait' : memoSize === 'a5' ? 'A5 portrait' : '80mm auto'};
@@ -1141,11 +1253,11 @@ export default function MemoTab({
 
               ${showOfficialSeal ? `
                 <div class="print-official-seal" style="font-style: normal;">
-                  <div class="print-seal-title">মেসার্স রঞ্জু দত্ত এন্ড সন্স</div>
-                  <div class="print-seal-text">রনি: 01767-665446</div>
-                  <div class="print-seal-text">জনি: 01753-517899</div>
-                  <div class="print-seal-note">বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।</div>
-                  <div class="print-seal-text">রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।</div>
+                  <div class="print-seal-title">${activeSeal.title}</div>
+                  <div class="print-seal-text">${activeSeal.phone1}</div>
+                  ${activeSeal.phone2 && activeSeal.phone2.trim() ? `<div class="print-seal-text">${activeSeal.phone2}</div>` : ''}
+                  <div class="print-seal-note">${activeSeal.nb}</div>
+                  <div class="print-seal-text">${activeSeal.address}</div>
                 </div>
               ` : ''}
             </div>
@@ -1718,9 +1830,134 @@ export default function MemoTab({
                   onChange={(e) => setShowOfficialSeal(e.target.checked)}
                   className="rounded text-purple-700 focus:ring-purple-500 h-4 w-4 border-purple-300"
                 />
-                {isBangla ? 'অফিসিয়াল সিল ব্যবহার করুন' : 'Use Official Seal'}
+                {isBangla ? 'সিল যুক্ত করুন' : 'Add Seal stamp'}
               </label>
             </div>
+
+            {/* Advanced Seal Configuration Options */}
+            {showOfficialSeal && (
+              <div className="mt-4 border border-purple-100 bg-purple-50/20 rounded-2xl p-4 space-y-4 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-purple-950 flex items-center gap-1.5">
+                    <span className="inline-block w-2 h-2 rounded-full bg-purple-600 animate-pulse"></span>
+                    {isBangla ? 'সিল কাস্টমাইজেশন প্যানেল' : 'Seal Stamp Customization'}
+                  </span>
+                  
+                  {/* Select Template Type */}
+                  <div className="flex items-center gap-1.5 bg-purple-100/60 p-0.5 rounded-lg border border-purple-200/50">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSealType('official');
+                        localStorage.setItem('memo_seal_type', 'official');
+                      }}
+                      className={`text-[10px] font-black px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                        sealType === 'official' 
+                          ? 'bg-purple-600 text-white shadow-3xs' 
+                          : 'text-purple-700 hover:bg-purple-200/30'
+                      }`}
+                    >
+                      {isBangla ? 'অফিসিয়াল সিল' : 'Official Seal'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSealType('custom');
+                        localStorage.setItem('memo_seal_type', 'custom');
+                      }}
+                      className={`text-[10px] font-black px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                        sealType === 'custom' 
+                          ? 'bg-purple-600 text-white shadow-3xs' 
+                          : 'text-purple-700 hover:bg-purple-200/30'
+                      }`}
+                    >
+                      {isBangla ? 'কাস্টম সিল' : 'Custom Seal'}
+                    </button>
+                  </div>
+                </div>
+
+                {sealType === 'official' ? (
+                  <div className="text-[11px] font-semibold text-purple-700/80 leading-relaxed bg-purple-100/20 border border-purple-100/50 p-2.5 rounded-xl">
+                    {isBangla 
+                      ? 'অফিসিয়াল সিলের তথ্য মেসার্স রঞ্জু দত্ত এন্ড সন্স এর নাম অনুসারে স্বয়ংক্রিয়ভাবে নির্ধারিত হবে।' 
+                      : 'The official stamp is configured by default for M/S Ranju Datta & Sons.'}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-extrabold text-purple-900">{isBangla ? 'সিল প্রতিষ্ঠানের নাম' : 'Seal Title'}</label>
+                      <input
+                        type="text"
+                        value={customSealTitle}
+                        onChange={(e) => {
+                          setCustomSealTitle(e.target.value);
+                          localStorage.setItem('memo_custom_seal_title', e.target.value);
+                        }}
+                        className="w-full text-xs font-bold text-slate-800 bg-white border border-purple-200/80 focus:border-purple-500 rounded-xl py-1.5 px-3 outline-none transition-all shadow-3xs"
+                        placeholder={memoShopName || (isBangla ? 'প্রতিষ্ঠানের নাম...' : 'Enter title...')}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-extrabold text-purple-900">{isBangla ? 'মোবাইল ১' : 'Phone 1'}</label>
+                        <input
+                          type="text"
+                          value={customSealPhone1}
+                          onChange={(e) => {
+                            setCustomSealPhone1(e.target.value);
+                            localStorage.setItem('memo_custom_seal_phone1', e.target.value);
+                          }}
+                          className="w-full text-xs font-bold text-slate-800 bg-white border border-purple-200/80 focus:border-purple-500 rounded-xl py-1.5 px-2.5 outline-none transition-all shadow-3xs"
+                          placeholder={shopPhone || (isBangla ? 'মোবাইল ১...' : 'Phone 1...')}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-extrabold text-purple-900">{isBangla ? 'মোবাইল ২' : 'Phone 2 (Optional)'}</label>
+                        <input
+                          type="text"
+                          value={customSealPhone2}
+                          onChange={(e) => {
+                            setCustomSealPhone2(e.target.value);
+                            localStorage.setItem('memo_custom_seal_phone2', e.target.value);
+                          }}
+                          className="w-full text-xs font-bold text-slate-800 bg-white border border-purple-200/80 focus:border-purple-500 rounded-xl py-1.5 px-2.5 outline-none transition-all shadow-3xs"
+                          placeholder={isBangla ? 'ঐচ্ছিক...' : 'Phone 2...'}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="sm:col-span-2 space-y-1">
+                      <label className="text-[10px] font-extrabold text-purple-900">{isBangla ? 'বি.দ্র (বিশেষ দ্রষ্টব্য)' : 'N.B. Note'}</label>
+                      <input
+                        type="text"
+                        value={customSealNB}
+                        onChange={(e) => {
+                          setCustomSealNB(e.target.value);
+                          localStorage.setItem('memo_custom_seal_nb', e.target.value);
+                        }}
+                        className="w-full text-xs font-bold text-slate-800 bg-white border border-purple-200/80 focus:border-purple-500 rounded-xl py-1.5 px-3 outline-none transition-all shadow-3xs"
+                        placeholder={isBangla ? 'বি.দ্র: সকল প্রকার কবিরাজি মালামাল...' : 'N.B. Sold items can not be returned'}
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2 space-y-1">
+                      <label className="text-[10px] font-extrabold text-purple-900">{isBangla ? 'সিল ঠিকানা' : 'Seal Address'}</label>
+                      <input
+                        type="text"
+                        value={customSealAddress}
+                        onChange={(e) => {
+                          setCustomSealAddress(e.target.value);
+                          localStorage.setItem('memo_custom_seal_address', e.target.value);
+                        }}
+                        className="w-full text-xs font-bold text-slate-800 bg-white border border-purple-200/80 focus:border-purple-500 rounded-xl py-1.5 px-3 outline-none transition-all shadow-3xs"
+                        placeholder={shopAddress || (isBangla ? 'ঠিকানা...' : 'Enter address...')}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
         </div>
@@ -1873,25 +2110,28 @@ export default function MemoTab({
                   </div>
 
                   {/* ON-SCREEN DIGITAL PURPLE SEAL STAMP */}
-                  {showOfficialSeal && (
-                    <div 
-                      className="mt-3 border-[2.5px] border-double border-purple-700/80 text-purple-700/80 bg-white/95 rounded p-1.5 text-center pointer-events-none select-none z-30 transition-all shadow-sm rotate-[-1deg]"
-                      style={{
-                        lineHeight: '1.25',
-                        fontFamily: 'sans-serif'
-                      }}
-                    >
-                      <div className="font-extrabold text-[10px] sm:text-[11px]">মেসার্স রঞ্জু দত্ত এন্ড সন্স</div>
-                      <div className="text-[8px] sm:text-[9px]">রনি: 01767-665446</div>
-                      <div className="text-[8px] sm:text-[9px]">জনি: 01753-517899</div>
-                      <div className="font-semibold text-purple-600/90 text-[7px] sm:text-[8px] mt-0.5">
-                        বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।
+                  {showOfficialSeal && (() => {
+                    const activeSeal = getActiveSealDetails();
+                    return (
+                      <div 
+                        className="mt-3 border-[2.5px] border-double border-purple-700/80 text-purple-700/80 bg-white/95 rounded p-2 text-center pointer-events-none select-none z-30 transition-all shadow-sm rotate-[-1deg] max-w-full"
+                        style={{
+                          lineHeight: '1.25',
+                          fontFamily: 'sans-serif'
+                        }}
+                      >
+                        <div className="font-extrabold text-[10px] sm:text-[11.5px] break-words">{activeSeal.title}</div>
+                        <div className="text-[8px] sm:text-[9px] break-words">{activeSeal.phone1}</div>
+                        {activeSeal.phone2 && activeSeal.phone2.trim() && <div className="text-[8px] sm:text-[9px] break-words">{activeSeal.phone2}</div>}
+                        <div className="font-semibold text-purple-600/90 text-[7px] sm:text-[8px] mt-0.5 break-words">
+                          {activeSeal.nb}
+                        </div>
+                        <div className="text-[7.5px] sm:text-[8.5px] mt-0.5 break-words">
+                          {activeSeal.address}
+                        </div>
                       </div>
-                      <div className="text-[7.5px] sm:text-[8.5px] mt-0.5">
-                        রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
                 
                 <div className="w-1/2 space-y-1 font-bold text-slate-600">
