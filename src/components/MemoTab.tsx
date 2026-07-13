@@ -83,9 +83,9 @@ export default function MemoTab({
   };
 
   // --- Shop Settings ---
-  const [memoShopName, setMemoShopName] = useState(shopName || localStorage.getItem('hisab_khata_shop_name') || 'আমার দোকান');
-  const [shopAddress, setShopAddress] = useState(localStorage.getItem('memo_shop_address') || 'ঢাকা, বাংলাদেশ');
-  const [shopPhone, setShopPhone] = useState(localStorage.getItem('memo_shop_phone') || '01XXXXXXXXX');
+  const [memoShopName, setMemoShopName] = useState(shopName || localStorage.getItem('hisab_khata_shop_name') || 'মেসার্স রঞ্জু দত্ত এন্ড সন্স');
+  const [shopAddress, setShopAddress] = useState(localStorage.getItem('memo_shop_address') || 'রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।');
+  const [shopPhone, setShopPhone] = useState(localStorage.getItem('memo_shop_phone') || 'রনি: 01767-665446, জনি: 01753-517899');
 
   // Save shop details locally when they change
   useEffect(() => {
@@ -276,9 +276,10 @@ export default function MemoTab({
   // Calculations
   const [discount, setDiscount] = useState('0');
   const [paid, setPaid] = useState('0');
-  const [memoNote, setMemoNote] = useState(isBangla ? 'বিক্রিত মাল ফেরত নেওয়া হয় না।' : 'Sold goods are not returnable.');
+  const [memoNote, setMemoNote] = useState(isBangla ? 'বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।' : 'N.B. All types of Kabiraji and herbal goods are available.');
   const [showBuyerSign, setShowBuyerSign] = useState(true);
   const [showSellerSign, setShowSellerSign] = useState(true);
+  const [showOfficialSeal, setShowOfficialSeal] = useState(true);
 
   // Success toast
   const [successMsg, setSuccessMsg] = useState('');
@@ -455,7 +456,7 @@ export default function MemoTab({
     ctx.textAlign = 'left';
     ctx.fillStyle = '#1E293B';
     ctx.font = sizeType === 'pos' ? 'bold 10px sans-serif' : 'bold 14px sans-serif';
-    ctx.fillText(`${isBangla ? 'রশিদ নং: ' : 'Invoice No: '} ${isBangla ? toBanglaNumber(invoiceNo) : invoiceNo}`, marginX + 10, detailY);
+    ctx.fillText(`${isBangla ? 'রশিদ নং: ' : 'Invoice No: '} ${invoiceNo}`, marginX + 10, detailY);
     
     const formattedCust = customerName || (isBangla ? 'সাধারণ ক্রেতা' : 'General Customer');
     ctx.fillText(`${isBangla ? 'ক্রেতার নাম: ' : 'Customer: '} ${formattedCust}`, marginX + 10, detailY + spacingY);
@@ -476,9 +477,9 @@ export default function MemoTab({
 
     const colSl = marginX;
     const colDesc = sizeType === 'pos' ? marginX + 30 : marginX + 65;
-    const colQty = sizeType === 'pos' ? width - 170 : width - 370;
-    const colRate = sizeType === 'pos' ? width - 105 : width - 280;
-    const colTotal = sizeType === 'pos' ? width - 50 : width - 170;
+    const colQty = sizeType === 'pos' ? width - 210 : width - 370;
+    const colRate = sizeType === 'pos' ? width - 135 : width - 280;
+    const colTotal = sizeType === 'pos' ? width - 75 : width - 170;
 
     // Table Header Background
     ctx.fillStyle = '#0F766E';
@@ -673,6 +674,58 @@ export default function MemoTab({
       ctx.stroke();
       ctx.textAlign = 'center';
       ctx.fillText(isBangla ? 'বিক্রেতার স্বাক্ষর' : 'Seller Signature', width - marginX - 10 - sigLineWidth / 2, sigY + 15);
+    }
+
+    // DRAW OFFICIAL PURPLE SEAL STAMP
+    if (showOfficialSeal) {
+      const sealWidth = sizeType === 'pos' ? 140 : 220;
+      const sealHeight = sizeType === 'pos' ? 70 : 110;
+      
+      // Place it next to/slightly overlapping the seller signature
+      const sealX = width - marginX - sealWidth - 5;
+      const sealY = sigY - sealHeight - (sizeType === 'pos' ? 12 : 20);
+
+      ctx.save();
+      // Draw the seal slightly rotated for authenticity (like a hand stamp!)
+      ctx.translate(sealX + sealWidth / 2, sealY + sealHeight / 2);
+      ctx.rotate(-2 * Math.PI / 180); // -2 degrees rotation
+      ctx.translate(-(sealX + sealWidth / 2), -(sealY + sealHeight / 2));
+
+      // Stamp styling: Semi-transparent purple/indigo with a hand-stamp feel
+      ctx.strokeStyle = 'rgba(76, 29, 149, 0.85)'; // Purple-violet #4c1d95
+      ctx.fillStyle = 'rgba(76, 29, 149, 0.85)';
+      
+      // Outer double border
+      ctx.lineWidth = sizeType === 'pos' ? 1.5 : 2.5;
+      ctx.strokeRect(sealX, sealY, sealWidth, sealHeight);
+      
+      ctx.lineWidth = sizeType === 'pos' ? 0.5 : 1;
+      const innerOffset = sizeType === 'pos' ? 2 : 4;
+      ctx.strokeRect(sealX + innerOffset, sealY + innerOffset, sealWidth - innerOffset * 2, sealHeight - innerOffset * 2);
+      
+      // Text inside the stamp
+      ctx.textAlign = 'center';
+      
+      // Line 1: Shop Name
+      ctx.font = sizeType === 'pos' ? 'bold 8px sans-serif' : 'bold 12.5px sans-serif';
+      ctx.fillText("মেসার্স রঞ্জু দত্ত এন্ড সন্স", sealX + sealWidth / 2, sealY + (sizeType === 'pos' ? 15 : 24));
+      
+      // Line 2: Roni Mobile
+      ctx.font = sizeType === 'pos' ? '6px sans-serif' : '9.5px sans-serif';
+      ctx.fillText("রনি: 01767-665446", sealX + sealWidth / 2, sealY + (sizeType === 'pos' ? 26 : 41));
+      
+      // Line 3: Joni Mobile
+      ctx.fillText("জনি: 01753-517899", sealX + sealWidth / 2, sealY + (sizeType === 'pos' ? 36 : 56));
+      
+      // Line 4: Note (বি.দ্র)
+      ctx.font = sizeType === 'pos' ? '5.5px sans-serif' : '8px sans-serif';
+      ctx.fillText("বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।", sealX + sealWidth / 2, sealY + (sizeType === 'pos' ? 47 : 73));
+      
+      // Line 5: Address
+      ctx.font = sizeType === 'pos' ? '6px sans-serif' : '9px sans-serif';
+      ctx.fillText("রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।", sealX + sealWidth / 2, sealY + (sizeType === 'pos' ? 58 : 91));
+
+      ctx.restore();
     }
 
     // Brand Credit
@@ -953,6 +1006,40 @@ export default function MemoTab({
               text-transform: uppercase;
               letter-spacing: 2px;
             }
+            .print-official-seal {
+              position: absolute;
+              right: ${memoSize === 'pos' ? '15px' : '40px'};
+              bottom: ${memoSize === 'pos' ? '50px' : '75px'};
+              width: ${memoSize === 'pos' ? '140px' : '220px'};
+              height: ${memoSize === 'pos' ? '70px' : '110px'};
+              border: ${memoSize === 'pos' ? '2px double rgba(76, 29, 149, 0.85)' : '3px double rgba(76, 29, 149, 0.85)'};
+              box-sizing: border-box;
+              padding: ${memoSize === 'pos' ? '3px' : '5px'};
+              color: rgba(76, 29, 149, 0.85);
+              background: rgba(255, 255, 255, 0.9);
+              text-align: center;
+              transform: rotate(-2deg);
+              opacity: 0.85;
+              z-index: 10;
+              display: flex;
+              flex-direction: column;
+              justify-content: center;
+              font-family: sans-serif;
+              line-height: 1.25;
+            }
+            .print-seal-title {
+              font-size: ${memoSize === 'pos' ? '8px' : '12px'};
+              font-weight: bold;
+              margin-bottom: ${memoSize === 'pos' ? '1px' : '3px'};
+            }
+            .print-seal-text {
+              font-size: ${memoSize === 'pos' ? '6px' : '9px'};
+            }
+            .print-seal-note {
+              font-size: ${memoSize === 'pos' ? '5px' : '7.5px'};
+              font-weight: 600;
+              margin: ${memoSize === 'pos' ? '1px 0' : '2px 0'};
+            }
             @page {
               size: ${memoSize === 'a4' ? 'A4 portrait' : memoSize === 'a5' ? 'A5 portrait' : '80mm auto'};
               margin: ${memoSize === 'pos' ? '0' : '15mm 10mm'};
@@ -994,7 +1081,7 @@ export default function MemoTab({
 
             <div class="billing-info">
               <div class="billing-left">
-                <div><strong>${isBangla ? 'রশিদ নং: ' : 'Invoice No:'}</strong> ${isBangla ? toBanglaNumber(invoiceNo) : invoiceNo}</div>
+                <div><strong>${isBangla ? 'রশিদ নং: ' : 'Invoice No:'}</strong> ${invoiceNo}</div>
                 <div><strong>${isBangla ? 'ক্রেতার নাম: ' : 'Customer:'}</strong> ${formattedCust}</div>
                 ${customerPhone ? `<div><strong>${isBangla ? 'মোবাইল: ' : 'Mobile:'}</strong> ${isBangla ? toBanglaNumber(customerPhone) : customerPhone}</div>` : ''}
               </div>
@@ -1006,11 +1093,11 @@ export default function MemoTab({
             <table>
               <thead>
                 <tr>
-                  <th style="width: 8%; text-align: center;">${isBangla ? 'ক্র. নং' : 'Sl'}</th>
-                  <th style="width: 52%;">${isBangla ? 'পণ্যের বিবরণ' : 'Product Description'}</th>
-                  <th style="width: 15%; text-align: center;">${isBangla ? 'পরিমাণ' : 'Qty'}</th>
-                  <th style="width: 12%; text-align: center;">${isBangla ? 'দর' : 'Rate'}</th>
-                  <th style="width: 13%; text-align: right;">${isBangla ? 'মোট টাকা' : 'Total'}</th>
+                  <th style="width: ${memoSize === 'pos' ? '10%' : '8%'}; text-align: center;">${isBangla ? 'ক্র. নং' : 'Sl'}</th>
+                  <th style="width: ${memoSize === 'pos' ? '34%' : '52%'};">${isBangla ? 'পণ্যের বিবরণ' : 'Product Description'}</th>
+                  <th style="width: ${memoSize === 'pos' ? '22%' : '15%'}; text-align: center;">${isBangla ? 'পরিমাণ' : 'Qty'}</th>
+                  <th style="width: ${memoSize === 'pos' ? '17%' : '12%'}; text-align: center;">${isBangla ? 'দর' : 'Rate'}</th>
+                  <th style="width: ${memoSize === 'pos' ? '17%' : '13%'}; text-align: right;">${isBangla ? 'মোট টাকা' : 'Total'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1076,6 +1163,16 @@ export default function MemoTab({
               ${showBuyerSign ? `<div class="signature-line">${isBangla ? 'ক্রেতার স্বাক্ষর' : 'Customer Signature'}</div>` : '<div></div>'}
               ${showSellerSign ? `<div class="signature-line">${isBangla ? 'বিক্রেতার স্বাক্ষর' : 'Seller Signature'}</div>` : '<div></div>'}
             </div>
+
+            ${showOfficialSeal ? `
+              <div class="print-official-seal">
+                <div class="print-seal-title">মেসার্স রঞ্জু দত্ত এন্ড সন্স</div>
+                <div class="print-seal-text">রনি: 01767-665446</div>
+                <div class="print-seal-text">জনি: 01753-517899</div>
+                <div class="print-seal-note">বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।</div>
+                <div class="print-seal-text">রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।</div>
+              </div>
+            ` : ''}
 
             <div class="footer-credit" style="${memoSize === 'pos' ? 'position: relative; margin-top: 30px; bottom: 0;' : ''}">
               ${isBangla ? 'ডিজিটাল হিসাব খাতা দ্বারা সংকলিত' : 'Generated via Digital Hisab Khata'}
@@ -1150,6 +1247,17 @@ export default function MemoTab({
     }
   };
 
+  const handleLoadOfficialSealInfo = () => {
+    setMemoShopName('মেসার্স রঞ্জু দত্ত এন্ড সন্স');
+    setShopAddress('রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।');
+    setShopPhone('রনি: 01767-665446, জনি: 01753-517899');
+    setMemoNote('বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।');
+    localStorage.setItem('hisab_khata_shop_name', 'মেসার্স রঞ্জু দত্ত এন্ড সন্স');
+    localStorage.setItem('memo_shop_address', 'রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।');
+    localStorage.setItem('memo_shop_phone', 'রনি: 01767-665446, জনি: 01753-517899');
+    triggerToast(isBangla ? 'অফিসিয়াল সিলের তথ্য সফলভাবে লোড করা হয়েছে!' : 'Official seal information loaded successfully!');
+  };
+
   return (
     <motion.div
       key="memo-settings"
@@ -1174,10 +1282,20 @@ export default function MemoTab({
           
           {/* Shop and Invoice basic settings block */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-4">
-            <h3 className="text-sm font-black text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2">
-              <Store className="h-4 w-4 text-teal-600" />
-              {isBangla ? 'দোকান ও রশিদের তথ্য' : 'Shop & Invoice Config'}
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+              <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                <Store className="h-4 w-4 text-teal-600" />
+                {isBangla ? 'দোকান ও রশিদের তথ্য' : 'Shop & Invoice Config'}
+              </h3>
+              <button
+                type="button"
+                onClick={handleLoadOfficialSealInfo}
+                className="bg-purple-50 hover:bg-purple-100 text-purple-700 hover:text-purple-800 text-[10px] font-black px-2.5 py-1.5 rounded-lg border border-purple-200 transition-all cursor-pointer flex items-center gap-1.5 shadow-3xs"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-600 animate-pulse"></span>
+                {isBangla ? 'অফিসিয়াল সিলের তথ্য লোড করুন' : 'Load Official Seal Info'}
+              </button>
+            </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="space-y-1.5">
@@ -1588,6 +1706,16 @@ export default function MemoTab({
                 />
                 {isBangla ? 'বিক্রেতার স্বাক্ষর লাইন দেখান' : 'Show Seller Sign line'}
               </label>
+
+              <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-bold text-slate-600 bg-purple-50/55 hover:bg-purple-100/50 text-purple-800 border border-purple-100/80 px-2 py-1 rounded-lg transition-all">
+                <input
+                  type="checkbox"
+                  checked={showOfficialSeal}
+                  onChange={(e) => setShowOfficialSeal(e.target.checked)}
+                  className="rounded text-purple-700 focus:ring-purple-500 h-4 w-4 border-purple-300"
+                />
+                {isBangla ? 'অফিসিয়াল সিল ব্যবহার করুন' : 'Use Official Seal'}
+              </label>
             </div>
           </div>
 
@@ -1647,7 +1775,7 @@ export default function MemoTab({
               {/* Bill Meta */}
               <div className="text-[10px] space-y-1 font-bold text-slate-600 flex justify-between items-start">
                 <div className="space-y-0.5">
-                  <p><span className="font-extrabold text-slate-500">{isBangla ? 'রশিদ নং: ' : 'INV:'}</span> {isBangla ? toBanglaNumber(invoiceNo) : invoiceNo}</p>
+                  <p><span className="font-extrabold text-slate-500">{isBangla ? 'রশিদ নং: ' : 'INV:'}</span> {invoiceNo}</p>
                   <p>
                     <span className="font-extrabold text-slate-500">{isBangla ? 'ক্রেতা: ' : 'Cust:'}</span>{' '}
                     <span className="text-slate-800 font-black">{customerName || (isBangla ? 'সাধারণ ক্রেতা' : 'General Customer')}</span>
@@ -1666,11 +1794,11 @@ export default function MemoTab({
                 <table className="w-full border-collapse text-[10px]">
                   <thead>
                     <tr className="bg-teal-700/10 text-teal-800 font-extrabold border-b border-teal-700/80">
-                      <th className="px-2 py-1.5 text-center border-r border-teal-700/40 w-8">{isBangla ? 'ক্র.' : 'Sl'}</th>
-                      <th className="px-2 py-1.5 border-r border-teal-700/40">{isBangla ? 'বিবরণ' : 'Description'}</th>
-                      <th className="px-1 py-1.5 text-center border-r border-teal-700/40 w-10">{isBangla ? 'পরিমাণ' : 'Qty'}</th>
-                      <th className="px-1.5 py-1.5 text-center border-r border-teal-700/40 w-10">{isBangla ? 'দর' : 'Rate'}</th>
-                      <th className="px-2 py-1.5 text-right w-16">{isBangla ? 'মোট' : 'Total'}</th>
+                      <th style={{ width: memoSize === 'pos' ? '10%' : '8%' }} className="px-2 py-1.5 text-center border-r border-teal-700/40">{isBangla ? 'ক্র.' : 'Sl'}</th>
+                      <th style={{ width: memoSize === 'pos' ? '34%' : '52%' }} className="px-2 py-1.5 border-r border-teal-700/40">{isBangla ? 'বিবরণ' : 'Description'}</th>
+                      <th style={{ width: memoSize === 'pos' ? '22%' : '15%' }} className="px-1 py-1.5 text-center border-r border-teal-700/40">{isBangla ? 'পরিমাণ' : 'Qty'}</th>
+                      <th style={{ width: memoSize === 'pos' ? '17%' : '12%' }} className="px-1.5 py-1.5 text-center border-r border-teal-700/40">{isBangla ? 'দর' : 'Rate'}</th>
+                      <th style={{ width: memoSize === 'pos' ? '17%' : '13%' }} className="px-2 py-1.5 text-right">{isBangla ? 'মোট' : 'Total'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1767,7 +1895,7 @@ export default function MemoTab({
             </div>
 
             {/* Buyer and Seller Signatures */}
-            <div className="mt-14 mb-2 flex justify-between text-[9px] font-bold text-slate-500">
+            <div className="mt-14 mb-2 flex justify-between text-[9px] font-bold text-slate-500 relative z-20">
               {showBuyerSign ? (
                 <div className="text-center w-24">
                   <div className="border-t border-slate-300 pt-1">{isBangla ? 'ক্রেতার স্বাক্ষর' : 'Customer Sign'}</div>
@@ -1780,6 +1908,35 @@ export default function MemoTab({
                 </div>
               ) : <div />}
             </div>
+
+            {/* ON-SCREEN DIGITAL PURPLE SEAL STAMP */}
+            {showOfficialSeal && (
+              <div 
+                className="absolute border-[2.5px] border-double border-purple-700/80 text-purple-700/80 bg-white/95 rounded p-1.5 text-center pointer-events-none select-none z-30 transition-all shadow-sm"
+                style={(() => {
+                  const isPos = memoSize === 'pos';
+                  return {
+                    width: isPos ? '135px' : '210px',
+                    height: isPos ? '68px' : '105px',
+                    right: isPos ? '15px' : '30px',
+                    bottom: isPos ? '48px' : '75px',
+                    transform: 'rotate(-2.5deg)',
+                    lineHeight: '1.25',
+                    fontFamily: 'sans-serif'
+                  };
+                })()}
+              >
+                <div className="font-extrabold" style={{ fontSize: memoSize === 'pos' ? '8px' : '12px' }}>মেসার্স রঞ্জু দত্ত এন্ড সন্স</div>
+                <div style={{ fontSize: memoSize === 'pos' ? '6px' : '8.5px' }}>রনি: 01767-665446</div>
+                <div style={{ fontSize: memoSize === 'pos' ? '6px' : '8.5px' }}>জনি: 01753-517899</div>
+                <div className="font-semibold text-purple-600/90" style={{ fontSize: memoSize === 'pos' ? '4.5px' : '7.5px', marginTop: '1px' }}>
+                  বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।
+                </div>
+                <div style={{ fontSize: memoSize === 'pos' ? '5px' : '8px', marginTop: '1px' }}>
+                  রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।
+                </div>
+              </div>
+            )}
 
             {/* Bottom credit info */}
             <div className="text-center text-[7px] text-slate-300 pt-2 border-t border-slate-100/50 mt-1">

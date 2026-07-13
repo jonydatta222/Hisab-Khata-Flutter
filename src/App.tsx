@@ -69,6 +69,7 @@ import {
 import { Browser } from '@capacitor/browser';
 import { App as CapApp } from '@capacitor/app';
 
+import logoPng from './assets/logo.png';
 import logoImg from './assets/logo.jpg';
 
 import Calculator from './components/Calculator';
@@ -196,9 +197,7 @@ export default function App() {
 
   const handleLogoError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
     const currentSrc = e.currentTarget.src;
-    if (currentSrc.includes('/logo.png')) {
-      e.currentTarget.src = '/logo.jpg';
-    } else if (currentSrc.includes('/logo.jpg')) {
+    if (currentSrc.includes('logo.png')) {
       e.currentTarget.src = logoImg;
     }
   };
@@ -334,7 +333,7 @@ export default function App() {
     return localStorage.getItem('hisab_khata_sync_email') || '';
   });
   const [shopName, setShopName] = useState(() => {
-    return localStorage.getItem('hisab_khata_shop_name') || '';
+    return localStorage.getItem('hisab_khata_shop_name') || 'মেসার্স রঞ্জু দত্ত এন্ড সন্স';
   });
 
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
@@ -583,7 +582,7 @@ export default function App() {
       // 1. Reload local state from localStorage to ensure correct local sync state
       const localTxsStr = localStorage.getItem('hisab_khata_transactions');
       const localExpensesStr = localStorage.getItem('hisab_khata_expenses');
-      const localShopName = localStorage.getItem('hisab_khata_shop_name') || '';
+      const localShopName = localStorage.getItem('hisab_khata_shop_name') || 'মেসার্স রঞ্জু দত্ত এন্ড সন্স';
       const localOosStr = localStorage.getItem('hisab_khata_out_of_stock');
       const localRatesStr = localStorage.getItem('hisab_khata_product_rates');
       
@@ -2365,7 +2364,7 @@ export default function App() {
             {/* Brand Logo & Name */}
             <div className="flex items-center gap-2">
               <img
-                src="/logo.png"
+                src={logoPng}
                 onError={handleLogoError}
                 alt="হিসাব খাতা"
                 className="h-10 w-10 rounded-xl object-cover shadow-sm border border-slate-200/60 shrink-0 transition-transform duration-250 active:scale-95"
@@ -5125,7 +5124,7 @@ export default function App() {
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-5 text-center">
                   <div className="flex justify-center">
                     <img
-                      src="/logo.png"
+                      src={logoPng}
                       onError={handleLogoError}
                       alt="হিসাব খাতা"
                       className="h-16 w-16 rounded-2xl object-cover shadow-md border border-slate-200/60"
