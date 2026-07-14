@@ -112,10 +112,45 @@ async function generate() {
   console.log('Generated: assets/icon-foreground.png');
 
   // 4. Generate icon-background.png (1024x1024) - Adaptive Icon Background
-  // We will use solid white as standard for adaptive icon backgrounds
-  const background = new Jimp({ width: 1024, height: 1024, color: 0xffffffff });
+  // Sample color near the corner of the original logo to match background color
+  const sampleX = Math.max(5, Math.floor(logo.width * 0.02));
+  const sampleY = Math.max(5, Math.floor(logo.height * 0.02));
+  const cornerPixel = logo.getPixelColor(sampleX, sampleY);
+  
+  // Extract channels
+  const r = (cornerPixel >> 24) & 0xff;
+  const g = (cornerPixel >> 16) & 0xff;
+  const b = (cornerPixel >> 8) & 0xff;
+  const a = cornerPixel & 0xff;
+  
+  // Determine final HEX color and Jimp color
+  // If alpha is high (> 200), we use the sampled color, otherwise fallback to dark slate 
+  const hexColor = (a > 200)
+    ? `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
+    : '#0a101c';
+    
+  const finalJimpColor = (a > 200)
+    ? ((r << 24) >>> 0) | (g << 16) | (b << 8) | 0xff
+    : 0x0a101cff;
+
+  const background = new Jimp({ width: 1024, height: 1024, color: finalJimpColor });
   await writeAtomic(background, 'assets/icon-background.png');
-  console.log('Generated: assets/icon-background.png');
+  console.log(`Generated: assets/icon-background.png with background color ${hexColor}`);
+
+  // Auto-update android/app/src/main/res/values/ic_launcher_background.xml
+  const xmlPath = 'android/app/src/main/res/values/ic_launcher_background.xml';
+  if (fs.existsSync(xmlPath)) {
+    try {
+      const xmlContent = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">${hexColor.toUpperCase()}</color>
+</resources>`;
+      fs.writeFileSync(xmlPath, xmlContent, 'utf8');
+      console.log(`Updated ${xmlPath} with background color ${hexColor.toUpperCase()}`);
+    } catch (err) {
+      console.warn('Warning: Could not update native launcher background XML:', err);
+    }
+  }
 
   // 5. Generate splash.png (2732x2732) - Light Splash Screen
   const splashLight = new Jimp({ width: 2732, height: 2732, color: 0xffffffff }); // White background

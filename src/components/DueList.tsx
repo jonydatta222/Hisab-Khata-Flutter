@@ -36,6 +36,16 @@ export default function DueList({
   const [deletingCustomer, setDeletingCustomer] = useState<string | null>(null);
   const [deletingDepositId, setDeletingDepositId] = useState<string | null>(null);
 
+  // Pagination / slice sizes to optimize DOM and rendering
+  const [visibleDuesCount, setVisibleDuesCount] = useState(12);
+  const [visibleDepositsCount, setVisibleDepositsCount] = useState(12);
+
+  // Reset pagination counters on tab or search input modifications to maintain snappiness
+  React.useEffect(() => {
+    setVisibleDuesCount(12);
+    setVisibleDepositsCount(12);
+  }, [searchTerm, activeSubTab]);
+
   // --- Prevent background scroll when any local overlay modal is open ---
   React.useEffect(() => {
     const isLocalModalOpen = !!depositingCustomer || !!editingCustomer || !!deletingCustomer || !!deletingDepositId;
@@ -230,16 +240,15 @@ export default function DueList({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-[450px] overflow-y-auto pr-1">
-            <AnimatePresence initial={false}>
-              {filteredDues.map((cd) => {
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-[450px] overflow-y-auto pr-1">
+              {filteredDues.slice(0, visibleDuesCount).map((cd) => {
                 return (
                   <motion.div
                     key={cd.name}
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.12 }}
                     className="p-2 sm:p-2.5 rounded-xl border border-slate-100 bg-rose-50/10 hover:bg-rose-50/20 hover:border-rose-100/60 flex flex-col justify-between gap-2 transition-all shadow-3xs"
                   >
                     {/* Main card row: Info on left, Actions on right */}
@@ -293,7 +302,19 @@ export default function DueList({
                   </motion.div>
                 );
               })}
-            </AnimatePresence>
+            </div>
+
+            {filteredDues.length > visibleDuesCount && (
+              <div className="flex justify-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => setVisibleDuesCount(prev => prev + 15)}
+                  className="px-4 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50 rounded-xl border border-rose-200/50 flex items-center gap-1 cursor-pointer transition-all active:scale-95 shadow-3xs"
+                >
+                  <span>{isBangla ? 'আরও দেখুন' : 'See More'}</span>
+                </button>
+              </div>
+            )}
           </div>
         )
       ) : (
@@ -305,16 +326,15 @@ export default function DueList({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-[450px] overflow-y-auto pr-1 animate-fadeIn">
-            <AnimatePresence initial={false}>
-              {filteredDeposits.map((tx) => {
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-[450px] overflow-y-auto pr-1">
+              {filteredDeposits.slice(0, visibleDepositsCount).map((tx) => {
                 return (
                   <motion.div
                     key={tx.id}
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.12 }}
                     className="p-2.5 rounded-xl border border-slate-100 bg-emerald-50/5 hover:bg-emerald-50/15 hover:border-emerald-100/40 flex flex-col justify-between gap-1.5 transition-all shadow-3xs"
                   >
                     <div className="flex items-center justify-between gap-1.5">
@@ -365,7 +385,19 @@ export default function DueList({
                   </motion.div>
                 );
               })}
-            </AnimatePresence>
+            </div>
+
+            {filteredDeposits.length > visibleDepositsCount && (
+              <div className="flex justify-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => setVisibleDepositsCount(prev => prev + 15)}
+                  className="px-4 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-50 rounded-xl border border-emerald-200/50 flex items-center gap-1 cursor-pointer transition-all active:scale-95 shadow-3xs"
+                >
+                  <span>{isBangla ? 'আরও দেখুন' : 'See More'}</span>
+                </button>
+              </div>
+            )}
           </div>
         )
       )}

@@ -844,7 +844,7 @@ export default function MemoTab({
     ctx.fillStyle = '#94A3B8';
     ctx.font = '9px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(isBangla ? 'ডিজিটাল হিসাব খাতা দ্বারা সংকলিত' : 'Generated via Digital Hisab Khata', width / 2, height - (sizeType === 'pos' ? 15 : 30));
+    ctx.fillText(isBangla ? 'হিসাব খাতা দ্বারা সংকলিত' : 'Generated via Hisab Khata', width / 2, height - (sizeType === 'pos' ? 15 : 30));
   };
 
   const downloadJPG = async () => {
@@ -1291,7 +1291,7 @@ export default function MemoTab({
             </div>
 
             <div class="footer-credit" style="${memoSize === 'pos' ? 'position: relative; margin-top: 30px; bottom: 0;' : ''}">
-              ${isBangla ? 'ডিজিটাল হিসাব খাতা দ্বারা সংকলিত' : 'Generated via Digital Hisab Khata'}
+              ${isBangla ? 'হিসাব খাতা দ্বারা সংকলিত' : 'Generated via Hisab Khata'}
             </div>
           </div>
         </body>
@@ -2176,7 +2176,7 @@ export default function MemoTab({
 
             {/* Bottom credit info */}
             <div className="text-center text-[7px] text-slate-300 pt-2 border-t border-slate-100/50 mt-1">
-              {isBangla ? 'ডিজিটাল হিসাব খাতা ক্যাশ মেমো সিস্টেম' : 'Digital Hisab Khata Cash Memo system'}
+              {isBangla ? 'হিসাব খাতা ক্যাশ মেমো সিস্টেম' : 'Hisab Khata Cash Memo system'}
             </div>
           </div>
 

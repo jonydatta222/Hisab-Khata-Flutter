@@ -562,7 +562,7 @@ export default function App() {
   const [editRatePrice, setEditRatePrice] = useState('');
   const [editRateKeywords, setEditRateKeywords] = useState('');
   const [activeInfoTab, setActiveInfoTab] = useState<'oos' | 'rates' | 'dues' | 'expenses'>('oos');
-  const [settingsSubTab, setSettingsSubTab] = useState<'store' | 'sync' | 'history' | 'about' | 'memo'>('store');
+  const [settingsSubTab, setSettingsSubTab] = useState<'store' | 'sync' | 'history' | 'memo'>('store');
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -2186,7 +2186,7 @@ export default function App() {
                 <p className="text-[10px] text-slate-400 max-w-sm mx-auto leading-normal">
                   {isBangla 
                     ? 'হিসাব খাতার ক্যাশ মেমো যাচাইকরণে অংশগ্রহণ করার জন্য আপনাকে ধন্যবাদ।'
-                    : 'Thank you for using Digital Hisab Khata secure receipt verification service.'}
+                    : 'Thank you for using Hisab Khata secure receipt verification service.'}
                 </p>
               </div>
             </div>
@@ -2365,7 +2365,7 @@ export default function App() {
           {/* Footer branding */}
           <div className="text-center text-[9px] text-[#5C7594] font-bold border-t border-[#3A506B]/30 pt-4 mt-6 flex items-center justify-center gap-1.5">
             <ShieldCheck className="h-3.5 w-3.5 text-teal-400" />
-            <span>{isBangla ? 'ডিজিটাল হিসাব খাতা সিকিউরড ক্লাউড অথেন্টিকেটর' : 'Digital Hisab Khata Secured Cloud Authenticator'}</span>
+            <span>{isBangla ? 'হিসাব খাতা সিকিউরড ক্লাউড অথেন্টিকেটর' : 'Hisab Khata Secured Cloud Authenticator'}</span>
           </div>
 
         </div>
@@ -2521,7 +2521,7 @@ export default function App() {
       {/* --- Main Contents Container --- */}
       <main className="max-w-7xl mx-auto w-full px-4 py-4 pt-[84px] flex-1 flex flex-col gap-4">
 
-        <AnimatePresence mode="popLayout">
+        <AnimatePresence mode="wait">
         {/* --- 1. HOME TAB VIEW --- */}
         {currentNavTab === 'home' && (
           <motion.div
@@ -2529,7 +2529,7 @@ export default function App() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
+            transition={{ duration: 0.1, ease: 'easeOut' }}
             className="space-y-4"
           >
             
@@ -2827,7 +2827,7 @@ export default function App() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
+            transition={{ duration: 0.1, ease: 'easeOut' }}
             className="max-w-4xl mx-auto w-full px-4 py-4 space-y-5"
           >
             {/* Page Header Info */}
@@ -3342,18 +3342,21 @@ export default function App() {
                                           {formatCurrency(item.buyingPrice, isBangla)}
                                         </span>
                                         
-                                        <button
+                                        <motion.button
+                                          whileHover={{ scale: 1.15, rotate: 6, backgroundColor: 'rgba(14, 165, 233, 0.12)' }}
+                                          whileTap={{ scale: 0.9 }}
+                                          transition={{ type: "spring", stiffness: 400, damping: 15 }}
                                           onClick={() => {
                                             setEditingRateId(item.id);
                                             setEditRateName(item.name);
                                             setEditRatePrice(String(item.buyingPrice));
                                             setEditRateKeywords(item.keywords || '');
                                           }}
-                                          className="p-1.5 hover:bg-sky-150 text-slate-400 hover:text-sky-600 rounded-lg transition-colors cursor-pointer"
+                                          className="p-1.5 text-slate-400 hover:text-sky-600 rounded-lg cursor-pointer flex items-center justify-center transition-colors"
                                           title={isBangla ? 'পরিবর্তন করুন' : 'Edit'}
                                         >
                                           <Edit2 className="h-3.5 w-3.5" />
-                                        </button>
+                                        </motion.button>
                                         
                                         <button
                                           onClick={() => {
@@ -3445,7 +3448,7 @@ export default function App() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
+            transition={{ duration: 0.1, ease: 'easeOut' }}
             className="max-w-4xl mx-auto w-full px-4 py-4 space-y-6"
           >
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -4523,8 +4526,8 @@ export default function App() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
-            className={`${(settingsSubTab === 'history' || settingsSubTab === 'memo') ? 'max-w-7xl' : 'max-w-xl'} mx-auto w-full px-4 py-4 space-y-5 transition-all duration-300`}
+            transition={{ duration: 0.1, ease: 'easeOut' }}
+            className={`${(settingsSubTab === 'history' || settingsSubTab === 'memo') ? 'max-w-7xl' : 'max-w-4xl'} mx-auto w-full px-4 py-4 space-y-5 transition-all duration-300`}
           >
             {/* Settings Tab Navigation Header */}
             <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-3xs overflow-x-auto whitespace-nowrap scrollbar-none">
@@ -4572,17 +4575,6 @@ export default function App() {
               >
                 {isBangla ? 'মেমো/রশিদ' : 'Memo/Receipt'}
               </button>
-              <button
-                type="button"
-                onClick={() => setSettingsSubTab('about')}
-                className={`flex-1 min-w-[110px] py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
-                  settingsSubTab === 'about'
-                    ? 'bg-white text-teal-700 shadow-3xs'
-                    : 'text-slate-500 hover:text-slate-800 font-bold'
-                }`}
-              >
-                {isBangla ? 'আমাদের সম্পর্কে' : 'About Us'}
-              </button>
             </div>
 
             {settingsSubTab === 'store' && (
@@ -4590,7 +4582,7 @@ export default function App() {
                 key="store-settings"
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="space-y-4"
+                className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start"
               >
                 {/* Shop Settings Card */}
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-4">
@@ -4629,38 +4621,62 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Backup & Hard Reset Card */}
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-4">
-                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-1">
-                    {isBangla ? 'ডেটা সংরক্ষণ করুন' : 'Data Backup & Restore'}
-                  </h3>
-
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <button
-                      type="button"
-                      onClick={handleExportBackup}
-                      className="py-2.5 px-3 border border-slate-200 bg-white rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors"
-                    >
-                      <FileDown className="h-4 w-4 text-teal-600" />
-                      <span>{isBangla ? 'ডাউনলোড খাতা' : 'Download JSON'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleImportClick}
-                      className="py-2.5 px-3 border border-slate-200 bg-white rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors"
-                    >
-                      <FileUp className="h-4 w-4 text-indigo-600" />
-                      <span>{isBangla ? 'আপলোড খাতা' : 'Upload JSON'}</span>
-                    </button>
-
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".json"
-                      onChange={handleImportBackup}
-                      className="hidden"
+                {/* About Us Card - Displayed directly inside General settings */}
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-4 text-center w-full">
+                  <div className="flex justify-center">
+                    <img
+                      src={logoPngWithCache}
+                      onError={handleLogoError}
+                      alt="হিসাব খাতা"
+                      className="h-14 w-14 rounded-2xl object-cover shadow-md border border-slate-200/60"
+                      referrerPolicy="no-referrer"
                     />
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 leading-none">
+                      {isBangla ? 'হিসাব খাতা' : 'Hisab Khata'}
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-1.5 font-bold">
+                      {isBangla ? 'নিরাপদ ও রিয়েল-টাইম ক্লাউড ব্যাকআপ হিসাব ব্যবস্থাপনাকারী' : 'Secure & Real-time Cloud Sync Ledger Manager'}
+                    </p>
+                  </div>
+
+                  <div className="border-t border-slate-100 pt-3 text-left space-y-2.5 text-xs">
+                    <div className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-150">
+                      <span className="text-slate-500 font-bold">{isBangla ? 'ব্যবস্থাপনাকারী:' : 'Managed By:'}</span>
+                      <span className="text-slate-800 font-extrabold">{isBangla ? 'জনি দত্ত' : 'Jony Datta'}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-150">
+                      <span className="text-slate-500 font-bold">{isBangla ? 'যোগাযোগ করুন:' : 'Contact Us:'}</span>
+                      <div className="flex items-center gap-3">
+                        <a
+                          href="https://www.facebook.com/jonydatta247"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors cursor-pointer border border-blue-100 flex items-center justify-center"
+                          title="Facebook"
+                        >
+                          <Facebook className="h-4 w-4" />
+                        </a>
+                        <a
+                          href="https://www.linkedin.com/in/jonydatta"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-lg transition-colors cursor-pointer border border-sky-100 flex items-center justify-center"
+                          title="LinkedIn"
+                        >
+                          <Linkedin className="h-4 w-4" />
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] text-slate-400 leading-relaxed font-bold max-w-sm mx-auto">
+                    {isBangla 
+                      ? 'হিসাব খাতা আপনার বেচাকেনা, বাকির খাতা ও দৈনিক খরচ নিরাপদভাবে সহজে সংরক্ষণ করতে সাহায্য করে।' 
+                      : 'Hisab Khata securely manages and tracks your sales, daily store expenses, and customer dues.'}
                   </div>
                 </div>
               </motion.div>
@@ -4671,10 +4687,10 @@ export default function App() {
                 key="sync-settings"
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="space-y-4"
+                className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start max-w-4xl mx-auto"
               >
                 {/* Cloud Sync Settings */}
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-4">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-4 w-full">
                   <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-1">
                     {isBangla ? 'ব্যাকআপ অ্যাকাউন্ট' : 'Backup Account'}
                   </h3>
@@ -4922,6 +4938,41 @@ export default function App() {
                     )}
                   </div>
                 </div>
+
+                {/* Backup & Hard Reset Card - Moved here from 'store' settings */}
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-4 w-full">
+                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-1">
+                    {isBangla ? 'ডেটা সংরক্ষণ করুন' : 'Data Backup & Restore'}
+                  </h3>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={handleExportBackup}
+                      className="py-2.5 px-3 border border-slate-200 bg-white rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                    >
+                      <FileDown className="h-4 w-4 text-teal-600" />
+                      <span>{isBangla ? 'ডাউনলোড খাতা' : 'Download JSON'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleImportClick}
+                      className="py-2.5 px-3 border border-slate-200 bg-white rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                    >
+                      <FileUp className="h-4 w-4 text-indigo-600" />
+                      <span>{isBangla ? 'আপলোড খাতা' : 'Upload JSON'}</span>
+                    </button>
+
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".json"
+                      onChange={handleImportBackup}
+                      className="hidden"
+                    />
+                  </div>
+                </div>
               </motion.div>
             )}
 
@@ -5154,73 +5205,7 @@ export default function App() {
               </motion.div>
             )}
 
-            {settingsSubTab === 'about' && (
-              <motion.div
-                key="about-settings"
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-4"
-              >
-                {/* About Us Card */}
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-5 text-center">
-                  <div className="flex justify-center">
-                    <img
-                      src={logoPngWithCache}
-                      onError={handleLogoError}
-                      alt="হিসাব খাতা"
-                      className="h-16 w-16 rounded-2xl object-cover shadow-md border border-slate-200/60"
-                      referrerPolicy="no-referrer"
-                    />
-                  </div>
-
-                  <div>
-                    <h3 className="text-base font-black text-slate-900 leading-none">
-                      {isBangla ? 'ডিজিটাল হিসাব খাতা' : 'Digital Hisab Khata'}
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-2 font-bold">
-                      {isBangla ? 'নিরাপদ ও রিয়েল-টাইম ক্লাউড ব্যাকআপ হিসাব ব্যবস্থাপনাকারী' : 'Secure & Real-time Cloud Sync Ledger Manager'}
-                    </p>
-                  </div>
-
-                  <div className="border-t border-slate-100 pt-4 text-left space-y-3.5 text-xs">
-                    <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-150">
-                      <span className="text-slate-500 font-bold">{isBangla ? 'ব্যবস্থাপনাকারী:' : 'Managed By:'}</span>
-                      <span className="text-slate-800 font-extrabold">{isBangla ? 'জনি দত্ত' : 'Jony Datta'}</span>
-                    </div>
-
-                    <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-150">
-                      <span className="text-slate-500 font-bold">{isBangla ? 'যোগাযোগ করুন:' : 'Contact Us:'}</span>
-                      <div className="flex items-center gap-3">
-                        <a
-                          href="https://www.facebook.com/jonydatta247"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors cursor-pointer border border-blue-100 flex items-center justify-center"
-                          title="Facebook"
-                        >
-                          <Facebook className="h-4 w-4" />
-                        </a>
-                        <a
-                          href="https://www.linkedin.com/in/jonydatta"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-lg transition-colors cursor-pointer border border-sky-100 flex items-center justify-center"
-                          title="LinkedIn"
-                        >
-                          <Linkedin className="h-4 w-4" />
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-[10px] text-slate-400 leading-relaxed font-bold max-w-sm mx-auto">
-                    {isBangla 
-                      ? 'ডিজিটাল হিসাব খাতা আপনার বেচাকেনা, বাকির খাতা ও দৈনিক খরচ নিরাপদভাবে সহজে সংরক্ষণ করতে সাহায্য করে।' 
-                      : 'Digital Hisab Khata securely manages and tracks your sales, daily store expenses, and customer dues.'}
-                  </div>
-                </div>
-              </motion.div>
-            )}
+            {/* About us has been rearranged into General subtab */}
 
             {settingsSubTab === 'memo' && (
               <MemoTab
@@ -7018,8 +7003,8 @@ export default function App() {
       <footer className="bg-white border-t border-slate-200/80 py-5 text-center mt-auto">
         <p className="text-xs text-slate-400">
           {isBangla 
-            ? 'ডিজিটাল হিসাব খাতা © ২০২৬ • ব্যবস্থাপনাকারী: জনি দত্ত' 
-            : 'Digital Hisab Khata © 2026 • Managed by: Jony Datta'}
+            ? 'হিসাব খাতা © ২০২৬ • ব্যবস্থাপনাকারী: জনি দত্ত' 
+            : 'Hisab Khata © 2026 • Managed by: Jony Datta'}
         </p>
       </footer>
 
