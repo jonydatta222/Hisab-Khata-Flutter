@@ -74,6 +74,11 @@ import { Share } from '@capacitor/share';
 import logoPng from './assets/logo.png';
 import logoImg from './assets/logo.jpg';
 
+// Stable cache buster calculated once per page session to bypass browser cache memory
+const LOGO_CACHE_BUSTER = `?t=${Date.now()}`;
+const logoPngWithCache = `${logoPng}${LOGO_CACHE_BUSTER}`;
+const logoImgWithCache = `${logoImg}${LOGO_CACHE_BUSTER}`;
+
 import Calculator from './components/Calculator';
 import StatCard from './components/StatCard';
 import TransactionList from './components/TransactionList';
@@ -198,9 +203,10 @@ export default function App() {
   };
 
   const handleLogoError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-    const currentSrc = e.currentTarget.src;
-    if (currentSrc.includes('logo.png')) {
-      e.currentTarget.src = logoImg;
+    const target = e.currentTarget;
+    if (target.getAttribute('data-fallback-tried') !== 'true') {
+      target.setAttribute('data-fallback-tried', 'true');
+      target.src = logoImgWithCache;
     }
   };
   const [currentTime, setCurrentTime] = useState('');
@@ -2399,7 +2405,7 @@ export default function App() {
             {/* Brand Logo & Name */}
             <div className="flex items-center gap-2">
               <img
-                src={logoPng}
+                src={logoPngWithCache}
                 onError={handleLogoError}
                 alt="হিসাব খাতা"
                 className="h-10 w-10 rounded-xl object-cover shadow-sm border border-slate-200/60 shrink-0 transition-transform duration-250 active:scale-95"
@@ -5159,7 +5165,7 @@ export default function App() {
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-5 text-center">
                   <div className="flex justify-center">
                     <img
-                      src={logoPng}
+                      src={logoPngWithCache}
                       onError={handleLogoError}
                       alt="হিসাব খাতা"
                       className="h-16 w-16 rounded-2xl object-cover shadow-md border border-slate-200/60"
