@@ -5,39 +5,49 @@ import path from 'path';
 async function generate() {
   console.log('Starting custom high-quality asset generation...');
 
-  const logoPath = 'logo.jpg';
+  let logoPath = 'original-logo-upload/logo.png';
   if (!fs.existsSync(logoPath)) {
-    console.error(`Error: Source logo file not found at ${logoPath}`);
+    logoPath = 'original-logo-upload/logo.jpg';
+  }
+  if (!fs.existsSync(logoPath)) {
+    console.error(`Error: Source logo file not found at original-logo-upload/logo.png or original-logo-upload/logo.jpg`);
     process.exit(1);
   }
 
   // Load the source logo
   const logo = await Jimp.read(logoPath);
-  console.log(`Loaded source logo: ${logo.width}x${logo.height}`);
+  console.log(`Loaded source logo: ${logo.width}x${logo.height} from ${logoPath}`);
 
   // Ensure assets directory exists
   if (!fs.existsSync('assets')) {
     fs.mkdirSync('assets');
   }
 
+  // Ensure src/assets directory exists
+  if (!fs.existsSync('src/assets')) {
+    fs.mkdirSync('src/assets', { recursive: true });
+  }
+
   // 1. Generate icon.png (1024x1024)
   const icon = logo.clone();
   icon.resize({ w: 1024, h: 1024 });
   await icon.write('assets/icon.png');
-  await icon.write('icon.png');
+  // Do not write to root 'icon.png' to avoid confusing the IDE file watcher
   
   // Create a separate web-optimized logo (256x256) to prevent asset bloating and load instantly in the app
   const webLogoPng = logo.clone();
   webLogoPng.resize({ w: 256, h: 256 });
   await webLogoPng.write('public/logo.png');
   await webLogoPng.write('src/assets/logo.png');
+  // Do not overwrite root 'logo.png' source file to keep it intact and uncorrupted
 
   const webLogoJpg = logo.clone();
   webLogoJpg.resize({ w: 256, h: 256 });
   await webLogoJpg.write('public/logo.jpg');
   await webLogoJpg.write('src/assets/logo.jpg');
+  // Do not overwrite root 'logo.jpg' source file to keep it intact and uncorrupted
   
-  console.log('Generated: assets/icon.png, icon.png, public/logo.png (256x256), src/assets/logo.png (256x256), public/logo.jpg (256x256), src/assets/logo.jpg (256x256)');
+  console.log('Generated logos in root, public, and src/assets directories');
 
   // 2. Generate icon-only.png (1024x1024)
   const iconOnly = logo.clone();
