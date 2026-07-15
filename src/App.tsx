@@ -2644,7 +2644,6 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleRefresh}
-                  onTouchStart={(e) => { e.preventDefault(); handleRefresh(); }}
                   disabled={isSyncing}
                   className="p-1 bg-emerald-50 hover:bg-emerald-100/70 border border-emerald-200 text-emerald-700 rounded-md shadow-3xs transition-all flex items-center justify-center cursor-pointer h-8 w-8 active:scale-95 shrink-0 disabled:opacity-50"
                   title={isBangla ? 'তথ্য রিফ্রেশ করুন' : 'Refresh Ledger'}
@@ -2657,7 +2656,6 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setIsCalcOpen(true)}
-                  onTouchStart={(e) => { e.preventDefault(); setIsCalcOpen(true); }}
                   className="p-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-md shadow-3xs transition-all flex items-center justify-center cursor-pointer h-8 w-8 active:scale-95 shrink-0"
                   title={isBangla ? 'ক্যালকুলেটর চালু করুন' : 'Open Calculator'}
                   id="calc-trigger-btn"
@@ -2671,7 +2669,6 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleToggleSync}
-                  onTouchStart={(e) => { e.preventDefault(); handleToggleSync(); }}
                   className={`flex items-center justify-center border transition-all cursor-pointer h-8 shadow-3xs active:scale-95 shrink-0 rounded-md ${
                     isSyncActive
                       ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
@@ -2697,7 +2694,6 @@ export default function App() {
                 <button
                   type="button"
                   onClick={toggleLanguage}
-                  onTouchStart={(e) => { e.preventDefault(); toggleLanguage(); }}
                   className="bg-white hover:bg-slate-50 border border-slate-200 rounded-md text-[11px] font-black text-slate-700 h-8 shadow-3xs transition-all flex items-center justify-center cursor-pointer active:scale-95 shrink-0 w-8 sm:w-auto sm:px-2 sm:gap-1"
                   id="lang-toggler"
                   title={isBangla ? 'ভাষা পরিবর্তন করুন' : 'Change Language'}
@@ -2781,7 +2777,6 @@ export default function App() {
 
                 <div 
                   onClick={() => setIsDueListModalOpen(true)}
-                  onTouchStart={(e) => { e.preventDefault(); setIsDueListModalOpen(true); }}
                   className="bg-white py-2 px-3 rounded-xl border border-slate-200 shadow-3xs cursor-pointer hover:bg-slate-50/50 transition-colors relative overflow-hidden"
                 >
                   <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block leading-tight">
@@ -2813,7 +2808,6 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setIsOutOfStockModalOpen(true)}
-                    onTouchStart={(e) => { e.preventDefault(); setIsOutOfStockModalOpen(true); }}
                     className="w-full py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[10px] sm:text-xs font-black rounded-lg border border-amber-200/50 transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs active:scale-95"
                     id="oos-trigger-btn"
                   >
@@ -2824,7 +2818,6 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setIsProductRateModalOpen(true)}
-                    onTouchStart={(e) => { e.preventDefault(); setIsProductRateModalOpen(true); }}
                     className="w-full py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-800 text-[10px] sm:text-xs font-black rounded-lg border border-sky-200/50 transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs active:scale-95"
                     id="rates-trigger-btn"
                   >
@@ -2835,7 +2828,6 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setIsExpenseModalOpen(true)}
-                    onTouchStart={(e) => { e.preventDefault(); setIsExpenseModalOpen(true); }}
                     className="w-full py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] sm:text-xs font-black rounded-lg border border-rose-200/40 transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs active:scale-95"
                     id="small-expense-btn"
                   >
@@ -2931,11 +2923,6 @@ export default function App() {
                               setIsCashTransaction(true);
                               setCustomerName('');
                             }}
-                            onTouchStart={(e) => {
-                              e.preventDefault();
-                              setIsCashTransaction(true);
-                              setCustomerName('');
-                            }}
                             className={`px-3 py-1 text-[10px] font-black rounded-md transition-all cursor-pointer ${
                               isCashTransaction
                                 ? 'bg-emerald-600 text-white shadow-3xs'
@@ -2950,13 +2937,6 @@ export default function App() {
                             onClick={() => {
                               setIsCashTransaction(false);
                               // Auto focus customer input
-                              setTimeout(() => {
-                                customerInputRef.current?.focus();
-                              }, 100);
-                            }}
-                            onTouchStart={(e) => {
-                              e.preventDefault();
-                              setIsCashTransaction(false);
                               setTimeout(() => {
                                 customerInputRef.current?.focus();
                               }, 100);
@@ -2977,7 +2957,6 @@ export default function App() {
                       <button
                         type="button"
                         onClick={handleOpenMemoWithData}
-                        onTouchStart={(e) => { e.preventDefault(); handleOpenMemoWithData(); }}
                         className="ml-auto sm:ml-4 px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 text-[10px] sm:text-xs font-black rounded-lg border border-teal-200/50 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs active:scale-95"
                         id="dashboard-open-memo-btn"
                       >
@@ -3088,11 +3067,6 @@ export default function App() {
                   setActiveInfoTab('oos');
                   setShowAllOos(false);
                 }}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  setActiveInfoTab('oos');
-                  setShowAllOos(false);
-                }}
                 className={`py-3 px-2 text-xs font-black rounded-xl transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
                   activeInfoTab === 'oos'
                     ? 'bg-white text-amber-850 shadow-sm border border-slate-200/40'
@@ -3105,11 +3079,6 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  setActiveInfoTab('rates');
-                  setShowAllRates(false);
-                }}
-                onTouchStart={(e) => {
-                  e.preventDefault();
                   setActiveInfoTab('rates');
                   setShowAllRates(false);
                 }}
@@ -3127,10 +3096,6 @@ export default function App() {
                 onClick={() => {
                   setActiveInfoTab('dues');
                 }}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  setActiveInfoTab('dues');
-                }}
                 className={`py-3 px-2 text-xs font-black rounded-xl transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
                   activeInfoTab === 'dues'
                     ? 'bg-white text-rose-850 shadow-sm border border-slate-200/40'
@@ -3143,10 +3108,6 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  setActiveInfoTab('expenses');
-                }}
-                onTouchStart={(e) => {
-                  e.preventDefault();
                   setActiveInfoTab('expenses');
                 }}
                 className={`py-3 px-2 text-xs font-black rounded-xl transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
@@ -3789,11 +3750,7 @@ export default function App() {
                         key={period}
                         type="button"
                         onClick={() => setWeeklyPeriod(period)}
-                        onTouchStart={(e) => {
-                          e.preventDefault();
-                          setWeeklyPeriod(period);
-                        }}
-                        className="relative px-2.5 py-0.5 text-[10px] font-black transition-all duration-75 rounded-full cursor-pointer focus:outline-hidden"
+                        className="relative px-2.5 py-0.5 text-[10px] font-black transition-all duration-300 rounded-full cursor-pointer focus:outline-hidden"
                       >
                         {isActive && (
                           <motion.div
@@ -4951,10 +4908,6 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setSettingsSubTab('store')}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  setSettingsSubTab('store');
-                }}
                 className={`flex-1 min-w-[70px] py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
                   settingsSubTab === 'store'
                     ? 'bg-white text-teal-700 shadow-3xs'
@@ -4966,10 +4919,6 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setSettingsSubTab('sync')}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  setSettingsSubTab('sync');
-                }}
                 className={`flex-1 min-w-[70px] py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
                   settingsSubTab === 'sync'
                     ? 'bg-white text-teal-700 shadow-3xs'
@@ -4981,10 +4930,6 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setSettingsSubTab('history')}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  setSettingsSubTab('history');
-                }}
                 className={`flex-1 min-w-[70px] py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
                   settingsSubTab === 'history'
                     ? 'bg-white text-teal-700 shadow-3xs'
@@ -4996,10 +4941,6 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setSettingsSubTab('memo')}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  setSettingsSubTab('memo');
-                }}
                 className={`flex-1 min-w-[90px] py-2 px-3 text-xs font-black rounded-lg transition-all cursor-pointer ${
                   settingsSubTab === 'memo'
                     ? 'bg-white text-teal-700 shadow-3xs'

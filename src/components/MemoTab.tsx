@@ -1507,11 +1507,6 @@ export default function MemoTab({
                       setMemoSize('a4');
                       triggerToast(isBangla ? 'রশিদের সাইজ A4 সেট করা হয়েছে!' : 'Paper size set to A4!');
                     }}
-                    onTouchStart={(e) => {
-                      e.preventDefault();
-                      setMemoSize('a4');
-                      triggerToast(isBangla ? 'রশিদের সাইজ A4 সেট করা হয়েছে!' : 'Paper size set to A4!');
-                    }}
                     className={`py-1.5 text-xs font-extrabold rounded-lg cursor-pointer transition-all text-center ${
                       memoSize === 'a4'
                         ? 'bg-white text-teal-700 shadow-3xs'
@@ -1526,11 +1521,6 @@ export default function MemoTab({
                       setMemoSize('pos');
                       triggerToast(isBangla ? 'থার্মাল POS রিসিট সাইজ সেট করা হয়েছে!' : 'Paper size set to Thermal POS!');
                     }}
-                    onTouchStart={(e) => {
-                      e.preventDefault();
-                      setMemoSize('pos');
-                      triggerToast(isBangla ? 'থার্মাল POS রিসিট সাইজ সেট করা হয়েছে!' : 'Paper size set to Thermal POS!');
-                    }}
                     className={`py-1.5 text-xs font-extrabold rounded-lg cursor-pointer transition-all text-center ${
                       memoSize === 'pos'
                         ? 'bg-white text-teal-700 shadow-3xs'
@@ -1542,11 +1532,6 @@ export default function MemoTab({
                   <button
                     type="button"
                     onClick={() => {
-                      setMemoSize('a5');
-                      triggerToast(isBangla ? 'রশিদের সাইজ A5 সেট করা হয়েছে!' : 'Paper size set to A5!');
-                    }}
-                    onTouchStart={(e) => {
-                      e.preventDefault();
                       setMemoSize('a5');
                       triggerToast(isBangla ? 'রশিদের সাইজ A5 সেট করা হয়েছে!' : 'Paper size set to A5!');
                     }}
@@ -1904,11 +1889,6 @@ export default function MemoTab({
                         setSealType('official');
                         localStorage.setItem('memo_seal_type', 'official');
                       }}
-                      onTouchStart={(e) => {
-                        e.preventDefault();
-                        setSealType('official');
-                        localStorage.setItem('memo_seal_type', 'official');
-                      }}
                       className={`text-[10px] font-black px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                         sealType === 'official' 
                           ? 'bg-purple-600 text-white shadow-3xs' 
@@ -1920,11 +1900,6 @@ export default function MemoTab({
                     <button
                       type="button"
                       onClick={() => {
-                        setSealType('custom');
-                        localStorage.setItem('memo_seal_type', 'custom');
-                      }}
-                      onTouchStart={(e) => {
-                        e.preventDefault();
                         setSealType('custom');
                         localStorage.setItem('memo_seal_type', 'custom');
                       }}

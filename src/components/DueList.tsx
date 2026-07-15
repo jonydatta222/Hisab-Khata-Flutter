@@ -197,11 +197,6 @@ export default function DueList({
             setActiveSubTab('customers');
             setSearchTerm('');
           }}
-          onTouchStart={(e) => {
-            e.preventDefault();
-            setActiveSubTab('customers');
-            setSearchTerm('');
-          }}
           className={`pb-2.5 text-xs sm:text-sm font-extrabold flex items-center gap-1.5 border-b-2 transition-all cursor-pointer ${
             activeSubTab === 'customers'
               ? 'border-rose-500 text-rose-600'
@@ -218,11 +213,6 @@ export default function DueList({
         </button>
         <button
           onClick={() => {
-            setActiveSubTab('history');
-            setSearchTerm('');
-          }}
-          onTouchStart={(e) => {
-            e.preventDefault();
             setActiveSubTab('history');
             setSearchTerm('');
           }}
