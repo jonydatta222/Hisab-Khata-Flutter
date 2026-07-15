@@ -274,8 +274,8 @@ export default function MemoTab({
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
 
   // Calculations
-  const [discount, setDiscount] = useState('0');
-  const [paid, setPaid] = useState('0');
+  const [discount, setDiscount] = useState('');
+  const [paid, setPaid] = useState('');
   const [memoNote, setMemoNote] = useState(isBangla ? 'বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।' : 'N.B. All types of Kabiraji and herbal goods are available.');
   const [showBuyerSign, setShowBuyerSign] = useState(true);
   const [showSellerSign, setShowSellerSign] = useState(true);
@@ -1643,7 +1643,13 @@ export default function MemoTab({
                   min="1"
                   step="any"
                   value={newItemQty}
-                  onChange={(e) => setNewItemQty(e.target.value)}
+                  onChange={(e) => {
+                    let val = e.target.value;
+                    if (val.length > 1 && val.startsWith('0') && !val.startsWith('0.')) {
+                      val = val.replace(/^0+/, '');
+                    }
+                    setNewItemQty(val);
+                  }}
                   className="w-full text-xs font-extrabold text-slate-800 bg-slate-50 border border-slate-200 focus:border-teal-500 focus:bg-white rounded-xl py-2.5 px-3 outline-none text-center"
                 />
               </div>
@@ -1671,7 +1677,13 @@ export default function MemoTab({
                   min="0"
                   step="any"
                   value={newItemRate}
-                  onChange={(e) => setNewItemRate(e.target.value)}
+                  onChange={(e) => {
+                    let val = e.target.value;
+                    if (val.length > 1 && val.startsWith('0') && !val.startsWith('0.')) {
+                      val = val.replace(/^0+/, '');
+                    }
+                    setNewItemRate(val);
+                  }}
                   className="w-full text-xs font-extrabold text-slate-800 bg-slate-50 border border-slate-200 focus:border-teal-500 focus:bg-white rounded-xl py-2.5 px-3 outline-none text-right"
                   placeholder="0.00"
                 />
@@ -1755,7 +1767,13 @@ export default function MemoTab({
                   type="number"
                   min="0"
                   value={discount}
-                  onChange={(e) => setDiscount(e.target.value)}
+                  onChange={(e) => {
+                    let val = e.target.value;
+                    if (val.length > 1 && val.startsWith('0') && !val.startsWith('0.')) {
+                      val = val.replace(/^0+/, '');
+                    }
+                    setDiscount(val);
+                  }}
                   className="w-full text-xs font-extrabold text-slate-800 bg-slate-50 border border-slate-200 focus:border-teal-500 focus:bg-white rounded-xl py-2.5 px-3 outline-none text-right"
                   placeholder="0"
                 />
@@ -1768,7 +1786,13 @@ export default function MemoTab({
                     type="number"
                     min="0"
                     value={paid}
-                    onChange={(e) => setPaid(e.target.value)}
+                    onChange={(e) => {
+                      let val = e.target.value;
+                      if (val.length > 1 && val.startsWith('0') && !val.startsWith('0.')) {
+                        val = val.replace(/^0+/, '');
+                      }
+                      setPaid(val);
+                    }}
                     className="w-full text-xs font-extrabold text-slate-800 bg-slate-50 border border-slate-200 focus:border-teal-500 focus:bg-white rounded-xl py-2.5 pl-3 pr-12 outline-none text-right"
                     placeholder="0"
                   />

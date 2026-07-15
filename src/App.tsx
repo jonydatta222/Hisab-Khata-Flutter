@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Calculator as CalcIcon,
@@ -70,7 +70,6 @@ import { Browser } from '@capacitor/browser';
 import { App as CapApp } from '@capacitor/app';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
-import { SplashScreen } from '@capacitor/splash-screen';
 
 import logoPng from './assets/logo.png';
 import logoImg from './assets/logo.jpg';
@@ -80,13 +79,47 @@ const LOGO_CACHE_BUSTER = `?t=${Date.now()}`;
 const logoPngWithCache = `${logoPng}${LOGO_CACHE_BUSTER}`;
 const logoImgWithCache = `${logoImg}${LOGO_CACHE_BUSTER}`;
 
+import Calculator from './components/Calculator';
 import StatCard from './components/StatCard';
+import TransactionList from './components/TransactionList';
+import DueList from './components/DueList';
+import ExpenseList from './components/ExpenseList';
+import MemoTab from './components/MemoTab';
 
-const Calculator = lazy(() => import('./components/Calculator'));
-const TransactionList = lazy(() => import('./components/TransactionList'));
-const DueList = lazy(() => import('./components/DueList'));
-const ExpenseList = lazy(() => import('./components/ExpenseList'));
-const MemoTab = lazy(() => import('./components/MemoTab'));
+// Helpers for Peak Hour and Peak Day Analysis
+const getHourString = (h: number | null, isBangla: boolean) => {
+  if (h === null) return isBangla ? 'নেই' : 'None';
+  let ampm = h >= 12 ? 'PM' : 'AM';
+  let hour12 = h % 12;
+  if (hour12 === 0) hour12 = 12;
+  const timeStr = `${hour12} ${ampm}`;
+  return isBangla ? toBanglaNumber(timeStr) : timeStr;
+};
+
+const getDayString = (d: number | null, isBangla: boolean) => {
+  if (d === null) return isBangla ? 'নেই' : 'None';
+  const bnDaysShort = ['রবি', 'সোম', 'মঙ্গল', 'বুধ', 'বৃহঃ', 'শুক্র', 'শনি'];
+  const enDaysShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return isBangla ? bnDaysShort[d] : enDaysShort[d];
+};
+
+const getDayFullString = (d: number | null, isBangla: boolean) => {
+  if (d === null) return isBangla ? 'নেই' : 'None';
+  const bnDays = ['রবিবার', 'সোমবার', 'মঙ্গলবার', 'বুধবার', 'বৃহস্পতিবার', 'শুক্রবার', 'শনিবার'];
+  const enDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return isBangla ? bnDays[d] : enDays[d];
+};
+
+const getHourSlotString = (h: number | null, isBangla: boolean) => {
+  if (h === null) return isBangla ? 'নেই' : 'None';
+  const start12 = h % 12 === 0 ? 12 : h % 12;
+  const startAmpm = h >= 12 ? 'PM' : 'AM';
+  const nextHour = (h + 1) % 24;
+  const end12 = nextHour % 12 === 0 ? 12 : nextHour % 12;
+  const endAmpm = nextHour >= 12 ? 'PM' : 'AM';
+  const slotStr = `${start12} ${startAmpm} - ${end12} ${endAmpm}`;
+  return isBangla ? toBanglaNumber(slotStr) : slotStr;
+};
 
 export default function App() {
   // --- QR Verification States & Handlers ---
@@ -145,13 +178,6 @@ export default function App() {
       window.history.pushState({}, document.title, window.location.pathname);
     }
   };
-
-  // --- Hide Native Splash Screen instantly when React App finishes loading ---
-  useEffect(() => {
-    SplashScreen.hide().catch((err) => {
-      console.warn('Native SplashScreen hide failed (benign if not in native environment):', err);
-    });
-  }, []);
 
   // --- Check for Invoice QR verification link on load ---
   useEffect(() => {
@@ -782,7 +808,8 @@ export default function App() {
       isOthersModalOpen ||
       depositingCustomerName !== null ||
       syncConflictData !== null ||
-      confirmModal !== null;
+      confirmModal !== null ||
+      weeklyDetailModal !== null;
 
     if (isAnyModalOpen) {
       document.body.style.overflow = 'hidden';
@@ -811,7 +838,8 @@ export default function App() {
     isOthersModalOpen,
     depositingCustomerName,
     syncConflictData,
-    confirmModal
+    confirmModal,
+    weeklyDetailModal
   ]);
 
   // --- Track internet connection status ---
@@ -1647,6 +1675,66 @@ export default function App() {
     // 5. Total Due Deposits (বাকির টাকা জমা - other transactions / collections)
     const totalDueDeposits = weeklyTxs.filter(tx => !isProductSale(tx)).reduce((sum, tx) => sum + tx.amount, 0);
     
+    // Helper function to parse hour from "HH:MM AM/PM" or "H:MM AM/PM"
+    const parseHourStr = (timeStr: string) => {
+      if (!timeStr) return null;
+      const match = timeStr.trim().match(/^(\d+):(\d+)\s*(AM|PM)$/i);
+      if (!match) return null;
+      let hour = parseInt(match[1], 10);
+      const ampm = match[3].toUpperCase();
+      if (ampm === 'PM' && hour < 12) hour += 12;
+      if (ampm === 'AM' && hour === 12) hour = 0;
+      return hour; // 0 to 23
+    };
+
+    // Peak hour analysis
+    const hourAmountMap: Record<number, number> = {};
+    const hourCountMap: Record<number, number> = {};
+    
+    // Peak day analysis
+    const dayAmountMap: Record<number, number> = {};
+    const dayCountMap: Record<number, number> = {};
+
+    weeklyTxs.forEach(tx => {
+      const h = parseHourStr(tx.time);
+      if (h !== null) {
+        hourAmountMap[h] = (hourAmountMap[h] || 0) + tx.amount;
+        hourCountMap[h] = (hourCountMap[h] || 0) + 1;
+      }
+      
+      if (tx.date) {
+        const parts = tx.date.split('-');
+        if (parts.length === 3) {
+          const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+          const day = d.getDay();
+          if (!isNaN(day)) {
+            dayAmountMap[day] = (dayAmountMap[day] || 0) + tx.amount;
+            dayCountMap[day] = (dayCountMap[day] || 0) + 1;
+          }
+        }
+      }
+    });
+
+    let peakHour: number | null = null;
+    let maxHourAmount = 0;
+    Object.keys(hourAmountMap).forEach(hKey => {
+      const h = parseInt(hKey, 10);
+      if (hourAmountMap[h] > maxHourAmount) {
+        maxHourAmount = hourAmountMap[h];
+        peakHour = h;
+      }
+    });
+
+    let peakDay: number | null = null;
+    let maxDayAmount = 0;
+    Object.keys(dayAmountMap).forEach(dKey => {
+      const d = parseInt(dKey, 10);
+      if (dayAmountMap[d] > maxDayAmount) {
+        maxDayAmount = dayAmountMap[d];
+        peakDay = d;
+      }
+    });
+
     return {
       startDate: periodStartDateStr,
       totalSales,
@@ -1658,7 +1746,13 @@ export default function App() {
       mostExpensiveProducts,
       totalExpense,
       weeklyExs,
-      totalDueDeposits
+      totalDueDeposits,
+      peakHour,
+      peakDay,
+      hourAmountMap,
+      hourCountMap,
+      dayAmountMap,
+      dayCountMap
     };
   }, [transactions, expenses, weeklyPeriod]);
 
@@ -2919,18 +3013,12 @@ export default function App() {
               </div>
 
                 {/* 2. Today's Sales List */}
-                <Suspense fallback={
-                  <div className="flex justify-center items-center py-6">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-500"></div>
-                  </div>
-                }>
-                  <TransactionList
-                    transactions={todayTransactions}
-                    isBangla={isBangla}
-                    onDelete={handleDeleteTransaction}
-                    onUpdate={handleUpdateTransaction}
-                  />
-                </Suspense>
+                <TransactionList
+                  transactions={todayTransactions}
+                  isBangla={isBangla}
+                  onDelete={handleDeleteTransaction}
+                  onUpdate={handleUpdateTransaction}
+                />
 
               </div>
           </motion.div>
@@ -3537,40 +3625,28 @@ export default function App() {
 
               {activeInfoTab === 'dues' && (
                 <div className="flex-1 flex flex-col justify-between">
-                  <Suspense fallback={
-                    <div className="flex justify-center items-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
-                    </div>
-                  }>
-                    <DueList
-                      dueList={customerDues}
-                      isBangla={isBangla}
-                      onDeposit={handleDueDeposit}
-                      onDelete={handleDeleteCustomerDues}
-                      onRename={handleRenameCustomerDues}
-                      onViewDetail={setSelectedCustomerForDetail}
-                      transactions={transactions}
-                      onDeleteTransaction={handleDeleteTransaction}
-                    />
-                  </Suspense>
+                  <DueList
+                    dueList={customerDues}
+                    isBangla={isBangla}
+                    onDeposit={handleDueDeposit}
+                    onDelete={handleDeleteCustomerDues}
+                    onRename={handleRenameCustomerDues}
+                    onViewDetail={setSelectedCustomerForDetail}
+                    transactions={transactions}
+                    onDeleteTransaction={handleDeleteTransaction}
+                  />
                 </div>
               )}
 
               {activeInfoTab === 'expenses' && (
                 <div className="flex-1 flex flex-col justify-between">
-                  <Suspense fallback={
-                    <div className="flex justify-center items-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
-                    </div>
-                  }>
-                    <ExpenseList
-                      expenses={todayExpenses}
-                      isBangla={isBangla}
-                      onDelete={handleDeleteExpense}
-                      onUpdate={handleUpdateExpense}
-                      todayExpenseTotal={todayExpenseTotal}
-                    />
-                  </Suspense>
+                  <ExpenseList
+                    expenses={todayExpenses}
+                    isBangla={isBangla}
+                    onDelete={handleDeleteExpense}
+                    onUpdate={handleUpdateExpense}
+                    todayExpenseTotal={todayExpenseTotal}
+                  />
                 </div>
               )}
 
@@ -3784,17 +3860,21 @@ export default function App() {
                   </span>
                 </button>
 
-                {/* 8. Others (অন্যান্য) */}
+                {/* 8. Peak Hour Tracking (ব্যস্ত সময়) */}
                 <button
                   type="button"
                   onClick={() => setWeeklyDetailModal('others')}
-                  className="bg-gradient-to-br from-slate-100/70 to-white py-1.5 px-2 text-center rounded-xl border border-slate-200 hover:border-slate-400 hover:from-slate-50 hover:shadow-sm transition-all duration-200 cursor-pointer flex flex-col items-center justify-center min-h-[44px] w-full shadow-xs"
+                  className="bg-gradient-to-br from-violet-50/80 to-white py-1.5 px-2 text-center rounded-xl border border-violet-200 hover:border-violet-400 hover:from-violet-50 hover:shadow-sm transition-all duration-200 cursor-pointer flex flex-col items-center justify-center min-h-[44px] w-full shadow-xs"
                 >
-                  <span className="text-[9px] font-black text-slate-700/90 uppercase tracking-wider block truncate max-w-full">
-                    {isBangla ? 'অন্যান্য' : 'Others'}
+                  <span className="text-[9px] font-black text-violet-700/90 uppercase tracking-wider block truncate max-w-full">
+                    {isBangla ? 'ব্যস্ত সময় ট্র্যাকিং' : 'Peak Hour Tracking'}
                   </span>
-                  <span className="text-[11px] sm:text-xs font-black text-slate-600 block mt-0.5 font-sans truncate max-w-full">
-                    {formatCurrency(weeklyReport.totalDueDeposits, isBangla)}
+                  <span className="text-[11.5px] sm:text-xs font-black text-violet-600 block mt-0.5 truncate max-w-full">
+                    {weeklyReport.peakHour !== null || weeklyReport.peakDay !== null ? (
+                      `${getHourString(weeklyReport.peakHour, isBangla)} | ${getDayString(weeklyReport.peakDay, isBangla)}`
+                    ) : (
+                      isBangla ? 'ডাটা নেই' : 'No Data'
+                    )}
                   </span>
                 </button>
               </div>
@@ -3836,7 +3916,7 @@ export default function App() {
                             if (weeklyDetailModal === 'least_sold') return isBangla ? 'কম বিক্রিত ১০টি পণ্য' : 'Top 10 Least Sold Products';
                             if (weeklyDetailModal === 'expensive') return isBangla ? 'সর্বোচ্চ দামী ১০টি বিক্রয়' : 'Top 10 Most Expensive Sales';
                             if (weeklyDetailModal === 'due') return isBangla ? 'বাকি বিক্রির হিসাব বিবরণী' : 'Due Sales Statement';
-                            if (weeklyDetailModal === 'others') return isBangla ? 'অন্যান্য লেনদেন বিবরণী (বাকি জমা)' : 'Other Transactions Statement (Due Deposits)';
+                            if (weeklyDetailModal === 'others') return isBangla ? 'ব্যস্ত সময় ট্র্যাকিং (Peak Hour Analysis)' : 'Peak Hour & Day Analysis';
                             return '';
                           })()}
                         </h4>
@@ -4215,62 +4295,183 @@ export default function App() {
 
                       {/* OTHERS (অন্যান্য) */}
                       {weeklyDetailModal === 'others' && (() => {
-                        let daysToSubtract = 6;
-                        if (weeklyPeriod === '30D') daysToSubtract = 29;
-                        if (weeklyPeriod === '1D') daysToSubtract = 0;
-                        const periodStartDateStr = (() => {
-                          const d = new Date();
-                          d.setDate(d.getDate() - daysToSubtract);
-                          const yyyy = d.getFullYear();
-                          const mm = String(d.getMonth() + 1).padStart(2, '0');
-                          const dd = String(d.getDate()).padStart(2, '0');
-                          return `${yyyy}-${mm}-${dd}`;
-                        })();
+                        const daysOfWeek = [0, 1, 2, 3, 4, 5, 6];
+                        const dayNamesBn = ['রবিবার', 'সোমবার', 'মঙ্গলবার', 'বুধবার', 'বৃহস্পতিবার', 'শুক্রবার', 'শনিবার'];
+                        const dayNamesEn = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                        
+                        const maxDayAmount = Math.max(...(Object.values(weeklyReport.dayAmountMap || {}) as number[]), 1);
+                        const maxHourAmount = Math.max(...(Object.values(weeklyReport.hourAmountMap || {}) as number[]), 1);
 
-                        const isProductSale = (tx: Transaction) => {
-                          const prodLower = tx.product.toLowerCase().trim();
-                          return !(
-                            prodLower.startsWith('বাকি টাকা জমা') || 
-                            prodLower.startsWith('বাকির টাকা জমা') || 
-                            prodLower.includes('due deposit') ||
-                            prodLower.includes('বাকি টাকা জমা')
-                          );
-                        };
-
-                        const otherTxs = transactions.filter(tx => tx.date >= periodStartDateStr && !isProductSale(tx));
+                        const activeHours = Object.keys(weeklyReport.hourAmountMap || {})
+                          .map(hStr => parseInt(hStr, 10))
+                          .sort((a, b) => (weeklyReport.hourAmountMap[b] || 0) - (weeklyReport.hourAmountMap[a] || 0));
 
                         return (
-                          <div className="space-y-3">
+                          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
                             <p className="text-xs text-slate-500 font-bold leading-relaxed">
                               {isBangla 
-                                ? 'এই নির্দিষ্ট মেয়াদে বাকির টাকা পরিশোধ/জমা নেওয়ার বিবরণী নিচে দেওয়া হলো:' 
-                                : 'Below are all the payments received for previous dues during this period:'}
+                                ? 'বিগত সময়ে আপনার বেচাকেনার ধরন বিশ্লেষণ করে ব্যস্ত সময় এবং দিন চিহ্নিত করা হয়েছে। এর মাধ্যমে আপনি স্টক এবং কর্মচারী পরিকল্পনা করতে পারবেন:' 
+                                : 'Analyzing your sales pattern from previous transactions to identify busy hours and days. Use this to optimize your stock and staff planning:'}
                             </p>
-                            {otherTxs.length === 0 ? (
-                              <div className="text-center py-8 text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-slate-100">
-                                {isBangla ? 'কোনো বাকির টাকা জমা পাওয়া যায়নি।' : 'No due deposits recorded during this timeframe.'}
+
+                            {/* Busiest Summary Cards */}
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="p-3 bg-violet-50 rounded-2xl border border-violet-100 flex flex-col items-center justify-center text-center">
+                                <span className="text-[10px] font-black text-violet-700/90 uppercase tracking-wider block">
+                                  {isBangla ? 'সবচেয়ে ব্যস্ত সময়' : 'Peak Hour'}
+                                </span>
+                                <span className="text-xs font-black text-violet-800 block mt-1">
+                                  {getHourSlotString(weeklyReport.peakHour, isBangla)}
+                                </span>
+                                <span className="text-[10px] text-violet-500/90 mt-0.5 font-bold">
+                                  {weeklyReport.peakHour !== null ? (
+                                    isBangla 
+                                      ? `বিক্রি: ${formatCurrency(weeklyReport.hourAmountMap[weeklyReport.peakHour], true)}` 
+                                      : `Sales: ${formatCurrency(weeklyReport.hourAmountMap[weeklyReport.peakHour], false)}`
+                                  ) : (
+                                    isBangla ? 'ডাটা নেই' : 'No Data'
+                                  )}
+                                </span>
                               </div>
-                            ) : (
+
+                              <div className="p-3 bg-indigo-50 rounded-2xl border border-indigo-100 flex flex-col items-center justify-center text-center">
+                                <span className="text-[10px] font-black text-indigo-700/90 uppercase tracking-wider block">
+                                  {isBangla ? 'সবচেয়ে ব্যস্ত দিন' : 'Peak Sales Day'}
+                                </span>
+                                <span className="text-xs font-black text-indigo-800 block mt-1">
+                                  {getDayFullString(weeklyReport.peakDay, isBangla)}
+                                </span>
+                                <span className="text-[10px] text-indigo-500/90 mt-0.5 font-bold">
+                                  {weeklyReport.peakDay !== null ? (
+                                    isBangla 
+                                      ? `বিক্রি: ${formatCurrency(weeklyReport.dayAmountMap[weeklyReport.peakDay], true)}` 
+                                      : `Sales: ${formatCurrency(weeklyReport.dayAmountMap[weeklyReport.peakDay], false)}`
+                                  ) : (
+                                    isBangla ? 'ডাটা নেই' : 'No Data'
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* 1. Peak Day Progress List */}
+                            <div className="space-y-2.5 bg-slate-50/50 p-3 rounded-2xl border border-slate-150">
+                              <h5 className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex justify-between items-center">
+                                <span>{isBangla ? 'বার ভিত্তিক বেচাকেনা' : 'Sales by Day of Week'}</span>
+                                <span className="text-[9px] font-bold text-slate-400">
+                                  {isBangla ? '৭ দিনের খতিয়ান' : '7 Days Summary'}
+                                </span>
+                              </h5>
+
                               <div className="space-y-2">
-                                {otherTxs.map((tx, idx) => (
-                                  <div key={tx.id || idx} className="flex justify-between items-center p-3 rounded-xl bg-slate-50 border border-slate-200/50 text-xs font-bold font-sans">
-                                    <div className="flex items-center gap-2.5 min-w-0">
-                                      <span className="w-5 h-5 flex items-center justify-center rounded-full bg-slate-200 text-slate-600 font-black font-mono text-[10px] shrink-0">
-                                        {idx + 1}
-                                      </span>
-                                      <div className="min-w-0">
-                                        <p className="text-slate-800 font-extrabold truncate max-w-[180px]">{tx.customer || (isBangla ? 'সাধারণ জমা' : 'General Deposit')}</p>
-                                        <p className="text-[9px] text-slate-400 font-bold truncate mt-0.5">{tx.product}</p>
+                                {daysOfWeek.map(dayIdx => {
+                                  const amount = weeklyReport.dayAmountMap[dayIdx] || 0;
+                                  const count = weeklyReport.dayCountMap[dayIdx] || 0;
+                                  const percent = maxDayAmount > 1 ? (amount / maxDayAmount) * 100 : 0;
+                                  const isPeak = dayIdx === weeklyReport.peakDay && amount > 0;
+
+                                  return (
+                                    <div key={dayIdx} className="space-y-1">
+                                      <div className="flex justify-between items-center text-xs font-bold text-slate-700">
+                                        <span className="flex items-center gap-1.5">
+                                          <span className={isPeak ? "text-indigo-600 font-extrabold" : "text-slate-600"}>
+                                            {isBangla ? dayNamesBn[dayIdx] : dayNamesEn[dayIdx]}
+                                          </span>
+                                          {isPeak && (
+                                            <span className="bg-indigo-100 text-indigo-700 font-black text-[8px] px-1.5 py-0.5 rounded-full uppercase tracking-wider scale-90">
+                                              {isBangla ? 'ব্যস্ততম' : 'PEAK'}
+                                            </span>
+                                          )}
+                                        </span>
+                                        <span className="font-sans font-black text-slate-800 flex items-center gap-1.5">
+                                          <span>{formatCurrency(amount, isBangla)}</span>
+                                          {count > 0 && (
+                                            <span className="text-[9px] text-slate-400 font-bold">
+                                              ({isBangla ? toBanglaNumber(count) : count} {isBangla ? 'বার' : 'sales'})
+                                            </span>
+                                          )}
+                                        </span>
+                                      </div>
+                                      <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                                        <div 
+                                          style={{ width: `${percent}%` }} 
+                                          className={`h-full rounded-full transition-all duration-500 ${
+                                            isPeak ? 'bg-indigo-500' : 'bg-slate-400'
+                                          }`}
+                                        />
                                       </div>
                                     </div>
-                                    <div className="text-right shrink-0">
-                                      <p className="text-emerald-600 font-black">+{formatCurrency(tx.amount, isBangla)}</p>
-                                      <p className="text-[9px] text-slate-400 font-semibold mt-0.5">{formatDate(tx.date, isBangla)}</p>
-                                    </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
-                            )}
+                            </div>
+
+                            {/* 2. Peak Hours Progress List */}
+                            <div className="space-y-2.5 bg-slate-50/50 p-3 rounded-2xl border border-slate-150">
+                              <h5 className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex justify-between items-center">
+                                <span>{isBangla ? 'সময় ভিত্তিক বেচাকেনা' : 'Sales by Time Slot'}</span>
+                                <span className="text-[9px] font-bold text-slate-400">
+                                  {isBangla ? 'ব্যস্ত সময় অনুসারে' : 'Sorted by busy hours'}
+                                </span>
+                              </h5>
+
+                              {activeHours.length === 0 ? (
+                                <div className="text-center py-6 text-xs text-slate-400 font-medium">
+                                  {isBangla ? 'কোনো লেনদেনের সময় নথিভুক্ত নেই।' : 'No transaction time recorded.'}
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  {activeHours.slice(0, 5).map(hour => {
+                                    const amount = weeklyReport.hourAmountMap[hour] || 0;
+                                    const count = weeklyReport.hourCountMap[hour] || 0;
+                                    const percent = maxHourAmount > 1 ? (amount / maxHourAmount) * 100 : 0;
+                                    const isPeak = hour === weeklyReport.peakHour && amount > 0;
+
+                                    return (
+                                      <div key={hour} className="space-y-1">
+                                        <div className="flex justify-between items-center text-xs font-bold text-slate-700">
+                                          <span className="flex items-center gap-1.5">
+                                            <span className={isPeak ? "text-violet-600 font-extrabold" : "text-slate-600"}>
+                                              {getHourSlotString(hour, isBangla)}
+                                            </span>
+                                            {isPeak && (
+                                              <span className="bg-violet-100 text-violet-700 font-black text-[8px] px-1.5 py-0.5 rounded-full uppercase tracking-wider scale-90">
+                                                {isBangla ? 'ব্যস্ততম' : 'PEAK'}
+                                              </span>
+                                            )}
+                                          </span>
+                                          <span className="font-sans font-black text-slate-800 flex items-center gap-1.5">
+                                            <span>{formatCurrency(amount, isBangla)}</span>
+                                            {count > 0 && (
+                                              <span className="text-[9px] text-slate-400 font-bold">
+                                                ({isBangla ? toBanglaNumber(count) : count} {isBangla ? 'বার' : 'sales'})
+                                              </span>
+                                            )}
+                                          </span>
+                                        </div>
+                                        <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                                          <div 
+                                            style={{ width: `${percent}%` }} 
+                                            className={`h-full rounded-full transition-all duration-500 ${
+                                              isPeak ? 'bg-violet-500' : 'bg-slate-400'
+                                            }`}
+                                          />
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Practical business tip */}
+                            <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-100 text-[11px] font-bold flex gap-2">
+                              <span className="text-base">💡</span>
+                              <p className="leading-normal">
+                                {isBangla 
+                                  ? 'ব্যস্ত সময়ে গ্রাহক সেবা দ্রুত করতে আগে থেকে নিয়মিত বিক্রি হওয়া পণ্য প্যাকেট করে রাখুন এবং টাকা লেনদেনের জন্য খুচরা ক্যাশ প্রস্তুত রাখুন।' 
+                                  : 'To speed up service during peak hours, pre-pack highly popular items and keep sufficient change ready.'}
+                              </p>
+                            </div>
                           </div>
                         );
                       })()}
@@ -5345,21 +5546,15 @@ export default function App() {
             {/* About us has been rearranged into General subtab */}
 
             {settingsSubTab === 'memo' && (
-              <Suspense fallback={
-                <div className="flex justify-center items-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
-                </div>
-              }>
-                <MemoTab
-                  key={memoKey}
-                  transactions={transactions}
-                  productRates={productRates}
-                  shopName={shopName}
-                  isBangla={isBangla}
-                  initialCustomerName={initialMemoCustomer}
-                  initialItems={initialMemoItems}
-                />
-              </Suspense>
+              <MemoTab
+                key={memoKey}
+                transactions={transactions}
+                productRates={productRates}
+                shopName={shopName}
+                isBangla={isBangla}
+                initialCustomerName={initialMemoCustomer}
+                initialItems={initialMemoItems}
+              />
             )}
           </motion.div>
         )}
@@ -5368,17 +5563,15 @@ export default function App() {
       </main>
 
       {/* --- FLOATING CALC OVERLAY SIDEBAR DRAWER --- */}
-      <Suspense fallback={null}>
-        <Calculator
-          isOpen={isCalcOpen}
-          onClose={() => setIsCalcOpen(false)}
-          isBangla={isBangla}
-          onApplyValue={(val) => {
-            setAmount(String(val));
-            showToast(isBangla ? 'হিসাবটি দামের ঘরে বসানো হয়েছে!' : 'Amount pasted successfully!');
-          }}
-        />
-      </Suspense>
+      <Calculator
+        isOpen={isCalcOpen}
+        onClose={() => setIsCalcOpen(false)}
+        isBangla={isBangla}
+        onApplyValue={(val) => {
+          setAmount(String(val));
+          showToast(isBangla ? 'হিসাবটি দামের ঘরে বসানো হয়েছে!' : 'Amount pasted successfully!');
+        }}
+      />
 
       {/* --- CLOUD SYNC MODAL OVERLAY DIALOG --- */}
       <AnimatePresence>
