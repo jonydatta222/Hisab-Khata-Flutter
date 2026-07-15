@@ -445,6 +445,7 @@ export default function App() {
   const [weeklyPeriod, setWeeklyPeriod] = useState<'7D' | '1D' | '30D'>('1D');
   const [showAllHistoryTxs, setShowAllHistoryTxs] = useState(false);
   const [showAllTopProducts, setShowAllTopProducts] = useState(false);
+  const [searchTopProduct, setSearchTopProduct] = useState('');
   const [activeSliceIndex, setActiveSliceIndex] = useState<number | null>(null);
   const [isOthersModalOpen, setIsOthersModalOpen] = useState(false);
 
@@ -1455,13 +1456,22 @@ export default function App() {
     return { items, totalAmount: totalAllTimeSalesAmount };
   }, [transactions]);
   
-  // Group everything after top 6 into 'Others' (অন্যান্য)
+  // Group everything after top 6 into 'Others' (অন্যান্য), excluding 'নগদ' (Cash) from donut segments and main list
   const chartData = useMemo(() => {
     const chartDataList: { name: string; amount: number; count: number; percentage: number; color: string }[] = [];
-    if (allTimeSales.totalAmount > 0 && allTimeSales.items.length > 0) {
+    
+    const isNogod = (name: string) => {
+      const lower = name.toLowerCase().trim();
+      return lower === 'নগদ' || lower === 'nogod' || lower === 'cash' || lower === 'নগদ হিসাব';
+    };
+
+    const nonNogodItems = allTimeSales.items.filter(item => !isNogod(item.name));
+    const totalNonNogodAmount = nonNogodItems.reduce((sum, item) => sum + item.amount, 0);
+
+    if (totalNonNogodAmount > 0 && nonNogodItems.length > 0) {
       const topCount = 6;
-      const topItems = allTimeSales.items.slice(0, topCount);
-      const otherItems = allTimeSales.items.slice(topCount);
+      const topItems = nonNogodItems.slice(0, topCount);
+      const otherItems = nonNogodItems.slice(topCount);
       
       // Diverse, beautiful colors with only the first being Red
       const colors = ['#EF4444', '#10B981', '#4F46E5', '#F59E0B', '#8B5CF6', '#06B6D4'];
@@ -1471,7 +1481,7 @@ export default function App() {
           name: item.name,
           amount: item.amount,
           count: item.count,
-          percentage: (item.amount / allTimeSales.totalAmount) * 100,
+          percentage: (item.amount / totalNonNogodAmount) * 100,
           color: colors[idx % colors.length]
         });
       });
@@ -1483,7 +1493,7 @@ export default function App() {
           name: isBangla ? 'অন্যান্য' : 'Others',
           amount: otherAmount,
           count: otherCount,
-          percentage: (otherAmount / allTimeSales.totalAmount) * 100,
+          percentage: (otherAmount / totalNonNogodAmount) * 100,
           color: '#64748B' // Gray for others
         });
       }
@@ -2582,30 +2592,30 @@ export default function App() {
         </AnimatePresence>
    
         {/* --- App Header & Action Bar --- */}
-        <header className="bg-white py-3">
-          <div className="max-w-7xl mx-auto px-4 flex items-center justify-between gap-3">
+        <header className="bg-white py-2 sm:py-3">
+          <div className="max-w-7xl mx-auto px-2.5 sm:px-4 flex items-center justify-between gap-1.5 sm:gap-3">
             
             {/* Brand Logo & Name */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
               <img
                 src={logoPngWithCache}
                 onError={handleLogoError}
                 alt="হিসাব খাতা"
-                className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl object-cover shadow-sm border border-slate-200/60 shrink-0 transition-transform duration-250 active:scale-95"
+                className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl object-cover shadow-sm border border-slate-200/60 shrink-0 transition-transform duration-250 active:scale-95"
                 referrerPolicy="no-referrer"
               />
-              <div className="flex flex-col min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <h1 className="text-sm sm:text-base font-black tracking-tight text-slate-900 font-sans leading-none">
+              <div className="flex flex-col min-w-0 gap-0.5 sm:gap-1.5">
+                <div className="flex items-center gap-1 sm:gap-1.5">
+                  <h1 className="text-xs sm:text-base font-black tracking-tight text-slate-900 font-sans leading-tight truncate">
                     {isBangla ? 'হিসাব খাতা' : 'Hisab Khata'}
                   </h1>
                   {isOnline ? (
-                    <span className="text-[8px] sm:text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200/50 px-1 py-0.5 rounded-md uppercase leading-none flex items-center gap-1 shrink-0">
+                    <span className="text-[7px] sm:text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200/50 px-1 py-0.5 rounded-md uppercase leading-none flex items-center gap-0.5 sm:gap-1 shrink-0">
                       <span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse"></span>
                       {isBangla ? 'অনলাইন' : 'Online'}
                     </span>
                   ) : (
-                    <span className="text-[8px] sm:text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200/50 px-1 py-0.5 rounded-md uppercase leading-none flex items-center gap-1 shrink-0">
+                    <span className="text-[7px] sm:text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200/50 px-1 py-0.5 rounded-md uppercase leading-none flex items-center gap-0.5 sm:gap-1 shrink-0">
                       <span className="w-1 h-1 rounded-full bg-rose-500"></span>
                       {isBangla ? 'অফলাইন' : 'Offline'}
                     </span>
@@ -2613,19 +2623,19 @@ export default function App() {
                 </div>
                 
                 {/* Real-time formatted Date & Time like screenshot (e.g. ১১:২৮ AM | বুধবার ১৫/০৭/২০২৬) */}
-                <span className="text-[10px] sm:text-xs font-bold text-slate-700 tracking-tight mt-0.5 leading-none whitespace-nowrap">
+                <span className="text-[11px] sm:text-sm font-bold text-slate-700 tracking-tight leading-tight whitespace-nowrap">
                   {headerDateTimeStr}
                 </span>
 
                 {/* Shop Name row */}
-                <span className="text-[10px] sm:text-xs font-bold text-slate-400 truncate mt-0.5 max-w-[150px] sm:max-w-[250px] leading-none" id="shop-name-title">
+                <span className="text-[9px] sm:text-xs font-black text-slate-400 truncate max-w-[120px] sm:max-w-[250px] leading-tight" id="shop-name-title">
                   {shopName || (isBangla ? 'রঞ্জু দত্ত এন্ড সন্স' : 'Ranju Dutta & Sons')}
                 </span>
               </div>
             </div>
    
             {/* Header Action Tools */}
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               
               {/* Action Buttons row */}
               <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
@@ -2634,6 +2644,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleRefresh}
+                  onTouchStart={(e) => { e.preventDefault(); handleRefresh(); }}
                   disabled={isSyncing}
                   className="p-1 bg-emerald-50 hover:bg-emerald-100/70 border border-emerald-200 text-emerald-700 rounded-md shadow-3xs transition-all flex items-center justify-center cursor-pointer h-8 w-8 active:scale-95 shrink-0 disabled:opacity-50"
                   title={isBangla ? 'তথ্য রিফ্রেশ করুন' : 'Refresh Ledger'}
@@ -2646,6 +2657,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setIsCalcOpen(true)}
+                  onTouchStart={(e) => { e.preventDefault(); setIsCalcOpen(true); }}
                   className="p-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-md shadow-3xs transition-all flex items-center justify-center cursor-pointer h-8 w-8 active:scale-95 shrink-0"
                   title={isBangla ? 'ক্যালকুলেটর চালু করুন' : 'Open Calculator'}
                   id="calc-trigger-btn"
@@ -2659,6 +2671,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleToggleSync}
+                  onTouchStart={(e) => { e.preventDefault(); handleToggleSync(); }}
                   className={`flex items-center justify-center border transition-all cursor-pointer h-8 shadow-3xs active:scale-95 shrink-0 rounded-md ${
                     isSyncActive
                       ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
@@ -2684,6 +2697,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={toggleLanguage}
+                  onTouchStart={(e) => { e.preventDefault(); toggleLanguage(); }}
                   className="bg-white hover:bg-slate-50 border border-slate-200 rounded-md text-[11px] font-black text-slate-700 h-8 shadow-3xs transition-all flex items-center justify-center cursor-pointer active:scale-95 shrink-0 w-8 sm:w-auto sm:px-2 sm:gap-1"
                   id="lang-toggler"
                   title={isBangla ? 'ভাষা পরিবর্তন করুন' : 'Change Language'}
@@ -2700,7 +2714,7 @@ export default function App() {
 
 
       {/* --- Main Contents Container --- */}
-      <main className="max-w-7xl mx-auto w-full px-4 py-4 pt-[84px] flex-1 flex flex-col gap-4">
+      <main className="max-w-7xl mx-auto w-full px-4 py-4 pt-[76px] sm:pt-[88px] flex-1 flex flex-col gap-4">
 
         <AnimatePresence mode="wait">
         {/* --- 1. HOME TAB VIEW --- */}
@@ -2767,6 +2781,7 @@ export default function App() {
 
                 <div 
                   onClick={() => setIsDueListModalOpen(true)}
+                  onTouchStart={(e) => { e.preventDefault(); setIsDueListModalOpen(true); }}
                   className="bg-white py-2 px-3 rounded-xl border border-slate-200 shadow-3xs cursor-pointer hover:bg-slate-50/50 transition-colors relative overflow-hidden"
                 >
                   <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block leading-tight">
@@ -2798,6 +2813,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setIsOutOfStockModalOpen(true)}
+                    onTouchStart={(e) => { e.preventDefault(); setIsOutOfStockModalOpen(true); }}
                     className="w-full py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[10px] sm:text-xs font-black rounded-lg border border-amber-200/50 transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs active:scale-95"
                     id="oos-trigger-btn"
                   >
@@ -2808,6 +2824,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setIsProductRateModalOpen(true)}
+                    onTouchStart={(e) => { e.preventDefault(); setIsProductRateModalOpen(true); }}
                     className="w-full py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-800 text-[10px] sm:text-xs font-black rounded-lg border border-sky-200/50 transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs active:scale-95"
                     id="rates-trigger-btn"
                   >
@@ -2818,6 +2835,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setIsExpenseModalOpen(true)}
+                    onTouchStart={(e) => { e.preventDefault(); setIsExpenseModalOpen(true); }}
                     className="w-full py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] sm:text-xs font-black rounded-lg border border-rose-200/40 transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs active:scale-95"
                     id="small-expense-btn"
                   >
@@ -2913,6 +2931,11 @@ export default function App() {
                               setIsCashTransaction(true);
                               setCustomerName('');
                             }}
+                            onTouchStart={(e) => {
+                              e.preventDefault();
+                              setIsCashTransaction(true);
+                              setCustomerName('');
+                            }}
                             className={`px-3 py-1 text-[10px] font-black rounded-md transition-all cursor-pointer ${
                               isCashTransaction
                                 ? 'bg-emerald-600 text-white shadow-3xs'
@@ -2927,6 +2950,13 @@ export default function App() {
                             onClick={() => {
                               setIsCashTransaction(false);
                               // Auto focus customer input
+                              setTimeout(() => {
+                                customerInputRef.current?.focus();
+                              }, 100);
+                            }}
+                            onTouchStart={(e) => {
+                              e.preventDefault();
+                              setIsCashTransaction(false);
                               setTimeout(() => {
                                 customerInputRef.current?.focus();
                               }, 100);
@@ -2947,6 +2977,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={handleOpenMemoWithData}
+                        onTouchStart={(e) => { e.preventDefault(); handleOpenMemoWithData(); }}
                         className="ml-auto sm:ml-4 px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 text-[10px] sm:text-xs font-black rounded-lg border border-teal-200/50 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs active:scale-95"
                         id="dashboard-open-memo-btn"
                       >
@@ -3057,6 +3088,11 @@ export default function App() {
                   setActiveInfoTab('oos');
                   setShowAllOos(false);
                 }}
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  setActiveInfoTab('oos');
+                  setShowAllOos(false);
+                }}
                 className={`py-3 px-2 text-xs font-black rounded-xl transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
                   activeInfoTab === 'oos'
                     ? 'bg-white text-amber-850 shadow-sm border border-slate-200/40'
@@ -3069,6 +3105,11 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
+                  setActiveInfoTab('rates');
+                  setShowAllRates(false);
+                }}
+                onTouchStart={(e) => {
+                  e.preventDefault();
                   setActiveInfoTab('rates');
                   setShowAllRates(false);
                 }}
@@ -3086,6 +3127,10 @@ export default function App() {
                 onClick={() => {
                   setActiveInfoTab('dues');
                 }}
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  setActiveInfoTab('dues');
+                }}
                 className={`py-3 px-2 text-xs font-black rounded-xl transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
                   activeInfoTab === 'dues'
                     ? 'bg-white text-rose-850 shadow-sm border border-slate-200/40'
@@ -3098,6 +3143,10 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
+                  setActiveInfoTab('expenses');
+                }}
+                onTouchStart={(e) => {
+                  e.preventDefault();
                   setActiveInfoTab('expenses');
                 }}
                 className={`py-3 px-2 text-xs font-black rounded-xl transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
@@ -3332,7 +3381,6 @@ export default function App() {
                                       <div className="min-w-0 flex-1 pr-2">
                                         <h4 className="text-xs font-extrabold text-slate-800 break-words whitespace-normal leading-snug">{item.name}</h4>
                                         <span className="text-[10px] text-slate-400 font-sans block mt-0.5">
-                                          {isBangla ? 'যুক্ত করা হয়েছে: ' : 'Added: '} 
                                           {formatDate(item.dateAdded, isBangla)}
                                         </span>
                                       </div>
@@ -3545,7 +3593,6 @@ export default function App() {
                                           {item.name}
                                         </h4>
                                         <span className="text-[10px] text-slate-400 font-sans block mt-0.5">
-                                          {isBangla ? 'যুক্ত করা হয়েছে: ' : 'Added: '} 
                                           {formatDate(item.dateAdded, isBangla)}
                                         </span>
                                       </div>
@@ -3742,7 +3789,11 @@ export default function App() {
                         key={period}
                         type="button"
                         onClick={() => setWeeklyPeriod(period)}
-                        className="relative px-2.5 py-0.5 text-[10px] font-black transition-all duration-300 rounded-full cursor-pointer focus:outline-hidden"
+                        onTouchStart={(e) => {
+                          e.preventDefault();
+                          setWeeklyPeriod(period);
+                        }}
+                        className="relative px-2.5 py-0.5 text-[10px] font-black transition-all duration-75 rounded-full cursor-pointer focus:outline-hidden"
                       >
                         {isActive && (
                           <motion.div
@@ -4577,59 +4628,89 @@ export default function App() {
                     {isBangla ? 'চলতি মাসে কোনো পণ্য বিক্রি হয়নি।' : 'No products sold this month.'}
                   </div>
                 ) : (
-                  <div className="space-y-3.5">
-                    {(showAllTopProducts ? topSellingProducts : topSellingProducts.slice(0, 8)).map((item, index) => {
-                      const allProducts = topSellingProducts;
-                      const maxVal = allProducts.length > 0 ? allProducts[0].count : 1;
-                      const percent = (item.count / maxVal) * 100;
-
-                      return (
-                        <div 
-                          key={item.name} 
-                          onClick={() => setSelectedProductForDetail(item.name)}
-                          className="space-y-1 cursor-pointer hover:bg-slate-50/80 p-2 rounded-xl -mx-2 transition-all active:scale-[0.99] border border-transparent hover:border-slate-150"
-                          title={isBangla ? 'বিস্তারিত ও ডিলিট অপশন দেখতে ক্লিক করুন' : 'Click to view details and delete options'}
+                  <div className="space-y-3">
+                    <div className="relative mb-2">
+                      <input
+                        type="text"
+                        placeholder={isBangla ? 'পণ্য খুঁজুন...' : 'Search product...'}
+                        value={searchTopProduct}
+                        onChange={(e) => setSearchTopProduct(e.target.value)}
+                        className="w-full px-3 py-1.5 pl-8 pr-8 text-xs border border-slate-200 rounded-xl focus:outline-none focus:border-teal-500 font-medium"
+                      />
+                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                      {searchTopProduct && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchTopProduct("")}
+                          className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold"
                         >
-                          <div className="flex items-center justify-between text-xs font-bold text-slate-700">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-50 text-[10px] text-teal-700 font-black border border-teal-100/50 font-mono">
-                                {isBangla ? toBanglaNumber(index + 1) : index + 1}
-                              </span>
-                              <span className="font-extrabold text-slate-800 truncate underline decoration-dotted decoration-teal-400 underline-offset-2">{item.name}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-right shrink-0">
-                              <span className="text-[10px] text-slate-400 font-extrabold">
-                                {isBangla ? `${toBanglaNumber(item.count)} বার` : `${item.count} times`}
-                              </span>
-                              <span className="text-teal-600 font-sans font-black">
-                                {formatCurrency(item.amount, isBangla)}
-                              </span>
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-2">
-                            <div className="flex-grow bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                              <motion.div 
-                                initial={{ width: 0 }}
-                                animate={{ width: `${percent}%` }}
-                                className="bg-teal-500 h-full rounded-full"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+                          ✕
+                        </button>
+                      )}
+                    </div>
 
-                    {topSellingProducts.length > 8 && (
+                    <div className={`space-y-2 ${showAllTopProducts ? 'max-h-[245px] overflow-y-auto pr-1.5 custom-scrollbar' : ''}`}>
+                      {(() => {
+                        const filtered = searchTopProduct.trim()
+                          ? topSellingProducts.filter(item => item.name.toLowerCase().includes(searchTopProduct.toLowerCase()))
+                          : topSellingProducts;
+                        return showAllTopProducts ? filtered : filtered.slice(0, 6);
+                      })().map((item, index) => {
+                        const allProducts = topSellingProducts;
+                        const maxVal = allProducts.length > 0 ? allProducts[0].count : 1;
+                        const percent = (item.count / maxVal) * 100;
+
+                        return (
+                          <div 
+                            key={item.name} 
+                            onClick={() => setSelectedProductForDetail(item.name)}
+                            className="space-y-0.5 cursor-pointer hover:bg-slate-50/80 p-1.5 rounded-xl -mx-1.5 transition-all active:scale-[0.99] border border-transparent hover:border-slate-150"
+                            title={isBangla ? 'বিস্তারিত ও ডিলিট অপশন দেখতে ক্লিক করুন' : 'Click to view details and delete options'}
+                          >
+                            <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-teal-50 text-[9px] text-teal-700 font-black border border-teal-100/50 font-mono">
+                                  {isBangla ? toBanglaNumber(index + 1) : index + 1}
+                                </span>
+                                <span className="font-bold text-slate-700 text-[11px] truncate underline decoration-dotted decoration-teal-400 underline-offset-1">{item.name}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-right shrink-0">
+                                <span className="text-[9px] text-slate-400 font-bold">
+                                  {isBangla ? `${toBanglaNumber(item.count)} বার` : `${item.count} times`}
+                                </span>
+                                <span className="text-teal-600 font-sans font-extrabold text-[11px]">
+                                  {formatCurrency(item.amount, isBangla)}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                              <div className="flex-grow bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <motion.div 
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${percent}%` }}
+                                  className="bg-teal-500 h-full rounded-full"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {topSellingProducts.length > 6 && (
                       <button
                         type="button"
-                        onClick={() => setShowAllTopProducts(!showAllTopProducts)}
+                        onClick={() => {
+                          setShowAllTopProducts(!showAllTopProducts);
+                          setSearchTopProduct('');
+                        }}
                         className="w-full mt-2 py-2 text-xs font-extrabold text-teal-600 hover:text-teal-800 hover:bg-slate-100/50 border border-slate-200/50 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-98"
                       >
                         <span>
                           {showAllTopProducts 
                             ? (isBangla ? 'কম দেখান' : 'Show Less') 
-                            : (isBangla ? `আরও ${toBanglaNumber(topSellingProducts.length - 8)}টি দেখুন` : `Show ${topSellingProducts.length - 8} More`)
+                            : (isBangla ? `আরও দেখুন` : `See More`)
                           }
                         </span>
                       </button>
@@ -4795,9 +4876,7 @@ export default function App() {
                       return (
                         <div
                           key={data.name}
-                          className={`flex flex-col gap-1 p-2 -mx-2 rounded-xl transition-all duration-200 cursor-pointer ${
-                            isHovered ? 'bg-white shadow-3xs border border-slate-150' : 'border border-transparent'
-                          }`}
+                          className="flex flex-col gap-1 p-2.5 bg-white rounded-xl transition-all duration-200 cursor-pointer shadow-3xs border border-slate-950 hover:bg-slate-50/80"
                           onMouseEnter={() => setActiveSliceIndex(index)}
                           onMouseLeave={() => setActiveSliceIndex(null)}
                           onClick={() => {
@@ -4872,6 +4951,10 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setSettingsSubTab('store')}
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  setSettingsSubTab('store');
+                }}
                 className={`flex-1 min-w-[70px] py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
                   settingsSubTab === 'store'
                     ? 'bg-white text-teal-700 shadow-3xs'
@@ -4883,6 +4966,10 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setSettingsSubTab('sync')}
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  setSettingsSubTab('sync');
+                }}
                 className={`flex-1 min-w-[70px] py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
                   settingsSubTab === 'sync'
                     ? 'bg-white text-teal-700 shadow-3xs'
@@ -4894,6 +4981,10 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setSettingsSubTab('history')}
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  setSettingsSubTab('history');
+                }}
                 className={`flex-1 min-w-[70px] py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${
                   settingsSubTab === 'history'
                     ? 'bg-white text-teal-700 shadow-3xs'
@@ -4905,6 +4996,10 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setSettingsSubTab('memo')}
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  setSettingsSubTab('memo');
+                }}
                 className={`flex-1 min-w-[90px] py-2 px-3 text-xs font-black rounded-lg transition-all cursor-pointer ${
                   settingsSubTab === 'memo'
                     ? 'bg-white text-teal-700 shadow-3xs'
@@ -7240,7 +7335,14 @@ export default function App() {
               <div className="p-5 overflow-y-auto flex-1 space-y-4">
                 {/* Total Summary of Others */}
                 {(() => {
-                  const othersList = allTimeSales.items.slice(6);
+                  const isNogod = (name: string) => {
+                    const lower = name.toLowerCase().trim();
+                    return lower === 'নগদ' || lower === 'nogod' || lower === 'cash' || lower === 'নগদ হিসাব';
+                  };
+                  const nogodItems = allTimeSales.items.filter(item => isNogod(item.name));
+                  const nonNogodItems = allTimeSales.items.filter(item => !isNogod(item.name));
+                  const othersList = [...nonNogodItems.slice(6), ...nogodItems].sort((a, b) => b.amount - a.amount);
+
                   const totalOthersAmount = othersList.reduce((sum, item) => sum + item.amount, 0);
                   const totalOthersCount = othersList.reduce((sum, item) => sum + item.count, 0);
                   const othersPercentage = allTimeSales.totalAmount > 0 ? (totalOthersAmount / allTimeSales.totalAmount) * 100 : 0;
@@ -7443,13 +7545,14 @@ export default function App() {
         <div className="max-w-md mx-auto grid grid-cols-4 gap-1.5 text-center">
           <button
             onClick={() => setCurrentNavTab('home')}
-            className={`flex flex-col items-center justify-center gap-1.5 transition-all duration-300 py-2 px-1 rounded-2xl cursor-pointer w-full border ${
+            onTouchStart={() => setCurrentNavTab('home')}
+            className={`flex flex-col items-center justify-center gap-1.5 transition-all duration-75 py-2 px-1 rounded-2xl cursor-pointer w-full border ${
               currentNavTab === 'home'
                 ? 'text-indigo-600 bg-indigo-50 border-indigo-100 shadow-3xs font-bold scale-102'
                 : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50 border-transparent'
             }`}
           >
-            <Home className={`h-5 w-5 transition-transform duration-300 ${currentNavTab === 'home' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
+            <Home className={`h-5 w-5 transition-transform duration-75 ${currentNavTab === 'home' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
             <span className="text-[10px] font-black truncate w-full text-center">
               {isBangla ? 'হোম' : 'Home'}
             </span>
@@ -7457,14 +7560,15 @@ export default function App() {
 
           <button
             onClick={() => setCurrentNavTab('info')}
-            className={`flex flex-col items-center justify-center gap-1.5 transition-all duration-300 py-2 px-1 rounded-2xl cursor-pointer w-full border ${
+            onTouchStart={() => setCurrentNavTab('info')}
+            className={`flex flex-col items-center justify-center gap-1.5 transition-all duration-75 py-2 px-1 rounded-2xl cursor-pointer w-full border ${
               currentNavTab === 'info'
                 ? 'text-amber-600 bg-amber-50 border-amber-100 shadow-3xs font-bold scale-102'
                 : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50 border-transparent'
             }`}
             id="info-nav-tab"
           >
-            <Info className={`h-5 w-5 transition-transform duration-300 ${currentNavTab === 'info' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
+            <Info className={`h-5 w-5 transition-transform duration-75 ${currentNavTab === 'info' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
             <span className="text-[10px] font-black truncate w-full text-center">
               {isBangla ? 'সার্ভিস' : 'Service'}
             </span>
@@ -7472,13 +7576,14 @@ export default function App() {
 
           <button
             onClick={() => setCurrentNavTab('monthly')}
-            className={`flex flex-col items-center justify-center gap-1.5 transition-all duration-300 py-2 px-1 rounded-2xl cursor-pointer w-full border ${
+            onTouchStart={() => setCurrentNavTab('monthly')}
+            className={`flex flex-col items-center justify-center gap-1.5 transition-all duration-75 py-2 px-1 rounded-2xl cursor-pointer w-full border ${
               currentNavTab === 'monthly'
                 ? 'text-emerald-600 bg-emerald-50 border-emerald-100 shadow-3xs font-bold scale-102'
                 : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50 border-transparent'
             }`}
           >
-            <Database className={`h-5 w-5 transition-transform duration-300 ${currentNavTab === 'monthly' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
+            <Database className={`h-5 w-5 transition-transform duration-75 ${currentNavTab === 'monthly' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
             <span className="text-[10px] font-black truncate w-full text-center">
               {isBangla ? 'রিপোর্ট' : 'Report'}
             </span>
@@ -7486,13 +7591,14 @@ export default function App() {
 
           <button
             onClick={() => setCurrentNavTab('settings')}
-            className={`flex flex-col items-center justify-center gap-1.5 transition-all duration-300 py-2 px-1 rounded-2xl cursor-pointer w-full border ${
+            onTouchStart={() => setCurrentNavTab('settings')}
+            className={`flex flex-col items-center justify-center gap-1.5 transition-all duration-75 py-2 px-1 rounded-2xl cursor-pointer w-full border ${
               currentNavTab === 'settings'
                 ? 'text-rose-600 bg-rose-50 border-rose-100 shadow-3xs font-bold scale-102'
                 : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50 border-transparent'
             }`}
           >
-            <SettingsIcon className={`h-5 w-5 transition-transform duration-300 ${currentNavTab === 'settings' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
+            <SettingsIcon className={`h-5 w-5 transition-transform duration-75 ${currentNavTab === 'settings' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
             <span className="text-[10px] font-black truncate w-full text-center">
               {isBangla ? 'সেটিংস' : 'Settings'}
             </span>

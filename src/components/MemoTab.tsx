@@ -349,13 +349,28 @@ export default function MemoTab({
     return Array.from(names);
   }, [transactions]);
 
+  // Extract unique sold products from transaction history for smart suggestions
+  const previousProducts = React.useMemo(() => {
+    const productsSet = new Set<string>();
+    
+    // Collect from transactions
+    for (let i = transactions.length - 1; i >= 0; i--) {
+      const tx = transactions[i];
+      if (tx.product && tx.product.trim()) {
+        productsSet.add(tx.product.trim());
+      }
+    }
+
+    return Array.from(productsSet);
+  }, [transactions]);
+
   // Filter products based on search
   const filteredProducts = React.useMemo(() => {
-    if (!newItemName) return productRates;
-    return productRates.filter(p => 
-      p.name.toLowerCase().includes(newItemName.toLowerCase())
+    if (!newItemName) return previousProducts;
+    return previousProducts.filter(p => 
+      p.toLowerCase().includes(newItemName.toLowerCase())
     );
-  }, [productRates, newItemName]);
+  }, [previousProducts, newItemName]);
 
   // Filter customers based on search
   const filteredCustomers = React.useMemo(() => {
@@ -366,9 +381,9 @@ export default function MemoTab({
   }, [customerSuggestions, customerName]);
 
   // Handle Product selection from autocomplete
-  const handleSelectProductSuggestion = (prod: ProductRateItem) => {
-    setNewItemName(prod.name);
-    setNewItemRate(String(prod.buyingPrice)); // Use defined rate
+  const handleSelectProductSuggestion = (name: string) => {
+    setNewItemName(name);
+    // Rate is left blank/unchanged so the seller can enter it manually
     setShowProductSuggestions(false);
   };
 
@@ -1492,6 +1507,11 @@ export default function MemoTab({
                       setMemoSize('a4');
                       triggerToast(isBangla ? 'রশিদের সাইজ A4 সেট করা হয়েছে!' : 'Paper size set to A4!');
                     }}
+                    onTouchStart={(e) => {
+                      e.preventDefault();
+                      setMemoSize('a4');
+                      triggerToast(isBangla ? 'রশিদের সাইজ A4 সেট করা হয়েছে!' : 'Paper size set to A4!');
+                    }}
                     className={`py-1.5 text-xs font-extrabold rounded-lg cursor-pointer transition-all text-center ${
                       memoSize === 'a4'
                         ? 'bg-white text-teal-700 shadow-3xs'
@@ -1506,6 +1526,11 @@ export default function MemoTab({
                       setMemoSize('pos');
                       triggerToast(isBangla ? 'থার্মাল POS রিসিট সাইজ সেট করা হয়েছে!' : 'Paper size set to Thermal POS!');
                     }}
+                    onTouchStart={(e) => {
+                      e.preventDefault();
+                      setMemoSize('pos');
+                      triggerToast(isBangla ? 'থার্মাল POS রিসিট সাইজ সেট করা হয়েছে!' : 'Paper size set to Thermal POS!');
+                    }}
                     className={`py-1.5 text-xs font-extrabold rounded-lg cursor-pointer transition-all text-center ${
                       memoSize === 'pos'
                         ? 'bg-white text-teal-700 shadow-3xs'
@@ -1517,6 +1542,11 @@ export default function MemoTab({
                   <button
                     type="button"
                     onClick={() => {
+                      setMemoSize('a5');
+                      triggerToast(isBangla ? 'রশিদের সাইজ A5 সেট করা হয়েছে!' : 'Paper size set to A5!');
+                    }}
+                    onTouchStart={(e) => {
+                      e.preventDefault();
                       setMemoSize('a5');
                       triggerToast(isBangla ? 'রশিদের সাইজ A5 সেট করা হয়েছে!' : 'Paper size set to A5!');
                     }}
@@ -1626,10 +1656,9 @@ export default function MemoTab({
                         key={idx}
                         type="button"
                         onMouseDown={() => handleSelectProductSuggestion(p)}
-                        className="w-full text-left px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors flex justify-between"
+                        className="w-full text-left px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors"
                       >
-                        <span>{p.name}</span>
-                        <span className="text-teal-600 font-extrabold">৳{p.buyingPrice}</span>
+                        <span>{p}</span>
                       </button>
                     ))}
                   </div>
@@ -1875,6 +1904,11 @@ export default function MemoTab({
                         setSealType('official');
                         localStorage.setItem('memo_seal_type', 'official');
                       }}
+                      onTouchStart={(e) => {
+                        e.preventDefault();
+                        setSealType('official');
+                        localStorage.setItem('memo_seal_type', 'official');
+                      }}
                       className={`text-[10px] font-black px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                         sealType === 'official' 
                           ? 'bg-purple-600 text-white shadow-3xs' 
@@ -1886,6 +1920,11 @@ export default function MemoTab({
                     <button
                       type="button"
                       onClick={() => {
+                        setSealType('custom');
+                        localStorage.setItem('memo_seal_type', 'custom');
+                      }}
+                      onTouchStart={(e) => {
+                        e.preventDefault();
                         setSealType('custom');
                         localStorage.setItem('memo_seal_type', 'custom');
                       }}
