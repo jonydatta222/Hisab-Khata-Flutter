@@ -14,7 +14,7 @@
       "providers": ["google.com"]
     },
     "SplashScreen": {
-      "launchShowDuration": 500,
+      "launchShowDuration": 3000,
       "launchAutoHide": true,
       "launchFadeOutDuration": 150,
       "backgroundColor": "#ffffff",

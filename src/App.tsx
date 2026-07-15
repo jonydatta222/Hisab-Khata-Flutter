@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Calculator as CalcIcon,
@@ -70,6 +70,7 @@ import { Browser } from '@capacitor/browser';
 import { App as CapApp } from '@capacitor/app';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+import { SplashScreen } from '@capacitor/splash-screen';
 
 import logoPng from './assets/logo.png';
 import logoImg from './assets/logo.jpg';
@@ -79,12 +80,13 @@ const LOGO_CACHE_BUSTER = `?t=${Date.now()}`;
 const logoPngWithCache = `${logoPng}${LOGO_CACHE_BUSTER}`;
 const logoImgWithCache = `${logoImg}${LOGO_CACHE_BUSTER}`;
 
-import Calculator from './components/Calculator';
 import StatCard from './components/StatCard';
-import TransactionList from './components/TransactionList';
-import DueList from './components/DueList';
-import ExpenseList from './components/ExpenseList';
-import MemoTab from './components/MemoTab';
+
+const Calculator = lazy(() => import('./components/Calculator'));
+const TransactionList = lazy(() => import('./components/TransactionList'));
+const DueList = lazy(() => import('./components/DueList'));
+const ExpenseList = lazy(() => import('./components/ExpenseList'));
+const MemoTab = lazy(() => import('./components/MemoTab'));
 
 export default function App() {
   // --- QR Verification States & Handlers ---
@@ -143,6 +145,13 @@ export default function App() {
       window.history.pushState({}, document.title, window.location.pathname);
     }
   };
+
+  // --- Hide Native Splash Screen instantly when React App finishes loading ---
+  useEffect(() => {
+    SplashScreen.hide().catch((err) => {
+      console.warn('Native SplashScreen hide failed (benign if not in native environment):', err);
+    });
+  }, []);
 
   // --- Check for Invoice QR verification link on load ---
   useEffect(() => {
@@ -269,6 +278,8 @@ export default function App() {
   const [selectedCustomerForDetail, setSelectedCustomerForDetail] = useState<string | null>(null);
   const [isOutOfStockModalOpen, setIsOutOfStockModalOpen] = useState(false);
   const [isProductRateModalOpen, setIsProductRateModalOpen] = useState(false);
+  const [activeProfitCalcProduct, setActiveProfitCalcProduct] = useState<ProductRateItem | null>(null);
+  const [profitInput, setProfitInput] = useState('');
   const [isAddDueModalOpen, setIsAddDueModalOpen] = useState(false);
   const [addDueCustomerName, setAddDueCustomerName] = useState('');
   const [addDueAmount, setAddDueAmount] = useState('');
@@ -299,6 +310,61 @@ export default function App() {
   const [amount, setAmount] = useState('');
   const [isCashTransaction, setIsCashTransaction] = useState(true);
   const [customerName, setCustomerName] = useState('');
+
+  // Previous Sold Products Suggestions Logic
+  const previousProducts = useMemo(() => {
+    const productsMap = new Map<string, { lastPrice?: number }>();
+    
+    // Collect from transactions from newest to oldest
+    for (let i = transactions.length - 1; i >= 0; i--) {
+      const tx = transactions[i];
+      if (tx.product && tx.product.trim()) {
+        const prodTrim = tx.product.trim();
+        if (!productsMap.has(prodTrim)) {
+          productsMap.set(prodTrim, { lastPrice: tx.amount });
+        }
+      }
+    }
+
+    return Array.from(productsMap.entries()).map(([name, info]) => ({
+      name,
+      lastPrice: info.lastPrice
+    }));
+  }, [transactions]);
+
+  const [showProductSuggestions, setShowProductSuggestions] = useState(false);
+
+  const filteredProductSuggestions = useMemo(() => {
+    const query = productName.trim().toLowerCase();
+    if (!query) {
+      return [];
+    }
+    return previousProducts
+      .filter(p => p.name.toLowerCase().includes(query))
+      .slice(0, 8);
+  }, [previousProducts, productName]);
+
+  const handleSelectProductSuggestion = (name: string) => {
+    setProductName(name);
+    setShowProductSuggestions(false);
+  };
+
+  const [showAddDueProductSuggestions, setShowAddDueProductSuggestions] = useState(false);
+
+  const filteredAddDueProductSuggestions = useMemo(() => {
+    const query = addDueProduct.trim().toLowerCase();
+    if (!query) {
+      return [];
+    }
+    return previousProducts
+      .filter(p => p.name.toLowerCase().includes(query))
+      .slice(0, 8);
+  }, [previousProducts, addDueProduct]);
+
+  const handleSelectAddDueProductSuggestion = (name: string) => {
+    setAddDueProduct(name);
+    setShowAddDueProductSuggestions(false);
+  };
 
   // Memo Pre-fill state
   const [initialMemoCustomer, setInitialMemoCustomer] = useState('');
@@ -341,7 +407,7 @@ export default function App() {
     return localStorage.getItem('hisab_khata_sync_email') || '';
   });
   const [shopName, setShopName] = useState(() => {
-    return localStorage.getItem('hisab_khata_shop_name') || 'মেসার্স রঞ্জু দত্ত এন্ড সন্স';
+    return localStorage.getItem('hisab_khata_shop_name') || 'রঞ্জু দত্ত এন্ড সন্স';
   });
 
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
@@ -590,7 +656,7 @@ export default function App() {
       // 1. Reload local state from localStorage to ensure correct local sync state
       const localTxsStr = localStorage.getItem('hisab_khata_transactions');
       const localExpensesStr = localStorage.getItem('hisab_khata_expenses');
-      const localShopName = localStorage.getItem('hisab_khata_shop_name') || 'মেসার্স রঞ্জু দত্ত এন্ড সন্স';
+      const localShopName = localStorage.getItem('hisab_khata_shop_name') || 'রঞ্জু দত্ত এন্ড সন্স';
       const localOosStr = localStorage.getItem('hisab_khata_out_of_stock');
       const localRatesStr = localStorage.getItem('hisab_khata_product_rates');
       
@@ -678,6 +744,27 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isBangla]);
 
+  // --- Memoized Real-Time Date & Day format for Header (e.g. ১১:২৮ AM | বুধবার ১৫/০৭/২০২৬) ---
+  const headerDateTimeStr = useMemo(() => {
+    if (!currentTime) return '';
+    const now = new Date();
+    const dayIdx = now.getDay();
+    const enDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const bnDays = ['রবিবার', 'সোমবার', 'মঙ্গলবার', 'বুধবার', 'বৃহস্পতিবার', 'শুক্রবার', 'শনিবার'];
+    
+    const dayName = isBangla ? bnDays[dayIdx] : enDays[dayIdx];
+    
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = String(now.getFullYear());
+    
+    const dateStr = `${dd}/${mm}/${yyyy}`;
+    const localizedDate = isBangla ? toBanglaNumber(dateStr) : dateStr;
+    const localizedTime = isBangla ? toBanglaNumber(currentTime) : currentTime;
+    
+    return `${localizedTime} | ${dayName} ${localizedDate}`;
+  }, [currentTime, isBangla]);
+
   // --- Prevent background scrolling when modal is open ---
   useEffect(() => {
     const isAnyModalOpen = 
@@ -687,6 +774,7 @@ export default function App() {
       selectedCustomerForDetail !== null ||
       isOutOfStockModalOpen ||
       isProductRateModalOpen ||
+      activeProfitCalcProduct !== null ||
       isAddDueModalOpen ||
       isSyncModalOpen ||
       isRestoreChoiceModalOpen ||
@@ -715,6 +803,7 @@ export default function App() {
     selectedCustomerForDetail,
     isOutOfStockModalOpen,
     isProductRateModalOpen,
+    activeProfitCalcProduct,
     isAddDueModalOpen,
     isSyncModalOpen,
     isRestoreChoiceModalOpen,
@@ -2408,7 +2497,7 @@ export default function App() {
                 src={logoPngWithCache}
                 onError={handleLogoError}
                 alt="হিসাব খাতা"
-                className="h-10 w-10 rounded-xl object-cover shadow-sm border border-slate-200/60 shrink-0 transition-transform duration-250 active:scale-95"
+                className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl object-cover shadow-sm border border-slate-200/60 shrink-0 transition-transform duration-250 active:scale-95"
                 referrerPolicy="no-referrer"
               />
               <div className="flex flex-col min-w-0">
@@ -2417,20 +2506,26 @@ export default function App() {
                     {isBangla ? 'হিসাব খাতা' : 'Hisab Khata'}
                   </h1>
                   {isOnline ? (
-                    <span className="text-[8px] sm:text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200/50 px-1.5 py-0.5 rounded-md uppercase leading-none flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="text-[8px] sm:text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200/50 px-1 py-0.5 rounded-md uppercase leading-none flex items-center gap-1 shrink-0">
+                      <span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse"></span>
                       {isBangla ? 'অনলাইন' : 'Online'}
                     </span>
                   ) : (
-                    <span className="text-[8px] sm:text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200/50 px-1.5 py-0.5 rounded-md uppercase leading-none flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                    <span className="text-[8px] sm:text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200/50 px-1 py-0.5 rounded-md uppercase leading-none flex items-center gap-1 shrink-0">
+                      <span className="w-1 h-1 rounded-full bg-rose-500"></span>
                       {isBangla ? 'অফলাইন' : 'Offline'}
                     </span>
                   )}
                 </div>
-                <span className="text-[10px] sm:text-xs font-bold text-slate-500 truncate mt-1 max-w-[150px] sm:max-w-[250px]" id="shop-name-title">
-                  <span className="text-teal-600 font-mono font-bold mr-1.5 md:hidden inline-block">{currentTime} •</span>
-                  {shopName || (isBangla ? 'মেসার্স জনি ট্রেডার্স' : 'M/S Jony Traders')}
+                
+                {/* Real-time formatted Date & Time like screenshot (e.g. ১১:২৮ AM | বুধবার ১৫/০৭/২০২৬) */}
+                <span className="text-[10px] sm:text-xs font-bold text-slate-700 tracking-tight mt-0.5 leading-none whitespace-nowrap">
+                  {headerDateTimeStr}
+                </span>
+
+                {/* Shop Name row */}
+                <span className="text-[10px] sm:text-xs font-bold text-slate-400 truncate mt-0.5 max-w-[150px] sm:max-w-[250px] leading-none" id="shop-name-title">
+                  {shopName || (isBangla ? 'রঞ্জু দত্ত এন্ড সন্স' : 'Ranju Dutta & Sons')}
                 </span>
               </div>
             </div>
@@ -2438,14 +2533,6 @@ export default function App() {
             {/* Header Action Tools */}
             <div className="flex items-center gap-2 shrink-0">
               
-              {/* Real-time Date & Clock above buttons */}
-              <div className="hidden md:flex items-center gap-2 text-[10px] text-slate-600 font-mono bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg select-none">
-                <Clock className="h-3.5 w-3.5 text-slate-400" />
-                <span className="font-bold text-slate-700">
-                  {currentDateFormatted} • {currentTime}
-                </span>
-              </div>
-   
               {/* Action Buttons row */}
               <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
    
@@ -2650,7 +2737,7 @@ export default function App() {
                   {/* Inputs Grid */}
                   <div className="grid grid-cols-12 gap-3">
                     {/* Product Name */}
-                    <div className="col-span-7">
+                    <div className="col-span-7 relative">
                       <label className="block text-xs font-black text-slate-600 mb-1 flex items-center gap-1">
                         <span>🛍️</span>
                         <span>{isBangla ? 'পণ্যের নাম' : 'Product Name'}</span>
@@ -2662,9 +2749,32 @@ export default function App() {
                         placeholder={isBangla ? 'পণ্যের নাম লিখুন' : 'Enter product name'}
                         value={productName}
                         onChange={(e) => setProductName(e.target.value)}
+                        onFocus={() => setShowProductSuggestions(true)}
+                        onBlur={() => setShowProductSuggestions(false)}
                         className="w-full text-base px-3 py-2.5 rounded-xl border-2 border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-teal-600 bg-teal-50/20 transition-all font-semibold text-slate-900 h-12"
                         id="product-input"
                       />
+                      {showProductSuggestions && filteredProductSuggestions.length > 0 && (
+                        <div className="absolute left-0 right-0 mt-1 bg-white border-2 border-slate-100 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto">
+                          {filteredProductSuggestions.map((item, index) => (
+                            <div
+                              key={index}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleSelectProductSuggestion(item.name);
+                              }}
+                              className="px-3.5 py-2.5 hover:bg-teal-50/50 cursor-pointer border-b border-slate-50 last:border-b-0 flex items-center justify-between transition-all"
+                            >
+                              <div className="flex flex-col">
+                                <span className="text-sm font-semibold text-slate-800">{item.name}</span>
+                              </div>
+                              <span className="text-xs text-teal-600 font-black">
+                                {isBangla ? 'বসান' : 'Apply'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     {/* Price */}
@@ -2809,12 +2919,18 @@ export default function App() {
               </div>
 
                 {/* 2. Today's Sales List */}
-                <TransactionList
-                  transactions={todayTransactions}
-                  isBangla={isBangla}
-                  onDelete={handleDeleteTransaction}
-                  onUpdate={handleUpdateTransaction}
-                />
+                <Suspense fallback={
+                  <div className="flex justify-center items-center py-6">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-500"></div>
+                  </div>
+                }>
+                  <TransactionList
+                    transactions={todayTransactions}
+                    isBangla={isBangla}
+                    onDelete={handleDeleteTransaction}
+                    onUpdate={handleUpdateTransaction}
+                  />
+                </Suspense>
 
               </div>
           </motion.div>
@@ -3330,7 +3446,16 @@ export default function App() {
                                   ) : (
                                     <>
                                       <div className="min-w-0 flex-1 pr-2">
-                                        <h4 className="text-xs font-extrabold text-slate-800 break-words whitespace-normal leading-snug">{item.name}</h4>
+                                        <h4 
+                                          onClick={() => {
+                                            setActiveProfitCalcProduct(item);
+                                            setProfitInput('');
+                                          }}
+                                          className="text-xs font-extrabold text-slate-800 break-words whitespace-normal leading-snug cursor-pointer hover:text-sky-600 transition-colors"
+                                          title={isBangla ? 'লাভ হিসাব করতে ক্লিক করুন' : 'Click to calculate profit'}
+                                        >
+                                          {item.name}
+                                        </h4>
                                         <span className="text-[10px] text-slate-400 font-sans block mt-0.5">
                                           {isBangla ? 'যুক্ত করা হয়েছে: ' : 'Added: '} 
                                           {formatDate(item.dateAdded, isBangla)}
@@ -3412,28 +3537,40 @@ export default function App() {
 
               {activeInfoTab === 'dues' && (
                 <div className="flex-1 flex flex-col justify-between">
-                  <DueList
-                    dueList={customerDues}
-                    isBangla={isBangla}
-                    onDeposit={handleDueDeposit}
-                    onDelete={handleDeleteCustomerDues}
-                    onRename={handleRenameCustomerDues}
-                    onViewDetail={setSelectedCustomerForDetail}
-                    transactions={transactions}
-                    onDeleteTransaction={handleDeleteTransaction}
-                  />
+                  <Suspense fallback={
+                    <div className="flex justify-center items-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
+                    </div>
+                  }>
+                    <DueList
+                      dueList={customerDues}
+                      isBangla={isBangla}
+                      onDeposit={handleDueDeposit}
+                      onDelete={handleDeleteCustomerDues}
+                      onRename={handleRenameCustomerDues}
+                      onViewDetail={setSelectedCustomerForDetail}
+                      transactions={transactions}
+                      onDeleteTransaction={handleDeleteTransaction}
+                    />
+                  </Suspense>
                 </div>
               )}
 
               {activeInfoTab === 'expenses' && (
                 <div className="flex-1 flex flex-col justify-between">
-                  <ExpenseList
-                    expenses={todayExpenses}
-                    isBangla={isBangla}
-                    onDelete={handleDeleteExpense}
-                    onUpdate={handleUpdateExpense}
-                    todayExpenseTotal={todayExpenseTotal}
-                  />
+                  <Suspense fallback={
+                    <div className="flex justify-center items-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
+                    </div>
+                  }>
+                    <ExpenseList
+                      expenses={todayExpenses}
+                      isBangla={isBangla}
+                      onDelete={handleDeleteExpense}
+                      onUpdate={handleUpdateExpense}
+                      todayExpenseTotal={todayExpenseTotal}
+                    />
+                  </Suspense>
                 </div>
               )}
 
@@ -5208,15 +5345,21 @@ export default function App() {
             {/* About us has been rearranged into General subtab */}
 
             {settingsSubTab === 'memo' && (
-              <MemoTab
-                key={memoKey}
-                transactions={transactions}
-                productRates={productRates}
-                shopName={shopName}
-                isBangla={isBangla}
-                initialCustomerName={initialMemoCustomer}
-                initialItems={initialMemoItems}
-              />
+              <Suspense fallback={
+                <div className="flex justify-center items-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
+                </div>
+              }>
+                <MemoTab
+                  key={memoKey}
+                  transactions={transactions}
+                  productRates={productRates}
+                  shopName={shopName}
+                  isBangla={isBangla}
+                  initialCustomerName={initialMemoCustomer}
+                  initialItems={initialMemoItems}
+                />
+              </Suspense>
             )}
           </motion.div>
         )}
@@ -5225,15 +5368,17 @@ export default function App() {
       </main>
 
       {/* --- FLOATING CALC OVERLAY SIDEBAR DRAWER --- */}
-      <Calculator
-        isOpen={isCalcOpen}
-        onClose={() => setIsCalcOpen(false)}
-        isBangla={isBangla}
-        onApplyValue={(val) => {
-          setAmount(String(val));
-          showToast(isBangla ? 'হিসাবটি দামের ঘরে বসানো হয়েছে!' : 'Amount pasted successfully!');
-        }}
-      />
+      <Suspense fallback={null}>
+        <Calculator
+          isOpen={isCalcOpen}
+          onClose={() => setIsCalcOpen(false)}
+          isBangla={isBangla}
+          onApplyValue={(val) => {
+            setAmount(String(val));
+            showToast(isBangla ? 'হিসাবটি দামের ঘরে বসানো হয়েছে!' : 'Amount pasted successfully!');
+          }}
+        />
+      </Suspense>
 
       {/* --- CLOUD SYNC MODAL OVERLAY DIALOG --- */}
       <AnimatePresence>
@@ -6212,7 +6357,7 @@ export default function App() {
                   />
                 </div>
 
-                <div>
+                <div className="relative">
                   <label className="block text-xs font-semibold text-slate-500 mb-1">
                     {isBangla ? 'মালের নাম বা বিবরণ (ঐচ্ছিক)' : 'Details / Product (Optional)'}
                   </label>
@@ -6221,9 +6366,32 @@ export default function App() {
                     placeholder={isBangla ? 'যেমন: পূর্বের বাকি বা পণ্য ক্রয়ের বিবরণ' : 'e.g. Previous dues or details'}
                     value={addDueProduct}
                     onChange={(e) => setAddDueProduct(e.target.value)}
+                    onFocus={() => setShowAddDueProductSuggestions(true)}
+                    onBlur={() => setShowAddDueProductSuggestions(false)}
                     className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-rose-500"
                     id="add-due-product-details"
                   />
+                  {showAddDueProductSuggestions && filteredAddDueProductSuggestions.length > 0 && (
+                    <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-100 rounded-lg shadow-md z-50 max-h-48 overflow-y-auto">
+                      {filteredAddDueProductSuggestions.map((item, index) => (
+                        <div
+                          key={index}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleSelectAddDueProductSuggestion(item.name);
+                          }}
+                          className="px-3 py-2 hover:bg-rose-50/50 cursor-pointer border-b border-slate-50 last:border-b-0 flex items-center justify-between transition-all"
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-xs font-semibold text-slate-800">{item.name}</span>
+                          </div>
+                          <span className="text-[10px] text-rose-600 font-bold">
+                            {isBangla ? 'বসান' : 'Apply'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
@@ -6425,6 +6593,146 @@ export default function App() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- PRODUCT PROFIT CALCULATOR MODAL --- */}
+      <AnimatePresence>
+        {activeProfitCalcProduct && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setActiveProfitCalcProduct(null)}
+              className="fixed inset-0 bg-black"
+            />
+
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 border border-slate-100 overflow-hidden"
+              id="profit-calc-modal-box"
+            >
+              <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                  {isBangla ? 'লাভ ও বিক্রয় মূল্য হিসাব' : 'Profit & Selling Price Calc'}
+                </h3>
+                <button
+                  onClick={() => setActiveProfitCalcProduct(null)}
+                  className="text-slate-400 hover:text-slate-650 transition-colors cursor-pointer text-xs font-bold p-1 hover:bg-slate-100 rounded-full"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Product Name (Loaded automatically) */}
+                <div>
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    {isBangla ? 'পণ্যের নাম' : 'Product Name'}
+                  </span>
+                  <div className="text-xs font-extrabold text-slate-800 mt-0.5 p-2 bg-slate-50 rounded-lg">
+                    {activeProfitCalcProduct.name}
+                  </div>
+                </div>
+
+                {/* Buying Price (Loaded automatically) */}
+                <div>
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    {isBangla ? 'কিনা দাম' : 'Buying Price (Cost)'}
+                  </span>
+                  <div className="text-sm font-black text-slate-950 font-sans mt-0.5 p-2.5 bg-sky-50/50 text-sky-900 border border-sky-100 rounded-xl flex items-center justify-between">
+                    <span>{formatCurrency(activeProfitCalcProduct.buyingPrice, isBangla)}</span>
+                    <span className="text-[10px] bg-sky-100 text-sky-800 font-bold px-2 py-0.5 rounded-full uppercase">
+                      {isBangla ? 'স্বয়ংক্রিয়' : 'Auto'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Profit Amount Input */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1 flex justify-between items-center">
+                    <span>{isBangla ? 'লাভের টাকা (বসুন)' : 'Profit Amount (Input)'}</span>
+                    <span className="text-[10px] text-emerald-600 font-bold">
+                      {isBangla ? '+ লাভ যোগ' : '+ Add Profit'}
+                    </span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-sans text-xs font-bold">৳</span>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder={isBangla ? 'লাভের পরিমাণ বসান...' : 'Enter profit amount...'}
+                      value={profitInput}
+                      onChange={(e) => {
+                        let val = e.target.value;
+                        if (val.length > 1 && val.startsWith('0') && !val.startsWith('0.')) {
+                          val = val.replace(/^0+/, '');
+                        }
+                        setProfitInput(val);
+                      }}
+                      className="w-full text-xs pl-7 pr-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-bold font-sans"
+                      id="profit-amount-input"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                {/* Selling Price Calculation Result Card */}
+                {(() => {
+                  const profitVal = parseFloat(profitInput) || 0;
+                  const buyingPriceVal = activeProfitCalcProduct.buyingPrice;
+                  const totalSellingPrice = buyingPriceVal + profitVal;
+                  const profitPercent = buyingPriceVal > 0 ? (profitVal / buyingPriceVal) * 100 : 0;
+
+                  return (
+                    <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-4 space-y-2.5">
+                      <div className="flex items-center justify-between text-xs text-slate-600 font-semibold border-b border-dashed border-emerald-100 pb-2">
+                        <span>{isBangla ? 'কিনা দাম:' : 'Cost Price:'}</span>
+                        <span className="font-sans font-bold text-slate-800">{formatCurrency(buyingPriceVal, isBangla)}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-slate-600 font-semibold border-b border-dashed border-emerald-100 pb-2">
+                        <span>{isBangla ? 'লাভের টাকা:' : 'Profit:'}</span>
+                        <span className="font-sans font-bold text-emerald-700">
+                          {profitVal > 0 ? `+ ${formatCurrency(profitVal, isBangla)}` : formatCurrency(0, isBangla)}
+                        </span>
+                      </div>
+                      {profitVal > 0 && (
+                        <div className="flex items-center justify-between text-[11px] font-bold text-emerald-600">
+                          <span>{isBangla ? 'লাভের শতকরা হার:' : 'Profit Percentage:'}</span>
+                          <span className="font-sans bg-emerald-100/60 px-2 py-0.5 rounded-full">
+                            {isBangla ? toBanglaNumber(profitPercent.toFixed(1)) : profitPercent.toFixed(1)}%
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="text-xs font-extrabold text-slate-800">{isBangla ? 'বিক্রয় মূল্য (কাস্টমার রেট):' : 'Selling Price:'}</span>
+                        <span className="text-base font-black text-emerald-800 font-sans">
+                          {formatCurrency(totalSellingPrice, isBangla)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Close Button */}
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveProfitCalcProduct(null)}
+                    className="w-full py-2.5 text-xs text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 transition-colors font-bold rounded-xl cursor-pointer text-center"
+                  >
+                    {isBangla ? 'বন্ধ করুন' : 'Close'}
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}
