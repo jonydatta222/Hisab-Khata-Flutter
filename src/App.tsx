@@ -3616,13 +3616,13 @@ export default function App() {
                                     >
                                       <div className="flex items-center justify-between gap-3">
                                         {/* Left: Product Name */}
-                                        <div className="flex-1 min-w-0">
+                                        <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar">
                                           <span 
                                             onClick={() => {
                                               setActiveProfitCalcProduct(item);
                                               setProfitInput('');
                                             }}
-                                            className={`font-black text-xs sm:text-[13px] md:text-sm cursor-pointer transition-colors block break-words leading-tight py-1 ${scheme.nameColor}`}
+                                            className={`font-black text-[10px] sm:text-[11px] md:text-xs cursor-pointer transition-colors block whitespace-nowrap leading-tight py-1 ${scheme.nameColor}`}
                                             title={isBangla ? 'লাভ হিসাব করতে ক্লিক করুন' : 'Click to calculate profit'}
                                           >
                                             {item.name}
