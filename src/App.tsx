@@ -3554,146 +3554,122 @@ export default function App() {
 
                           return (
                             <div className="flex-1 flex flex-col justify-between">
-                              <div className="max-h-[380px] overflow-y-auto no-scrollbar space-y-2 p-1">
-                                {itemsToShow.map((item) => {
+                              <div className="max-h-[380px] overflow-y-auto no-scrollbar space-y-2.5 p-1">
+                                {itemsToShow.map((item, idx) => {
                                   const isEditing = editingRateId === item.id;
+                                  const colorSchemes = [
+                                    {
+                                      border: 'border-l-4 border-l-sky-500 border-slate-200/60 hover:border-sky-300',
+                                      bg: 'bg-sky-50/15 hover:bg-sky-50/30',
+                                      nameColor: 'text-sky-950 hover:text-sky-600',
+                                      priceBg: 'bg-sky-50/80 text-sky-950 border border-sky-100',
+                                    },
+                                    {
+                                      border: 'border-l-4 border-l-emerald-500 border-slate-200/60 hover:border-emerald-300',
+                                      bg: 'bg-emerald-50/15 hover:bg-emerald-50/30',
+                                      nameColor: 'text-emerald-950 hover:text-emerald-600',
+                                      priceBg: 'bg-emerald-50/80 text-emerald-950 border border-emerald-100',
+                                    },
+                                    {
+                                      border: 'border-l-4 border-l-indigo-500 border-slate-200/60 hover:border-indigo-300',
+                                      bg: 'bg-indigo-50/15 hover:bg-indigo-50/30',
+                                      nameColor: 'text-indigo-950 hover:text-indigo-600',
+                                      priceBg: 'bg-indigo-50/80 text-indigo-950 border border-indigo-100',
+                                    },
+                                    {
+                                      border: 'border-l-4 border-l-amber-500 border-slate-200/60 hover:border-amber-300',
+                                      bg: 'bg-amber-50/15 hover:bg-amber-50/30',
+                                      nameColor: 'text-amber-950 hover:text-amber-600',
+                                      priceBg: 'bg-amber-50/80 text-amber-950 border border-amber-100',
+                                    },
+                                    {
+                                      border: 'border-l-4 border-l-violet-500 border-slate-200/60 hover:border-violet-300',
+                                      bg: 'bg-violet-50/15 hover:bg-violet-50/30',
+                                      nameColor: 'text-violet-950 hover:text-violet-600',
+                                      priceBg: 'bg-violet-50/80 text-violet-950 border border-violet-100',
+                                    },
+                                    {
+                                      border: 'border-l-4 border-l-rose-500 border-slate-200/60 hover:border-rose-300',
+                                      bg: 'bg-rose-50/15 hover:bg-rose-50/30',
+                                      nameColor: 'text-rose-950 hover:text-rose-600',
+                                      priceBg: 'bg-rose-50/80 text-rose-950 border border-rose-100',
+                                    },
+                                    {
+                                      border: 'border-l-4 border-l-teal-500 border-slate-200/60 hover:border-teal-300',
+                                      bg: 'bg-teal-50/15 hover:bg-teal-50/30',
+                                      nameColor: 'text-teal-950 hover:text-teal-600',
+                                      priceBg: 'bg-teal-50/80 text-teal-950 border border-teal-100',
+                                    },
+                                    {
+                                      border: 'border-l-4 border-l-fuchsia-500 border-slate-200/60 hover:border-fuchsia-300',
+                                      bg: 'bg-fuchsia-50/15 hover:bg-fuchsia-50/30',
+                                      nameColor: 'text-fuchsia-950 hover:text-fuchsia-600',
+                                      priceBg: 'bg-fuchsia-50/80 text-fuchsia-950 border border-fuchsia-100',
+                                    }
+                                  ];
+                                  const scheme = colorSchemes[idx % colorSchemes.length];
+
                                   return (
                                     <div 
                                       key={item.id} 
-                                      className={`p-2 rounded-xl border transition-all duration-150 ${
-                                        isEditing 
-                                          ? 'bg-sky-50 border-sky-300 shadow-3xs' 
-                                          : 'bg-white border-slate-200/60 shadow-3xs hover:bg-sky-50/20 hover:border-sky-100'
-                                      }`}
+                                      className={`p-3 rounded-xl border transition-all duration-150 shadow-2xs ${scheme.bg} ${scheme.border}`}
                                     >
-                                      {isEditing ? (
-                                        <div className="flex flex-col gap-2">
-                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                            <div>
-                                              <label className="block text-[9px] font-black text-slate-500 mb-0.5">
-                                                {isBangla ? 'মালের নাম' : 'Product Name'}
-                                              </label>
-                                              <input
-                                                type="text"
-                                                value={editRateName}
-                                                onChange={(e) => setEditRateName(e.target.value)}
-                                                className="w-full text-[10px] p-1.5 rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white font-medium text-slate-800"
-                                                autoFocus
-                                              />
-                                            </div>
-                                            <div>
-                                              <label className="block text-[9px] font-black text-slate-500 mb-0.5">
-                                                {isBangla ? 'কেনা দাম (৳)' : 'Price (৳)'}
-                                              </label>
-                                              <input
-                                                type="number"
-                                                value={editRatePrice}
-                                                onChange={(e) => {
-                                                  let val = e.target.value;
-                                                  if (val.length > 1 && val.startsWith('0') && !val.startsWith('0.')) {
-                                                    val = val.replace(/^0+/, '');
-                                                  }
-                                                  setEditRatePrice(val);
-                                                }}
-                                                className="w-full text-[10px] p-1.5 rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white font-bold text-slate-800"
-                                              />
-                                            </div>
-                                          </div>
-                                          <div>
-                                            <label className="block text-[9px] font-black text-slate-500 mb-0.5">
-                                              {isBangla ? 'কীওয়ার্ড / ট্যাগ (কমা দিয়ে আলাদা করুন)' : 'Keywords / Tags (comma separated)'}
-                                            </label>
-                                            <input
-                                              type="text"
-                                              value={editRateKeywords}
-                                              onChange={(e) => setEditRateKeywords(e.target.value)}
-                                              placeholder={isBangla ? 'যেমন: আলু, লাল আলু, potato' : 'e.g. potato, red potato'}
-                                              className="w-full text-[10px] p-1.5 rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white font-medium text-slate-800"
-                                            />
-                                          </div>
-                                          <div className="flex items-center gap-1.5 justify-end pt-1.5 border-t border-slate-100">
-                                            <button
-                                              type="button"
-                                              onClick={() => setEditingRateId(null)}
-                                              className="px-2 py-1 text-[9px] text-slate-500 hover:bg-slate-200 rounded flex items-center gap-1 border border-slate-200 bg-white font-bold cursor-pointer"
-                                            >
-                                              <X className="h-2.5 w-2.5" />
-                                              <span>{isBangla ? 'বাতিল' : 'Cancel'}</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                const priceNum = parseFloat(editRatePrice);
-                                                if (editRateName.trim() && !isNaN(priceNum) && priceNum >= 0) {
-                                                  handleUpdateProductRate(item.id, editRateName, priceNum, editRateKeywords);
-                                                  setEditingRateId(null);
-                                                }
-                                              }}
-                                              className="px-2 py-1 text-[9px] text-white bg-sky-600 hover:bg-sky-500 rounded flex items-center gap-1 font-bold cursor-pointer"
-                                            >
-                                              <Check className="h-2.5 w-2.5" />
-                                              <span>{isBangla ? 'সেভ' : 'Save'}</span>
-                                            </button>
-                                          </div>
+                                      <div className="flex items-center justify-between gap-3">
+                                        {/* Left: Product Name */}
+                                        <div className="flex-1 min-w-0">
+                                          <span 
+                                            onClick={() => {
+                                              setActiveProfitCalcProduct(item);
+                                              setProfitInput('');
+                                            }}
+                                            className={`font-black text-xs sm:text-[13px] md:text-sm cursor-pointer transition-colors block break-words leading-tight py-1 ${scheme.nameColor}`}
+                                            title={isBangla ? 'লাভ হিসাব করতে ক্লিক করুন' : 'Click to calculate profit'}
+                                          >
+                                            {item.name}
+                                          </span>
                                         </div>
-                                      ) : (
-                                        <div className="flex items-center justify-between gap-1.5">
-                                          {/* Left: Product Name */}
-                                          <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar">
-                                            <span 
-                                              onClick={() => {
-                                                setActiveProfitCalcProduct(item);
-                                                setProfitInput('');
-                                              }}
-                                              className="font-bold text-slate-800 text-[10px] sm:text-xs cursor-pointer hover:text-sky-600 transition-colors whitespace-nowrap block leading-tight"
-                                              title={isBangla ? 'লাভ হিসাব করতে ক্লিক করুন' : 'Click to calculate profit'}
-                                            >
-                                              {item.name}
-                                            </span>
-                                          </div>
 
-                                          {/* Right: Cost Price & Actions */}
-                                          <div className="flex items-center gap-2 shrink-0">
-                                            <span className="font-extrabold text-slate-950 text-[10px] sm:text-xs font-sans">
-                                              {formatCurrency(item.buyingPrice, isBangla)}
-                                            </span>
-                                            <div className="h-3 w-[1px] bg-slate-200" />
-                                            <div className="flex items-center gap-0.5">
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  setEditingRateId(item.id);
-                                                  setEditRateName(item.name);
-                                                  setEditRatePrice(String(item.buyingPrice));
-                                                  setEditRateKeywords(item.keywords || '');
-                                                }}
-                                                className="p-1 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded transition-colors cursor-pointer shrink-0"
-                                                title={isBangla ? 'পরিবর্তন করুন' : 'Edit'}
-                                              >
-                                                <Edit2 className="h-3 w-3" />
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  setEditingRateId(null);
-                                                  setConfirmModal({
-                                                    isOpen: true,
-                                                    title: isBangla ? 'পণ্যের রেট মুছুন' : 'Delete Product Rate',
-                                                    message: isBangla 
-                                                      ? `আপনি কি নিশ্চিতভাবে "${item.name}"-এর রেট মুছে ফেলতে চান?` 
-                                                      : `Are you sure you want to delete the rate for "${item.name}"?`,
-                                                    onConfirm: () => handleDeleteProductRate(item.id)
-                                                  });
-                                                }}
-                                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer shrink-0"
-                                                title={isBangla ? 'মুছে ফেলুন' : 'Delete'}
-                                              >
-                                                <Trash2 className="h-3 w-3" />
-                                              </button>
-                                            </div>
+                                        {/* Right: Cost Price & Actions */}
+                                        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+                                          <span className={`px-2 py-0.5 rounded-lg font-extrabold text-[11px] sm:text-xs font-sans shadow-3xs whitespace-nowrap ${scheme.priceBg}`}>
+                                            {formatCurrency(item.buyingPrice, isBangla)}
+                                          </span>
+                                          <div className="h-4 w-[1px] bg-slate-200 shrink-0" />
+                                          <div className="flex items-center gap-0.5 shrink-0">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setEditingRateId(item.id);
+                                                setEditRateName(item.name);
+                                                setEditRatePrice(String(item.buyingPrice));
+                                                setEditRateKeywords(item.keywords || '');
+                                              }}
+                                              className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-md transition-colors cursor-pointer shrink-0 active:scale-95"
+                                              title={isBangla ? 'পরিবর্তন করুন' : 'Edit'}
+                                            >
+                                              <Edit2 className="h-4 w-4" />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setEditingRateId(null);
+                                                setConfirmModal({
+                                                  isOpen: true,
+                                                  title: isBangla ? 'পণ্যের রেট মুছুন' : 'Delete Product Rate',
+                                                  message: isBangla 
+                                                    ? `আপনি কি নিশ্চিতভাবে "${item.name}"-এর রেট মুছে ফেলতে চান?` 
+                                                    : `Are you sure you want to delete the rate for "${item.name}"?`,
+                                                  onConfirm: () => handleDeleteProductRate(item.id)
+                                                });
+                                              }}
+                                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer shrink-0 active:scale-95"
+                                              title={isBangla ? 'মুছে ফেলুন' : 'Delete'}
+                                            >
+                                              <Trash2 className="h-4 w-4" />
+                                            </button>
                                           </div>
                                         </div>
-                                      )}
+                                      </div>
                                     </div>
                                   );
                                 })}
@@ -6992,6 +6968,124 @@ export default function App() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- EDIT PRODUCT RATE MODAL (Large & Spacious) --- */}
+      <AnimatePresence>
+        {editingRateId !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setEditingRateId(null)}
+              className="fixed inset-0 bg-black"
+            />
+
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 border border-slate-100 overflow-hidden z-50"
+              id="edit-product-rate-modal-box"
+            >
+              <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                <h3 className="font-bold text-slate-800 text-base flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 bg-sky-500 rounded-full animate-pulse"></span>
+                  {isBangla ? 'পণ্য রেট পরিবর্তন' : 'Edit Product Wholesale Rate'}
+                </h3>
+                <button
+                  onClick={() => setEditingRateId(null)}
+                  className="text-slate-400 hover:text-slate-650 transition-colors cursor-pointer text-xs font-bold p-1 hover:bg-slate-100 rounded-full"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">
+                    {isBangla ? 'মালের নাম' : 'Product Name'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder={isBangla ? 'যেমন: আলু (১ কেজি)' : 'e.g. Potato (1kg)'}
+                    value={editRateName}
+                    onChange={(e) => setEditRateName(e.target.value)}
+                    className="w-full text-sm p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-slate-50 hover:bg-white focus:bg-white transition-all font-semibold"
+                    id="edit-rate-name-input"
+                    autoFocus
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">
+                    {isBangla ? 'কেনা দাম (টাকা)' : 'Buying Price (৳)'}
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    placeholder={isBangla ? 'যেমন: ১২০' : 'e.g. 120'}
+                    value={editRatePrice}
+                    onChange={(e) => {
+                      let val = e.target.value;
+                      if (val.length > 1 && val.startsWith('0') && !val.startsWith('0.')) {
+                        val = val.replace(/^0+/, '');
+                      }
+                      setEditRatePrice(val);
+                    }}
+                    className="w-full text-sm p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-slate-50 hover:bg-white focus:bg-white transition-all font-sans font-black"
+                    id="edit-rate-price-input"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">
+                    {isBangla ? 'কীওয়ার্ড / ট্যাগ (কমা দিয়ে আলাদা করুন)' : 'Keywords / Tags (comma separated)'}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={isBangla ? 'যেমন: আলু, লাল আলু, potato' : 'e.g. potato, red potato'}
+                    value={editRateKeywords}
+                    onChange={(e) => setEditRateKeywords(e.target.value)}
+                    className="w-full text-sm p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-slate-50 hover:bg-white focus:bg-white transition-all"
+                    id="edit-rate-keywords-input"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setEditingRateId(null)}
+                    className="px-4 py-2 text-xs font-black text-slate-500 hover:bg-slate-100 rounded-xl border border-slate-200 cursor-pointer"
+                  >
+                    {isBangla ? 'বাতিল' : 'Cancel'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const priceNum = parseFloat(editRatePrice);
+                      if (editRateName.trim() && !isNaN(priceNum) && priceNum >= 0) {
+                        handleUpdateProductRate(editingRateId, editRateName, priceNum, editRateKeywords);
+                        setEditingRateId(null);
+                      } else {
+                        showToast(isBangla ? 'দয়া করে সঠিক নাম এবং দাম লিখুন!' : 'Please enter valid name and price!');
+                      }
+                    }}
+                    className="px-5 py-2 text-xs font-black text-white bg-sky-600 hover:bg-sky-500 rounded-xl shadow-sm cursor-pointer"
+                    id="edit-rate-submit-btn"
+                  >
+                    {isBangla ? 'পরিবর্তন করুন' : 'Update Rate'}
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}
