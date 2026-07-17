@@ -6,6 +6,7 @@ export interface Transaction {
   amount: number;
   isCash: boolean; // true = cash sale/deposit, false = due (baki) sale
   customer: string; // customer name for due sales
+  quantity?: number; // quantity sold
 }
 
 export interface Expense {
@@ -34,6 +35,8 @@ export interface OutOfStockItem {
   id: string;
   name: string;
   dateAdded: string; // YYYY-MM-DD
+  stock: number; // current remaining stock
+  initialStock?: number; // original added stock
 }
 
 export interface ProductRateItem {

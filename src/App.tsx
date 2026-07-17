@@ -311,12 +311,17 @@ export default function App() {
   const [addDueAmount, setAddDueAmount] = useState('');
   const [addDueProduct, setAddDueProduct] = useState('');
   const [oosItemName, setOosItemName] = useState('');
+  const [oosItemStock, setOosItemStock] = useState('10');
+  const [editOosStock, setEditOosStock] = useState('0');
   const [rateItemName, setRateItemName] = useState('');
   const [rateItemPrice, setRateItemPrice] = useState('');
   const [rateItemKeywords, setRateItemKeywords] = useState('');
+  const [rateItemStock, setRateItemStock] = useState('');
+  const [editRateStock, setEditRateStock] = useState('');
   const [oosPage, setOosPage] = useState(1);
   const [ratePage, setRatePage] = useState(1);
   const [showAllOos, setShowAllOos] = useState(false);
+  const [oosFilter, setOosFilter] = useState<'all' | 'empty'>('all');
   const [showAllRates, setShowAllRates] = useState(false);
   const [oosSearch, setOosSearch] = useState('');
   const [rateSearch, setRateSearch] = useState('');
@@ -450,7 +455,14 @@ export default function App() {
   const [isOthersModalOpen, setIsOthersModalOpen] = useState(false);
 
   const [authServerType, setAuthServerType] = useState<'dev' | 'pre'>(() => {
-    return (localStorage.getItem('hisab_khata_auth_server_type') as 'dev' | 'pre') || 'dev';
+    // Default to 'pre' (Live Server) and migrate any 'dev' value to 'pre' to prevent data/backup loss,
+    // ensuring it is always connected to the Live Server after installation as requested.
+    const saved = localStorage.getItem('hisab_khata_auth_server_type');
+    if (!saved || saved === 'dev') {
+      localStorage.setItem('hisab_khata_auth_server_type', 'pre');
+      return 'pre';
+    }
+    return saved as 'dev' | 'pre';
   });
 
   const [authTab, setAuthTab] = useState<'google' | 'email'>('google');
@@ -1963,6 +1975,127 @@ export default function App() {
 
   // --- Core Actions ---
 
+  // Word-based clean split match helper for robust stock product name checking
+  const isMatch = (oosName: string, inputName: string) => {
+    const oosClean = oosName.trim().toLowerCase();
+    const inputClean = inputName.trim().toLowerCase();
+    
+    if (oosClean === inputClean) return true;
+    if (!oosClean || !inputClean) return false;
+    
+    const oosWords = oosClean.replace(/[-,./_+*()]/g, ' ').split(/\s+/).filter(Boolean);
+    const inputWords = inputClean.replace(/[-,./_+*()]/g, ' ').split(/\s+/).filter(Boolean);
+    
+    if (oosWords.length === 0 || inputWords.length === 0) return false;
+    
+    // Check if all words of the shorter string are contained in the longer string
+    const [shorter, longer] = oosWords.length < inputWords.length ? [oosWords, inputWords] : [inputWords, oosWords];
+    
+    const allMatch = shorter.every(word => longer.includes(word));
+    if (allMatch) return true;
+    
+    return false;
+  };
+
+  // Helper to parse product name and quantity automatically from string
+  const parseProductAndQty = (part: string): { name: string; qty: number } => {
+    const trimmed = part.trim();
+    if (!trimmed) return { name: '', qty: 1 };
+
+    // Match patterns like "Product Name 5", "Product Name x5", "Product Name * 5", "5 Product Name", "5x Product Name", "Product Name - 5", "Product Name 5টি"
+    const trailingRegex = /(.*?)\s+(?:x|X|\*|-)?\s*(\d+)(?:\s*(?:টি|pc|pcs|piece|pieces|qty|quantity|kg|gm|ltr|ml|বস্তা|পিস))?\s*$/;
+    const matchTrailing = trimmed.match(trailingRegex);
+    if (matchTrailing) {
+      const name = matchTrailing[1].trim();
+      const qty = parseInt(matchTrailing[2], 10);
+      if (name && !isNaN(qty) && qty > 0) {
+        return { name, qty };
+      }
+    }
+
+    const leadingRegex = /^\s*(\d+)\s*(?:x|X|\*|-)?\s+(.*)/;
+    const matchLeading = trimmed.match(leadingRegex);
+    if (matchLeading) {
+      const qty = parseInt(matchLeading[1], 10);
+      const name = matchLeading[2].trim();
+      if (name && !isNaN(qty) && qty > 0) {
+        return { name, qty };
+      }
+    }
+
+    return { name: trimmed, qty: 1 };
+  };
+
+  // Deduct stock for multiple products when sold (safe from stale state!)
+  const deductMultipleStock = (itemsToDeduct: { name: string; qty: number }[]) => {
+    if (itemsToDeduct.length === 0) return;
+
+    let updatedSome = false;
+    const updatedOos = outOfStockItems.map(item => {
+      let totalDeductQty = 0;
+      const oosNameClean = item.name.toLowerCase().trim();
+
+      itemsToDeduct.forEach(deductItem => {
+        const deductNameClean = deductItem.name.toLowerCase().trim();
+        if (isMatch(oosNameClean, deductNameClean)) {
+          totalDeductQty += deductItem.qty;
+        }
+      });
+
+      if (totalDeductQty > 0) {
+        const currentStock = item.stock;
+        const actualNewStock = Math.max(0, currentStock - totalDeductQty);
+        updatedSome = true;
+        if (currentStock > 0 && actualNewStock <= 0) {
+          showToast(isBangla ? `⚠️ "${item.name}" শেষ হয়ে গেছে!` : `⚠️ "${item.name}" is out of stock!`);
+        }
+        return { ...item, stock: actualNewStock };
+      }
+
+      return item;
+    });
+
+    if (updatedSome) {
+      saveOutOfStockItemsToStorage(updatedOos);
+    }
+  };
+
+  // Restore stock for multiple products (when transaction is deleted or edited)
+  const restoreMultipleStock = (itemsToRestore: { name: string; qty: number }[]) => {
+    if (itemsToRestore.length === 0) return;
+
+    let updatedSome = false;
+    const updatedOos = outOfStockItems.map(item => {
+      let totalRestoreQty = 0;
+      const oosNameClean = item.name.toLowerCase().trim();
+
+      itemsToRestore.forEach(restoreItem => {
+        const restoreNameClean = restoreItem.name.toLowerCase().trim();
+        if (isMatch(oosNameClean, restoreNameClean)) {
+          totalRestoreQty += restoreItem.qty;
+        }
+      });
+
+      if (totalRestoreQty > 0) {
+        const currentStock = item.stock;
+        const actualNewStock = currentStock + totalRestoreQty;
+        updatedSome = true;
+        return { ...item, stock: actualNewStock };
+      }
+
+      return item;
+    });
+
+    if (updatedSome) {
+      saveOutOfStockItemsToStorage(updatedOos);
+    }
+  };
+
+  // Deduct stock for a product name when sold (legacy wrapper)
+  const deductStock = (prodName: string, qty: number) => {
+    deductMultipleStock([{ name: prodName, qty }]);
+  };
+
   // Add a sale/transaction
   const handleAddTransaction = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1990,6 +2123,11 @@ export default function App() {
 
     const updated = [newTx, ...transactions];
     saveTransactionsToStorage(updated);
+
+    // Deduct stock if matching product exists
+    const parts = productName.trim().split(/[+,/]+/).map(p => p.trim()).filter(Boolean);
+    const itemsToDeduct = parts.map(part => parseProductAndQty(part));
+    deductMultipleStock(itemsToDeduct);
 
     // Reset Form
     setProductName('');
@@ -2052,10 +2190,15 @@ export default function App() {
     e.preventDefault();
     if (!oosItemName.trim()) return;
 
+    const parsedStock = parseFloat(oosItemStock);
+    const stockCount = isNaN(parsedStock) ? 0 : parsedStock;
+
     const newItem: OutOfStockItem = {
       id: generateId(),
       name: oosItemName.trim(),
-      dateAdded: selectedDate // YYYY-MM-DD
+      dateAdded: selectedDate, // YYYY-MM-DD
+      stock: stockCount,
+      initialStock: stockCount
     };
 
     const updated = [newItem, ...outOfStockItems];
@@ -2063,6 +2206,7 @@ export default function App() {
 
     // Reset Form & Close Modal
     setOosItemName('');
+    setOosItemStock('10');
     setIsOutOfStockModalOpen(false);
 
     showToast(isBangla ? 'আইটেমটি তালিকায় যুক্ত হয়েছে!' : 'Item added to list!');
@@ -2076,13 +2220,13 @@ export default function App() {
   };
 
   // Update Out of Stock item
-  const handleUpdateOutOfStock = (id: string, newName: string) => {
+  const handleUpdateOutOfStock = (id: string, newName: string, newStock: number) => {
     if (!newName.trim()) return;
     const updated = outOfStockItems.map(item => 
-      item.id === id ? { ...item, name: newName.trim() } : item
+      item.id === id ? { ...item, name: newName.trim(), stock: newStock, initialStock: item.initialStock !== undefined ? item.initialStock : newStock } : item
     );
     saveOutOfStockItemsToStorage(updated);
-    showToast(isBangla ? 'ঘাটতি পণ্যের নাম আপডেট করা হয়েছে!' : 'Out of stock item updated!');
+    showToast(isBangla ? 'পণ্যের নাম ও স্টক তথ্য আপডেট করা হয়েছে!' : 'Item and stock details updated!');
   };
 
   // Add Product rate item
@@ -2107,9 +2251,10 @@ export default function App() {
     setRateItemName('');
     setRateItemPrice('');
     setRateItemKeywords('');
+    setRateItemStock('');
     setIsProductRateModalOpen(false);
 
-    showToast(isBangla ? 'মালের রেট যুক্ত হয়েছে!' : 'Product rate added!');
+    showToast(isBangla ? 'পণ্যের রেট যুক্ত হয়েছে!' : 'Product rate added!');
   };
 
   // Add customer due from Due List tab
@@ -2126,6 +2271,8 @@ export default function App() {
       hour12: true
     });
 
+    const hasProd = addDueProduct.trim().length > 0;
+
     const newTx: Transaction = {
       id: generateId(),
       date: selectedDate,
@@ -2133,11 +2280,19 @@ export default function App() {
       product: addDueProduct.trim() || (isBangla ? 'পূর্বের বকেয়া বাকি' : 'Previous Due'),
       amount: price,
       isCash: false,
-      customer: addDueCustomerName.trim()
+      customer: addDueCustomerName.trim(),
+      quantity: hasProd ? 1 : undefined
     };
 
     const updated = [newTx, ...transactions];
     saveTransactionsToStorage(updated);
+
+    // Deduct stock if matching product exists
+    if (hasProd) {
+      const parts = addDueProduct.trim().split(/[+,/]+/).map(p => p.trim()).filter(Boolean);
+      const itemsToDeduct = parts.map(part => parseProductAndQty(part));
+      deductMultipleStock(itemsToDeduct);
+    }
 
     // Reset Form & Close Modal
     setAddDueCustomerName('');
@@ -2152,7 +2307,7 @@ export default function App() {
   const handleDeleteProductRate = (id: string) => {
     const updated = productRates.filter(item => item.id !== id);
     saveProductRatesToStorage(updated);
-    showToast(isBangla ? 'মালের রেট মুছে ফেলা হয়েছে!' : 'Product rate deleted!');
+    showToast(isBangla ? 'পণ্যের রেট মুছে ফেলা হয়েছে!' : 'Product rate deleted!');
   };
 
   // Update Product rate item
@@ -2162,7 +2317,8 @@ export default function App() {
       item.id === id ? { ...item, name: newName.trim(), buyingPrice: newPrice, keywords: newKeywords?.trim() || undefined } : item
     );
     saveProductRatesToStorage(updated);
-    showToast(isBangla ? 'মালের রেট ও দাম আপডেট করা হয়েছে!' : 'Product rate updated!');
+
+    showToast(isBangla ? 'পণ্যের রেট ও দাম আপডেট করা হয়েছে!' : 'Product rate updated!');
   };
 
   // Handle Due Deposit (বাকির টাকা জমা)
@@ -2196,15 +2352,40 @@ export default function App() {
 
   // Delete transaction with safety rollback
   const handleDeleteTransaction = (id: string) => {
+    const txToDelete = transactions.find((tx) => tx.id === id);
     const updated = transactions.filter((tx) => tx.id !== id);
     saveTransactionsToStorage(updated);
+
+    // Restore stock
+    if (txToDelete && txToDelete.product) {
+      const parts = txToDelete.product.trim().split(/[+,/]+/).map(p => p.trim()).filter(Boolean);
+      const itemsToRestore = parts.map(part => parseProductAndQty(part));
+      restoreMultipleStock(itemsToRestore);
+    }
+
     showToast(isBangla ? 'হিসাবটি সফলভাবে মোছা হয়েছে' : 'Ledger entry deleted');
   };
 
   // Update a transaction (Edit inline)
   const handleUpdateTransaction = (updatedTx: Transaction) => {
+    const oldTx = transactions.find((tx) => tx.id === updatedTx.id);
     const updated = transactions.map((tx) => (tx.id === updatedTx.id ? updatedTx : tx));
     saveTransactionsToStorage(updated);
+
+    // Adjust stock if product changed
+    if (oldTx && oldTx.product !== updatedTx.product) {
+      if (oldTx.product) {
+        const oldParts = oldTx.product.trim().split(/[+,/]+/).map(p => p.trim()).filter(Boolean);
+        const itemsToRestore = oldParts.map(part => parseProductAndQty(part));
+        restoreMultipleStock(itemsToRestore);
+      }
+      if (updatedTx.product) {
+        const newParts = updatedTx.product.trim().split(/[+,/]+/).map(p => p.trim()).filter(Boolean);
+        const itemsToDeduct = newParts.map(part => parseProductAndQty(part));
+        deductMultipleStock(itemsToDeduct);
+      }
+    }
+
     showToast(isBangla ? 'হিসাবটি সফলভাবে আপডেট করা হয়েছে' : 'Ledger entry updated');
   };
 
@@ -2631,7 +2812,7 @@ export default function App() {
                       verifiedMemoData.items.map((item: any, idx: number) => (
                         <div key={idx} className="flex justify-between text-[11px] py-1 border-b border-[#3A506B]/10 last:border-0 font-extrabold text-slate-200">
                           <span>{item.name} <span className="text-[8px] text-slate-400">({isBangla ? toBanglaNumber(item.quantity) : item.quantity} {item.unit || ''})</span></span>
-                          <span>৳{isBangla ? toBanglaNumber(item.total) : item.total}</span>
+                          <span>{isBangla ? '৳' : '$'}{isBangla ? toBanglaNumber(item.total) : item.total}</span>
                         </div>
                       ))
                     ) : (
@@ -2647,25 +2828,25 @@ export default function App() {
                   <div className="pt-2 space-y-2 text-slate-400 font-extrabold">
                     <div className="flex justify-between text-[11px]">
                       <span>{isBangla ? 'উপ-মোট মূল্য:' : 'Subtotal:'}</span>
-                      <span className="text-slate-200">৳{isBangla ? toBanglaNumber(verifiedMemoData.subTotal || 0) : (verifiedMemoData.subTotal || 0)}</span>
+                      <span className="text-slate-200">{isBangla ? '৳' : '$'}{isBangla ? toBanglaNumber(verifiedMemoData.subTotal || 0) : (verifiedMemoData.subTotal || 0)}</span>
                     </div>
                     {(verifiedMemoData.discount || 0) > 0 && (
                       <div className="flex justify-between text-[11px]">
                         <span>{isBangla ? 'ডিসকাউন্ট (ছাড়):' : 'Discount:'}</span>
-                        <span className="text-rose-400">- ৳{isBangla ? toBanglaNumber(verifiedMemoData.discount) : verifiedMemoData.discount}</span>
+                        <span className="text-rose-400">- {isBangla ? '৳' : '$'}{isBangla ? toBanglaNumber(verifiedMemoData.discount) : verifiedMemoData.discount}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-teal-400 font-black text-sm border-t border-[#3A506B]/40 pt-2">
                       <span>{isBangla ? 'সর্বমোট মূল্য (পরিশোধযোগ্য):' : 'Net Payable:'}</span>
-                      <span>৳{isBangla ? toBanglaNumber(verifiedMemoData.netTotal || 0) : (verifiedMemoData.netTotal || 0)}</span>
+                      <span>{isBangla ? '৳' : '$'}{isBangla ? toBanglaNumber(verifiedMemoData.netTotal || 0) : (verifiedMemoData.netTotal || 0)}</span>
                     </div>
                     <div className="flex justify-between text-[11px]">
                       <span>{isBangla ? 'পরিশোধিত টাকা:' : 'Paid Amount:'}</span>
-                      <span className="text-emerald-400 font-black">৳{isBangla ? toBanglaNumber(verifiedMemoData.paid || 0) : (verifiedMemoData.paid || 0)}</span>
+                      <span className="text-emerald-400 font-black">{isBangla ? '৳' : '$'}{isBangla ? toBanglaNumber(verifiedMemoData.paid || 0) : (verifiedMemoData.paid || 0)}</span>
                     </div>
                     <div className="flex justify-between text-[11px] border-t border-[#3A506B]/10 pt-1.5" style={{ color: (verifiedMemoData.due || 0) > 0 ? '#f87171' : '#34d399' }}>
                       <span>{isBangla ? 'বাকি বা বকেয়া:' : 'Due balance:'}</span>
-                      <span className="font-black">৳{isBangla ? toBanglaNumber(verifiedMemoData.due || 0) : (verifiedMemoData.due || 0)}</span>
+                      <span className="font-black">{isBangla ? '৳' : '$'}{isBangla ? toBanglaNumber(verifiedMemoData.due || 0) : (verifiedMemoData.due || 0)}</span>
                     </div>
                   </div>
                 </div>
@@ -2912,7 +3093,7 @@ export default function App() {
                     {isBangla ? 'মোট বিক্রি' : 'Total Sales'}
                   </span>
                   <span className="text-[18px] sm:text-xl font-black text-emerald-600 block mt-0.5 leading-tight">
-                    {isBalancesHidden ? '৳ ••••' : formatCurrency(todaySales, isBangla)}
+                    {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(todaySales, isBangla)}
                   </span>
                 </div>
 
@@ -2921,7 +3102,7 @@ export default function App() {
                     {isBangla ? 'নগদ জমা' : 'Cash Deposit'}
                   </span>
                   <span className="text-[18px] sm:text-xl font-black text-blue-600 block mt-0.5 leading-tight">
-                    {isBalancesHidden ? '৳ ••••' : formatCurrency(todayCashDeposit, isBangla)}
+                    {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(todayCashDeposit, isBangla)}
                   </span>
                 </div>
 
@@ -2933,7 +3114,7 @@ export default function App() {
                     {isBangla ? 'আজকের বাকি' : "Today's Due"}
                   </span>
                   <span className="text-[18px] sm:text-xl font-black text-amber-600 block mt-0.5 leading-tight">
-                    {isBalancesHidden ? '৳ ••••' : formatCurrency(todayDueTaken, isBangla)}
+                    {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(todayDueTaken, isBangla)}
                   </span>
                 </div>
 
@@ -2942,7 +3123,7 @@ export default function App() {
                     {isBangla ? 'আজকের খরচ' : "Today's Expense"}
                   </span>
                   <span className="text-[18px] sm:text-xl font-black text-rose-600 block mt-0.5 leading-tight">
-                    {isBalancesHidden ? '৳ ••••' : formatCurrency(todayExpenseTotal, isBangla)}
+                    {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(todayExpenseTotal, isBangla)}
                   </span>
                 </div>
 
@@ -2964,7 +3145,7 @@ export default function App() {
                     id="oos-trigger-btn"
                   >
                     <PlusCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                    <span className="truncate">{isBangla ? 'মাল নেই' : 'No Goods'}</span>
+                    <span className="truncate">{isBangla ? 'পণ্যে নেই' : 'No Goods'}</span>
                   </motion.button>
                   
                   <motion.button
@@ -2976,7 +3157,7 @@ export default function App() {
                     id="rates-trigger-btn"
                   >
                     <PlusCircle className="h-3.5 w-3.5 text-sky-600 shrink-0" />
-                    <span className="truncate">{isBangla ? 'মালের রেট' : 'Rates'}</span>
+                    <span className="truncate">{isBangla ? 'পণ্যের রেট' : 'Rates'}</span>
                   </motion.button>
 
                   <motion.button
@@ -3041,8 +3222,8 @@ export default function App() {
                     <div className="col-span-5">
                       <div className="flex items-center justify-between mb-1">
                         <label className="block text-xs font-black text-slate-600 flex items-center gap-1">
-                          <span>৳</span>
-                          <span>{isBangla ? 'দাম (৳)' : 'Price (৳)'}</span>
+                          <span>{isBangla ? '৳' : '$'}</span>
+                          <span>{isBangla ? 'বিক্রি মূল্য' : 'Sale Price'}</span>
                         </label>
                       </div>
                       <input
@@ -3050,7 +3231,7 @@ export default function App() {
                         type="number"
                         inputMode="decimal"
                         required
-                        placeholder="৳ ০.০০"
+                        placeholder={isBangla ? "৳ ০.০০" : "$ 0.00"}
                         value={amount}
                         onChange={(e) => {
                           let val = e.target.value;
@@ -3186,6 +3367,65 @@ export default function App() {
                 onUpdate={handleUpdateTransaction}
               />
 
+              {/* ৩. পুরাতন খতিয়ান বা তারিখ পরিবর্তন করার উইজেট (Date Navigation Panel) */}
+              <div className="bg-white rounded-2xl border-2 border-slate-100 p-4 shadow-sm flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">📅</span>
+                    <div>
+                      <h3 className="text-xs sm:text-sm font-black text-slate-700 leading-tight">
+                        {isBangla ? 'তারিখ পরিবর্তন করুন' : 'Change Viewing Date'}
+                      </h3>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        {isBangla ? 'সহজে আগের বা পরের দিনের হিসাব দেখতে নেক্সট/প্রিভিয়াস চাপুন।' : 'Easily view past/future days by pressing next/prev.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {selectedDate !== getTodayDateString() && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDate(getTodayDateString())}
+                      className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 text-[10px] font-black rounded-lg transition-all cursor-pointer active:scale-95 shadow-3xs"
+                    >
+                      {isBangla ? 'আজকের তারিখে ফিরুন' : 'Back to Today'}
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 p-1 rounded-xl shadow-3xs justify-between">
+                  <button
+                    type="button"
+                    onClick={() => changeDateByDays(-1)}
+                    className="p-2 hover:bg-slate-200/70 text-slate-600 rounded-lg transition-all cursor-pointer active:scale-90 flex items-center gap-1 text-xs font-bold"
+                    title={isBangla ? 'আগের দিন' : 'Previous Day'}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    <span className="hidden sm:inline">{isBangla ? 'আগের দিন' : 'Prev'}</span>
+                  </button>
+                  
+                  <div className="flex items-center gap-1.5 px-2">
+                    <Calendar className="h-4 w-4 text-indigo-500 shrink-0" />
+                    <input
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                      className="border-0 focus:ring-0 p-0 text-xs font-black text-slate-700 bg-transparent focus:outline-none w-[115px]"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => changeDateByDays(1)}
+                    className="p-2 hover:bg-slate-200/70 text-slate-600 rounded-lg transition-all cursor-pointer active:scale-90 flex items-center gap-1 text-xs font-bold"
+                    title={isBangla ? 'পরের দিন' : 'Next Day'}
+                  >
+                    <span className="hidden sm:inline">{isBangla ? 'পরের দিন' : 'Next'}</span>
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
             </div>
           </motion.div>
         )}
@@ -3215,7 +3455,7 @@ export default function App() {
                 }`}
               >
                 <span>📦</span>
-                <span>{isBangla ? 'মাল নেই' : 'Short/OOS'}</span>
+                <span>{isBangla ? 'পণ্য আছে/নেই' : 'Stock Status'}</span>
               </button>
               <button
                 type="button"
@@ -3282,17 +3522,25 @@ export default function App() {
                           <AlertCircle className="h-4 w-4" />
                         </span>
                         <h3 className="font-extrabold text-slate-800 text-sm sm:text-base truncate">
-                          {isBangla ? 'শর্ট/নেই মাল এর তালিকা' : 'Short/Out of Stock'}
+                          {isBangla ? 'শর্ট/নেই পণ্যের তালিকা' : 'Short/Out of Stock'}
                         </h3>
                       </div>
                       <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-extrabold bg-amber-100 text-amber-850 px-2.5 py-1 rounded-full font-sans">
-                            {isBangla ? toBanglaNumber(outOfStockItems.length) : outOfStockItems.length}
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-bold sm:hidden">
-                            {isBangla ? 'টি পণ্য' : 'items'}
-                          </span>
+                          {(() => {
+                            const totalOutOfStockCount = outOfStockItems.filter(item => (item.stock || 0) <= 0).length;
+                            return (
+                              <>
+                                <span className="text-xs font-extrabold bg-rose-100 text-rose-800 px-2.5 py-1 rounded-full font-sans flex items-center gap-1" title={isBangla ? 'স্টক শেষ পণ্য' : 'Out of stock goods'}>
+                                  <span className="h-1.5 w-1.5 rounded-full bg-rose-600 animate-pulse"></span>
+                                  <span>{isBangla ? `${toBanglaNumber(totalOutOfStockCount)}টি শেষ` : `${totalOutOfStockCount} empty`}</span>
+                                </span>
+                                <span className="text-xs font-extrabold bg-amber-100 text-amber-850 px-2.5 py-1 rounded-full font-sans" title={isBangla ? 'সর্বমোট সংরক্ষিত পণ্য' : 'Total listed goods'}>
+                                  {isBangla ? `${toBanglaNumber(outOfStockItems.length)}টি মোট` : `${outOfStockItems.length} total`}
+                                </span>
+                              </>
+                            );
+                          })()}
                         </div>
                         <button
                           onClick={() => setIsOutOfStockModalOpen(true)}
@@ -3307,10 +3555,10 @@ export default function App() {
                     {/* Tab Specific Content */}
                     <div className="flex-1 flex flex-col justify-between">
                       {/* Local Search for Out Of Stock */}
-                      <div className="mb-4">
+                      <div className="mb-3">
                         <input
                           type="text"
-                          placeholder={isBangla ? 'মালের নাম দিয়ে খুঁজুন...' : 'Search goods...'}
+                          placeholder={isBangla ? 'পণ্যের নাম দিয়ে খুঁজুন...' : 'Search goods...'}
                           value={oosSearch}
                           onChange={(e) => {
                             setOosSearch(e.target.value);
@@ -3321,21 +3569,64 @@ export default function App() {
                         />
                       </div>
 
+                      {/* Stock Status Filter Toggles */}
+                      <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/60 mb-4 text-[10px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOosFilter('all');
+                            setOosPage(1);
+                            setShowAllOos(false);
+                          }}
+                          className={`flex-1 py-1.5 px-2 rounded-md text-center transition-all cursor-pointer ${
+                            oosFilter === 'all'
+                              ? 'bg-white text-amber-900 shadow-3xs font-extrabold'
+                              : 'text-slate-500 hover:text-slate-850'
+                          }`}
+                        >
+                          {isBangla ? '১. সকল পণ্যের তালিকা' : '1. All Goods List'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOosFilter('empty');
+                            setOosPage(1);
+                            setShowAllOos(false);
+                          }}
+                          className={`flex-1 py-1.5 px-2 rounded-md text-center transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                            oosFilter === 'empty'
+                              ? 'bg-rose-50 text-rose-700 shadow-3xs font-extrabold'
+                              : 'text-slate-500 hover:text-slate-850'
+                          }`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+                          <span>{isBangla ? '২. পণ্য শেষ হয়ে গেছে' : '2. Out of Stock'}</span>
+                        </button>
+                      </div>
+
                       {/* List Container without lagging layout animation */}
                       <div className="flex-1 space-y-2 flex flex-col justify-between">
                         {(() => {
                           const filteredOos = outOfStockItems
-                            .filter(item => item.name.toLowerCase().includes(oosSearch.toLowerCase()))
+                            .filter(item => {
+                              const matchesSearch = item.name.toLowerCase().includes(oosSearch.toLowerCase());
+                              if (oosFilter === 'empty') {
+                                return matchesSearch && (item.stock || 0) <= 0;
+                              }
+                              return matchesSearch;
+                            })
                             .sort((a, b) => b.dateAdded.localeCompare(a.dateAdded));
                           
-                          const itemsToShow = showAllOos ? filteredOos : filteredOos.slice(0, 6);
+                          const itemsToShow = showAllOos ? filteredOos : filteredOos.slice(0, 15);
 
                           if (filteredOos.length === 0) {
                             return (
-                              <div className="flex flex-col items-center justify-center text-center py-16 flex-1 text-slate-400">
+                              <div className="flex flex-col items-center justify-center text-center py-12 flex-1 text-slate-400">
                                 <AlertCircle className="h-10 w-10 text-slate-300 mb-2" />
                                 <p className="text-xs font-semibold">
-                                  {isBangla ? 'কোনো তথ্য খুঁজে পাওয়া যায়নি!' : 'No out of stock items found!'}
+                                  {oosFilter === 'empty'
+                                    ? (isBangla ? 'সব পণ্য স্টকে আছে! কোনো পণ্য শেষ হয়নি।' : 'All goods are in stock! No out of stock items.')
+                                    : (isBangla ? 'কোনো পণ্য খুঁজে পাওয়া যায়নি!' : 'No listed items found!')}
                                 </p>
                                 <button
                                   onClick={() => setIsOutOfStockModalOpen(true)}
@@ -3349,32 +3640,57 @@ export default function App() {
 
                           return (
                             <div className="flex-1 flex flex-col justify-between">
-                              <div className="space-y-2.5">
+                              <div className="max-h-[380px] overflow-y-auto pr-1 space-y-1.5 no-scrollbar">
                                 {itemsToShow.map((item) => {
                                   const isEditing = editingOosId === item.id;
                                   return (
                                     <div 
                                       key={item.id} 
-                                      className={`flex items-center justify-between p-3 rounded-xl border transition-all duration-150 ${
+                                      className={`flex items-center justify-between p-1 px-2.5 rounded-lg border transition-all duration-150 ${
                                         isEditing 
                                           ? 'bg-amber-50 border-amber-300 shadow-3xs' 
                                           : 'bg-amber-50/40 border-amber-100 hover:bg-amber-50/80 hover:border-amber-200'
                                       }`}
                                     >
                                       {isEditing ? (
-                                        <div className="flex-1 flex flex-col gap-2">
-                                          <input
-                                            type="text"
-                                            value={editOosName}
-                                            onChange={(e) => setEditOosName(e.target.value)}
-                                            className="w-full text-xs p-1.5 rounded-lg border border-amber-300 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white font-bold text-slate-800"
-                                            autoFocus
-                                          />
+                                        <div className="flex-1 flex flex-col gap-2.5">
+                                          <div className="grid grid-cols-3 gap-2">
+                                            <div className="col-span-2">
+                                              <label className="block text-[9px] font-bold text-slate-400 mb-0.5">
+                                                {isBangla ? 'পণ্যের নাম' : 'Goods Name'}
+                                              </label>
+                                              <input
+                                                type="text"
+                                                value={editOosName}
+                                                onChange={(e) => setEditOosName(e.target.value)}
+                                                className="w-full text-xs p-1.5 rounded-lg border border-amber-300 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white font-bold text-slate-800"
+                                                autoFocus
+                                              />
+                                            </div>
+                                            <div>
+                                              <label className="block text-[9px] font-bold text-slate-400 mb-0.5">
+                                                {isBangla ? 'স্টক সংখ্যা' : 'Stock Qty'}
+                                              </label>
+                                              <input
+                                                type="number"
+                                                min="0"
+                                                value={editOosStock}
+                                                onChange={(e) => {
+                                                  let val = e.target.value;
+                                                  if (val.length > 1 && val.startsWith('0')) {
+                                                    val = val.replace(/^0+/, '');
+                                                  }
+                                                  setEditOosStock(val);
+                                                }}
+                                                className="w-full text-xs p-1.5 rounded-lg border border-amber-300 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white font-bold text-slate-800 font-sans"
+                                              />
+                                            </div>
+                                          </div>
                                           <div className="flex items-center gap-1.5 justify-end">
                                             <button
                                               type="button"
                                               onClick={() => setEditingOosId(null)}
-                                              className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[10px] rounded-md transition-colors cursor-pointer flex items-center gap-0.5"
+                                              className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[10px] rounded-md transition-colors cursor-pointer flex items-center gap-0.5"
                                             >
                                               <X className="h-3 w-3" />
                                               <span>{isBangla ? 'বাতিল' : 'Cancel'}</span>
@@ -3383,11 +3699,12 @@ export default function App() {
                                               type="button"
                                               onClick={() => {
                                                 if (editOosName.trim()) {
-                                                  handleUpdateOutOfStock(item.id, editOosName);
+                                                  const val = parseFloat(editOosStock);
+                                                  handleUpdateOutOfStock(item.id, editOosName, isNaN(val) ? 0 : val);
                                                   setEditingOosId(null);
                                                 }
                                               }}
-                                              className="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] rounded-md transition-colors cursor-pointer flex items-center gap-0.5"
+                                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] rounded-md transition-colors cursor-pointer flex items-center gap-0.5"
                                             >
                                               <Check className="h-3 w-3" />
                                               <span>{isBangla ? 'সেভ' : 'Save'}</span>
@@ -3397,23 +3714,62 @@ export default function App() {
                                       ) : (
                                         <>
                                           <div className="min-w-0 flex-1 pr-2">
-                                            <h4 className="text-xs font-extrabold text-slate-800 break-words whitespace-normal leading-snug">{item.name}</h4>
-                                            <span className="text-[10px] text-slate-400 font-sans block mt-0.5">
-                                              {formatDate(item.dateAdded, isBangla)}
+                                            <div className="flex items-center gap-1 flex-wrap">
+                                              <h4 className="text-xs font-bold text-slate-800 break-words whitespace-normal leading-tight">{item.name}</h4>
+                                              {(item.stock || 0) <= 0 ? (
+                                                <span className="px-1 py-0.2 rounded bg-rose-50 border border-rose-100 text-rose-600 font-extrabold text-[8px] leading-none">
+                                                  {isBangla ? 'নেই' : 'Out!'}
+                                                </span>
+                                              ) : (
+                                                <span className="px-1 py-0.2 rounded bg-emerald-50 border border-emerald-100 text-emerald-700 font-extrabold text-[8px] leading-none">
+                                                  {isBangla ? 'আছে' : 'In'}
+                                                </span>
+                                              )}
+                                            </div>
+                                            <span className="text-[9px] text-slate-400 font-sans block mt-0.5">
+                                              {isBangla ? 'যোগ: ' : 'Added: '} {formatDate(item.dateAdded, isBangla)}
                                             </span>
                                           </div>
                                           
-                                          <div className="flex items-center gap-1.5 shrink-0">
+                                          <div className="flex items-center gap-1 shrink-0">
+                                            {/* Quick Stock Adjustment */}
+                                            <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5 shadow-3xs mr-0.5 font-sans">
+                                              <button
+                                                onClick={() => {
+                                                  const newStock = Math.max(0, (item.stock || 0) - 1);
+                                                  handleUpdateOutOfStock(item.id, item.name, newStock);
+                                                }}
+                                                className="w-5 h-5 flex items-center justify-center text-[10px] font-black text-slate-500 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+                                                title={isBangla ? '১টি কমান' : 'Decrease by 1'}
+                                              >
+                                                -
+                                              </button>
+                                              <span className="px-1 text-[10px] font-black text-slate-755 min-w-[15px] text-center font-mono">
+                                                {isBangla ? toBanglaNumber(item.stock || 0) : (item.stock || 0)}
+                                              </span>
+                                              <button
+                                                onClick={() => {
+                                                  const newStock = (item.stock || 0) + 1;
+                                                  handleUpdateOutOfStock(item.id, item.name, newStock);
+                                                }}
+                                                className="w-5 h-5 flex items-center justify-center text-[10px] font-black text-slate-500 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+                                                title={isBangla ? '১টি বাড়ান' : 'Increase by 1'}
+                                              >
+                                                +
+                                              </button>
+                                            </div>
+
                                             <button
                                               onClick={() => {
                                                 setEditingOosId(item.id);
                                                 setEditOosName(item.name);
+                                                setEditOosStock(String(item.stock || 0));
                                                 setDeletingOosId(null);
                                               }}
-                                              className="p-1.5 hover:bg-amber-100 text-slate-400 hover:text-amber-600 rounded-lg transition-colors cursor-pointer"
-                                              title={isBangla ? 'নাম পরিবর্তন' : 'Edit'}
+                                              className="p-1 hover:bg-amber-100/50 text-slate-400 hover:text-amber-600 rounded-md transition-colors cursor-pointer"
+                                              title={isBangla ? 'সম্পাদনা' : 'Edit'}
                                             >
-                                              <Edit2 className="h-3.5 w-3.5" />
+                                              <Edit2 className="h-3 w-3" />
                                             </button>
                                             <button
                                               onClick={() => {
@@ -3427,10 +3783,10 @@ export default function App() {
                                                   onConfirm: () => handleDeleteOutOfStock(item.id)
                                                 });
                                               }}
-                                              className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer shrink-0"
+                                              className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-md transition-colors cursor-pointer shrink-0"
                                               title={isBangla ? 'মুছে ফেলুন' : 'Delete'}
                                             >
-                                              <Trash2 className="h-3.5 w-3.5" />
+                                              <Trash2 className="h-3 w-3" />
                                             </button>
                                           </div>
                                         </>
@@ -3441,7 +3797,7 @@ export default function App() {
                               </div>
 
                               {/* See More Button */}
-                              {filteredOos.length > 6 && (
+                              {filteredOos.length > 15 && (
                                 <div className="flex justify-center pt-4 border-t border-slate-100 mt-4">
                                   <button
                                     onClick={() => setShowAllOos(!showAllOos)}
@@ -3512,7 +3868,7 @@ export default function App() {
                       <div className="mb-4">
                         <input
                           type="text"
-                          placeholder={isBangla ? 'মালের নাম দিয়ে খুঁজুন...' : 'Search product...'}
+                          placeholder={isBangla ? 'পণ্যের নাম দিয়ে খুঁজুন...' : 'Search product...'}
                           value={rateSearch}
                           onChange={(e) => {
                             setRateSearch(e.target.value);
@@ -3612,17 +3968,17 @@ export default function App() {
                                   return (
                                     <div 
                                       key={item.id} 
-                                      className={`p-3 rounded-xl border transition-all duration-150 shadow-2xs ${scheme.bg} ${scheme.border}`}
+                                      className={`p-2.5 sm:p-3 rounded-xl border transition-all duration-150 shadow-2xs ${scheme.bg} ${scheme.border}`}
                                     >
-                                      <div className="flex items-center justify-between gap-3">
+                                      <div className="grid grid-cols-[1fr_auto] items-center gap-2 sm:gap-3">
                                         {/* Left: Product Name */}
-                                        <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+                                        <div className="min-w-0 overflow-x-auto no-scrollbar">
                                           <span 
                                             onClick={() => {
                                               setActiveProfitCalcProduct(item);
                                               setProfitInput('');
                                             }}
-                                            className={`font-black text-[10px] sm:text-[11px] md:text-xs cursor-pointer transition-colors block whitespace-nowrap leading-tight py-1 ${scheme.nameColor}`}
+                                            className={`font-black text-[11px] sm:text-xs md:text-sm cursor-pointer transition-colors block whitespace-nowrap leading-tight py-1 ${scheme.nameColor}`}
                                             title={isBangla ? 'লাভ হিসাব করতে ক্লিক করুন' : 'Click to calculate profit'}
                                           >
                                             {item.name}
@@ -3630,8 +3986,8 @@ export default function App() {
                                         </div>
 
                                         {/* Right: Cost Price & Actions */}
-                                        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-                                          <span className={`px-2 py-0.5 rounded-lg font-extrabold text-[11px] sm:text-xs font-sans shadow-3xs whitespace-nowrap ${scheme.priceBg}`}>
+                                        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+                                          <span className={`px-1.5 py-0.5 sm:px-2 rounded-lg font-extrabold text-[10px] sm:text-xs font-sans shadow-3xs whitespace-nowrap ${scheme.priceBg}`}>
                                             {formatCurrency(item.buyingPrice, isBangla)}
                                           </span>
                                           <div className="h-4 w-[1px] bg-slate-200 shrink-0" />
@@ -3644,10 +4000,10 @@ export default function App() {
                                                 setEditRatePrice(String(item.buyingPrice));
                                                 setEditRateKeywords(item.keywords || '');
                                               }}
-                                              className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-md transition-colors cursor-pointer shrink-0 active:scale-95"
+                                              className="p-1 sm:p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-md transition-colors cursor-pointer shrink-0 active:scale-95"
                                               title={isBangla ? 'পরিবর্তন করুন' : 'Edit'}
                                             >
-                                              <Edit2 className="h-4 w-4" />
+                                              <Edit2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                             </button>
                                             <button
                                               type="button"
@@ -3662,10 +4018,10 @@ export default function App() {
                                                   onConfirm: () => handleDeleteProductRate(item.id)
                                                 });
                                               }}
-                                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer shrink-0 active:scale-95"
+                                              className="p-1 sm:p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer shrink-0 active:scale-95"
                                               title={isBangla ? 'মুছে ফেলুন' : 'Delete'}
                                             >
-                                              <Trash2 className="h-4 w-4" />
+                                              <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                             </button>
                                           </div>
                                         </div>
@@ -3823,7 +4179,7 @@ export default function App() {
                   {isBangla ? 'চলতি মাসের বিক্রি' : "This Month's Sales"}
                 </span>
                 <span className="text-[17px] sm:text-lg font-black text-emerald-600 block mt-1">
-                  {isBalancesHidden ? '৳ ••••' : formatCurrency(monthlyStats.sales, isBangla)}
+                  {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(monthlyStats.sales, isBangla)}
                 </span>
               </div>
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs">
@@ -3831,7 +4187,7 @@ export default function App() {
                   {isBangla ? 'চলতি মাসের নগদ জমা' : "This Month's Cash"}
                 </span>
                 <span className="text-[17px] sm:text-lg font-black text-blue-600 block mt-1">
-                  {isBalancesHidden ? '৳ ••••' : formatCurrency(monthlyStats.cash, isBangla)}
+                  {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(monthlyStats.cash, isBangla)}
                 </span>
               </div>
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs">
@@ -3839,7 +4195,7 @@ export default function App() {
                   {isBangla ? 'চলতি মাসের বাকি' : "This Month's Due"}
                 </span>
                 <span className="text-[17px] sm:text-lg font-black text-amber-600 block mt-1">
-                  {isBalancesHidden ? '৳ ••••' : formatCurrency(monthlyStats.due, isBangla)}
+                  {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(monthlyStats.due, isBangla)}
                 </span>
               </div>
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs">
@@ -3847,7 +4203,7 @@ export default function App() {
                   {isBangla ? 'চলতি মাসের খরচ' : "This Month's Expenses"}
                 </span>
                 <span className="text-[17px] sm:text-lg font-black text-rose-600 block mt-1">
-                  {isBalancesHidden ? '৳ ••••' : formatCurrency(monthlyStats.expense, isBangla)}
+                  {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(monthlyStats.expense, isBangla)}
                 </span>
               </div>
             </div>
@@ -4751,7 +5107,7 @@ export default function App() {
                       )}
                     </div>
 
-                    <div className={`space-y-2 ${showAllTopProducts ? 'max-h-[245px] overflow-y-auto pr-1.5 custom-scrollbar' : ''}`}>
+                    <div className={`space-y-2 ${showAllTopProducts ? 'max-h-[380px] overflow-y-auto pr-1.5 custom-scrollbar' : ''}`}>
                       {(() => {
                         const filtered = searchTopProduct.trim()
                           ? topSellingProducts.filter(item => item.name.toLowerCase().includes(searchTopProduct.toLowerCase()))
@@ -5564,7 +5920,7 @@ export default function App() {
                         {isBangla ? 'ঐ দিনের মোট বিক্রি' : 'Sales on Date'}
                       </span>
                       <span className="text-[17px] sm:text-lg font-black text-emerald-700 block mt-1">
-                        {isBalancesHidden ? '৳ ••••' : formatCurrency(todaySales, isBangla)}
+                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(todaySales, isBangla)}
                       </span>
                     </div>
                     <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
@@ -5572,7 +5928,7 @@ export default function App() {
                         {isBangla ? 'নগদ জমা' : 'Cash Deposit'}
                       </span>
                       <span className="text-[17px] sm:text-lg font-black text-blue-700 block mt-1">
-                        {isBalancesHidden ? '৳ ••••' : formatCurrency(todayCashDeposit, isBangla)}
+                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(todayCashDeposit, isBangla)}
                       </span>
                     </div>
                     <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-100">
@@ -5580,7 +5936,7 @@ export default function App() {
                         {isBangla ? 'বাকি লেনদেন' : 'Dues Given'}
                       </span>
                       <span className="text-[17px] sm:text-lg font-black text-amber-700 block mt-1">
-                        {isBalancesHidden ? '৳ ••••' : formatCurrency(todayDueTaken, isBangla)}
+                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(todayDueTaken, isBangla)}
                       </span>
                     </div>
                     <div className="bg-rose-50/50 p-3 rounded-xl border border-rose-100">
@@ -5588,7 +5944,7 @@ export default function App() {
                         {isBangla ? 'ঐ দিনের মোট খরচ' : 'Expenses on Date'}
                       </span>
                       <span className="text-[17px] sm:text-lg font-black text-rose-700 block mt-1">
-                        {isBalancesHidden ? '৳ ••••' : formatCurrency(todayExpenseTotal, isBangla)}
+                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(todayExpenseTotal, isBangla)}
                       </span>
                     </div>
                   </div>
@@ -5600,7 +5956,7 @@ export default function App() {
                     <div>
                       <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
                         <span>📦</span>
-                        <span>{isBangla ? 'বিক্রিত মালের সম্পূর্ণ ইতিহাস' : 'Sold Products History'}</span>
+                        <span>{isBangla ? 'বিক্রিত পণ্যের সম্পূর্ণ ইতিহাস' : 'Sold Products History'}</span>
                       </h2>
                       <p className="text-xs text-slate-400 mt-0.5">
                         {isBangla ? 'দোকানের শুরু থেকে বিক্রি হওয়া সকল পণ্যের তালিকা।' : 'All products sold from the beginning.'}
@@ -5638,7 +5994,7 @@ export default function App() {
                   {filteredSoldTransactions.length === 0 ? (
                     <div className="text-center py-12 border border-dashed border-slate-150 rounded-xl bg-slate-50/50">
                       <p className="text-slate-400 text-xs font-bold">
-                        {isBangla ? 'কোনো বিক্রিত মাল খুঁজে পাওয়া যায়নি।' : 'No sold products match your search.'}
+                        {isBangla ? 'কোনো বিক্রিত পণ্য খুঁজে পাওয়া যায়নি।' : 'No sold products match your search.'}
                       </p>
                     </div>
                   ) : (
@@ -5670,7 +6026,7 @@ export default function App() {
                                         {tx.product}
                                       </span>
                                       <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-400 font-bold font-mono shrink-0">
-                                        📅 {formatDate(tx.date, isBangla)}
+                                        📅 {formatDate(tx.date, isBangla, true)}
                                       </span>
                                     </div>
                                     {!tx.isCash && tx.customer && (
@@ -5695,7 +6051,7 @@ export default function App() {
                                 </td>
                                 <td className="py-2 px-2 text-right w-[80px] sm:w-[95px]">
                                   <span className="font-extrabold text-slate-900 text-xs sm:text-[13px] font-sans">
-                                    {isBalancesHidden ? '৳ ••••' : formatCurrency(tx.amount, isBangla)}
+                                    {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(tx.amount, isBangla)}
                                   </span>
                                 </td>
                               </tr>
@@ -6154,7 +6510,7 @@ export default function App() {
                           <span className="font-sans text-slate-900">{isBangla ? toBanglaNumber(syncConflictData.localData.expenses.length) : syncConflictData.localData.expenses.length}</span>
                         </li>
                         <li className="flex justify-between">
-                          <span className="text-slate-400 font-medium">{isBangla ? 'মালের রেট:' : 'Product Rates:'}</span>
+                          <span className="text-slate-400 font-medium">{isBangla ? 'পণ্যের রেট:' : 'Product Rates:'}</span>
                           <span className="font-sans text-slate-900">{isBangla ? toBanglaNumber(syncConflictData.localData.productRates.length) : syncConflictData.localData.productRates.length}</span>
                         </li>
                         <li className="flex justify-between">
@@ -6191,7 +6547,7 @@ export default function App() {
                           <span className="font-sans text-slate-900">{isBangla ? toBanglaNumber(syncConflictData.cloudData.expenses?.length || 0) : (syncConflictData.cloudData.expenses?.length || 0)}</span>
                         </li>
                         <li className="flex justify-between">
-                          <span className="text-slate-400 font-medium">{isBangla ? 'মালের রেট:' : 'Product Rates:'}</span>
+                          <span className="text-slate-400 font-medium">{isBangla ? 'পণ্যের রেট:' : 'Product Rates:'}</span>
                           <span className="font-sans text-slate-900">{isBangla ? toBanglaNumber(syncConflictData.cloudData.productRates?.length || 0) : (syncConflictData.cloudData.productRates?.length || 0)}</span>
                         </li>
                         <li className="flex justify-between">
@@ -6364,7 +6720,7 @@ export default function App() {
                             <div className="flex items-center gap-1.5">
                               <input
                                 type="number"
-                                placeholder={isBangla ? '৳ জমার পরিমাণ' : '৳ Deposit Amount'}
+                                placeholder={isBangla ? '৳ জমার পরিমাণ' : '$ Deposit Amount'}
                                 value={modalDepositValue}
                                 onChange={(e) => {
                                   let val = e.target.value;
@@ -6619,7 +6975,7 @@ export default function App() {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1">
-                    {isBangla ? 'টাকার পরিমাণ' : 'Amount (৳)'}
+                    {isBangla ? 'টাকার পরিমাণ' : 'Amount ($)'}
                   </label>
                   <input
                     type="number"
@@ -6714,7 +7070,7 @@ export default function App() {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1">
-                    {isBangla ? 'বকেয়া বাকি টাকা (৳)' : 'Due Amount (৳)'}
+                    {isBangla ? 'বকেয়া বাকি টাকা (৳)' : 'Due Amount ($)'}
                   </label>
                   <input
                     type="number"
@@ -6736,7 +7092,7 @@ export default function App() {
 
                 <div className="relative">
                   <label className="block text-xs font-semibold text-slate-500 mb-1">
-                    {isBangla ? 'মালের নাম বা বিবরণ (ঐচ্ছিক)' : 'Details / Product (Optional)'}
+                    {isBangla ? 'পণ্যের নাম বা বিবরণ (ঐচ্ছিক)' : 'Details / Product (Optional)'}
                   </label>
                   <input
                     type="text"
@@ -6817,7 +7173,7 @@ export default function App() {
               <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
                 <h3 className="font-bold text-slate-800 text-base flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse"></span>
-                  {isBangla ? 'দোকানে যে মাল নেই তা লিখুন' : 'Add Out Of Stock Item'}
+                  {isBangla ? 'দোকানে যে পণ্য নেই তা লিখুন' : 'Add Out Of Stock Item'}
                 </h3>
                 <button
                   onClick={() => setIsOutOfStockModalOpen(false)}
@@ -6830,7 +7186,7 @@ export default function App() {
               <form onSubmit={handleAddOutOfStock} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1">
-                    {isBangla ? 'মালের নাম' : 'Goods Name'}
+                    {isBangla ? 'পণ্যের নাম' : 'Goods Name'}
                   </label>
                   <input
                     type="text"
@@ -6840,6 +7196,28 @@ export default function App() {
                     onChange={(e) => setOosItemName(e.target.value)}
                     className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500"
                     id="oos-item-name-input"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">
+                    {isBangla ? 'স্টক সংখ্যা / পণ্যের পরিমাণ' : 'Stock Quantity'}
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    placeholder={isBangla ? 'যেমন: ১০' : 'e.g. 10'}
+                    value={oosItemStock}
+                    onChange={(e) => {
+                      let val = e.target.value;
+                      if (val.length > 1 && val.startsWith('0')) {
+                        val = val.replace(/^0+/, '');
+                      }
+                      setOosItemStock(val);
+                    }}
+                    className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 font-sans"
+                    id="oos-item-stock-input"
                   />
                 </div>
 
@@ -6889,7 +7267,7 @@ export default function App() {
               <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
                 <h3 className="font-bold text-slate-800 text-base flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 bg-sky-500 rounded-full animate-pulse"></span>
-                  {isBangla ? 'মালের রেট ও কেনা দাম' : 'Add Product Buying Rate'}
+                  {isBangla ? 'পণ্যের রেট ও কেনা দাম' : 'Add Product Buying Rate'}
                 </h3>
                 <button
                   onClick={() => setIsProductRateModalOpen(false)}
@@ -6902,7 +7280,7 @@ export default function App() {
               <form onSubmit={handleAddProductRate} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1">
-                    {isBangla ? 'মালের নাম' : 'Product Name'}
+                    {isBangla ? 'পণ্যের নাম' : 'Product Name'}
                   </label>
                   <input
                     type="text"
@@ -6917,7 +7295,7 @@ export default function App() {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1">
-                    {isBangla ? 'কেনা দাম (টাকা)' : 'Buying Price (৳)'}
+                    {isBangla ? 'কেনা দাম (টাকা)' : 'Buying Price ($)'}
                   </label>
                   <input
                     type="number"
@@ -7010,7 +7388,7 @@ export default function App() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">
-                    {isBangla ? 'মালের নাম' : 'Product Name'}
+                    {isBangla ? 'পণ্যের নাম' : 'Product Name'}
                   </label>
                   <input
                     type="text"
@@ -7026,7 +7404,7 @@ export default function App() {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">
-                    {isBangla ? 'কেনা দাম (টাকা)' : 'Buying Price (৳)'}
+                    {isBangla ? 'কেনা দাম (টাকা)' : 'Buying Price ($)'}
                   </label>
                   <input
                     type="number"
@@ -7158,7 +7536,7 @@ export default function App() {
                     </span>
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-sans text-xs font-bold">৳</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-sans text-xs font-bold">{isBangla ? '৳' : '$'}</span>
                     <input
                       type="number"
                       step="any"
@@ -7431,42 +7809,6 @@ export default function App() {
                                   </span>
                                 )}
                               </div>
-
-                              {deletingTxId === tx.id ? (
-                                <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 p-1 rounded-lg">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      handleDeleteTransaction(tx.id);
-                                      setDeletingTxId(null);
-                                      // If no transactions left for this product, close modal
-                                      const remaining = getTransactionsForProduct(selectedProductForDetail || '').filter(t => t.id !== tx.id);
-                                      if (remaining.length === 0) {
-                                        setSelectedProductForDetail(null);
-                                      }
-                                    }}
-                                    className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-black text-[9px] rounded-md transition-colors cursor-pointer"
-                                  >
-                                    {isBangla ? 'হ্যাঁ' : 'Yes'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setDeletingTxId(null)}
-                                    className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-black text-[9px] rounded-md transition-colors cursor-pointer"
-                                  >
-                                    {isBangla ? 'না' : 'No'}
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setDeletingTxId(tx.id)}
-                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 border border-rose-100 hover:border-rose-200 rounded-lg transition-colors cursor-pointer"
-                                  title={isBangla ? 'ডিলিট করুন' : 'Delete'}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              )}
                             </div>
                           </div>
                         );

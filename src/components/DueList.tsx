@@ -462,7 +462,7 @@ export default function DueList({
                   </label>
                   <div className="relative">
                     <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-sm font-black text-slate-400 pointer-events-none">
-                      ৳
+                      {isBangla ? '৳' : '$'}
                     </span>
                     <input
                       type="number"

@@ -170,7 +170,7 @@ export default function MemoTab({
 
       const verifiedTextStr = isBangla 
         ? `নিশ্চিত ক্যাশ মেমো! দোকান: ${memoShopName}, রশিদ নং: ${cleanInvoiceNo}, তারিখ: ${formatDate(memoDate, true)}, ক্রেতা: ${customerName || 'সাধারণ ক্রেতা'}, সর্বমোট মূল্য: ৳${netTotal}, পরিশোধ: ৳${paidVal}, বকেয়া: ৳${dueVal}।`
-        : `Verified Invoice! Shop: ${memoShopName}, Inv No: ${cleanInvoiceNo}, Date: ${formatDate(memoDate, false)}, Customer: ${customerName || 'General Customer'}, Total Amount: ৳${netTotal}, Paid: ৳${paidVal}, Due: ৳${dueVal}.`;
+        : `Verified Invoice! Shop: ${memoShopName}, Inv No: ${cleanInvoiceNo}, Date: ${formatDate(memoDate, false)}, Customer: ${customerName || 'General Customer'}, Total Amount: $${netTotal}, Paid: $${paidVal}, Due: $${dueVal}.`;
 
       const payload = {
         invoiceNo: cleanInvoiceNo,
@@ -222,7 +222,7 @@ export default function MemoTab({
 
       const verifiedTextStr = isBangla 
         ? `নিশ্চিত ক্যাশ মেমো! দোকান: ${memoShopName}, রশিদ নং: ${cleanInvoiceNo}, তারিখ: ${formatDate(memoDate, true)}, ক্রেতা: ${customerName || 'সাধারণ ক্রেতা'}, সর্বমোট মূল্য: ৳${netTotal}, পরিশোধ: ৳${paidVal}, বকেয়া: ৳${dueVal}।`
-        : `Verified Invoice! Shop: ${memoShopName}, Inv No: ${cleanInvoiceNo}, Date: ${formatDate(memoDate, false)}, Customer: ${customerName || 'General Customer'}, Total Amount: ৳${netTotal}, Paid: ৳${paidVal}, Due: ৳${dueVal}.`;
+        : `Verified Invoice! Shop: ${memoShopName}, Inv No: ${cleanInvoiceNo}, Date: ${formatDate(memoDate, false)}, Customer: ${customerName || 'General Customer'}, Total Amount: $${netTotal}, Paid: $${paidVal}, Due: $${dueVal}.`;
 
       const payload = {
         invoiceNo: cleanInvoiceNo,
@@ -276,7 +276,7 @@ export default function MemoTab({
   // Calculations
   const [discount, setDiscount] = useState('');
   const [paid, setPaid] = useState('');
-  const [memoNote, setMemoNote] = useState(isBangla ? 'বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।' : 'N.B. All types of Kabiraji and herbal goods are available.');
+  const [memoNote, setMemoNote] = useState(isBangla ? 'বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি পণ্যসামগ্রী পাওয়া যায়।' : 'N.B. All types of Kabiraji and herbal goods are available.');
   const [showBuyerSign, setShowBuyerSign] = useState(true);
   const [showSellerSign, setShowSellerSign] = useState(true);
   const [showOfficialSeal, setShowOfficialSeal] = useState(true);
@@ -308,7 +308,7 @@ export default function MemoTab({
         phone1: 'রনি: 01767-665446',
         phone2: 'জনি: 01753-517899',
         nb: isBangla 
-          ? 'বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।' 
+          ? 'বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি পণ্যসামগ্রী পাওয়া যায়।' 
           : 'N.B. All types of Kabiraji and herbal goods are available.',
         address: isBangla 
           ? 'রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।' 
@@ -319,7 +319,7 @@ export default function MemoTab({
         title: customSealTitle || memoShopName,
         phone1: customSealPhone1 || (isBangla ? 'রনি: 01767-665446' : 'Phone 1: 01767-665446'),
         phone2: customSealPhone2,
-        nb: customSealNB || (isBangla ? 'বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।' : 'N.B. All types of Kabiraji and herbal goods are available.'),
+        nb: customSealNB || (isBangla ? 'বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি পণ্যসামগ্রী পাওয়া যায়।' : 'N.B. All types of Kabiraji and herbal goods are available.'),
         address: customSealAddress || shopAddress
       };
     }
@@ -556,7 +556,7 @@ export default function MemoTab({
     ctx.fillText(isBangla ? 'পরিমাণ' : 'Qty', (colQty + colRate) / 2, startY + 22);
     ctx.fillText(isBangla ? 'দর' : 'Rate', (colRate + colTotal) / 2, startY + 22);
     ctx.textAlign = 'right';
-    ctx.fillText(isBangla ? 'মোট টাকা' : 'Total (৳)', width - marginX - 15, startY + 22);
+    ctx.fillText(isBangla ? 'মোট টাকা' : 'Total ($)', width - marginX - 15, startY + 22);
 
     // Draw main table container box
     ctx.strokeStyle = '#0F766E';
@@ -629,24 +629,24 @@ export default function MemoTab({
     const calcSpacing = sizeType === 'pos' ? 18 : 25;
 
     // Subtotal
-    ctx.fillText(`${isBangla ? 'মোট টাকা: ' : 'Subtotal: '} ৳ ${isBangla ? toBanglaNumber(subTotal) : subTotal}`, width - marginX - 15, summaryStartY);
+    ctx.fillText(`${isBangla ? 'মোট টাকা: ' : 'Subtotal: '}${isBangla ? '৳' : '$'} ${isBangla ? toBanglaNumber(subTotal) : subTotal}`, width - marginX - 15, summaryStartY);
     
     // Discount
-    ctx.fillText(`${isBangla ? 'ডিসকাউন্ট: ' : 'Discount: '} - ৳ ${isBangla ? toBanglaNumber(discountVal) : discountVal}`, width - marginX - 15, summaryStartY + calcSpacing);
+    ctx.fillText(`${isBangla ? 'ডিসকাউন্ট: ' : 'Discount: '} - ${isBangla ? '৳' : '$'} ${isBangla ? toBanglaNumber(discountVal) : discountVal}`, width - marginX - 15, summaryStartY + calcSpacing);
     
     // Net Payable
     ctx.font = sizeType === 'pos' ? 'bold 11px sans-serif' : 'bold 15px sans-serif';
     ctx.fillStyle = '#0F766E';
-    ctx.fillText(`${isBangla ? 'সর্বমোট টাকা: ' : 'Net Payable: '} ৳ ${isBangla ? toBanglaNumber(netTotal) : netTotal}`, width - marginX - 15, summaryStartY + calcSpacing * 2);
+    ctx.fillText(`${isBangla ? 'সর্বমোট টাকা: ' : 'Net Payable: '}${isBangla ? '৳' : '$'} ${isBangla ? toBanglaNumber(netTotal) : netTotal}`, width - marginX - 15, summaryStartY + calcSpacing * 2);
 
     // Paid & Due
     ctx.font = sizeType === 'pos' ? '10px sans-serif' : '14px sans-serif';
     ctx.fillStyle = '#1E293B';
-    ctx.fillText(`${isBangla ? 'পরিশোধ: ' : 'Paid Amount: '} ৳ ${isBangla ? toBanglaNumber(paidVal) : paidVal}`, width - marginX - 15, summaryStartY + calcSpacing * 3);
+    ctx.fillText(`${isBangla ? 'পরিশোধ: ' : 'Paid Amount: '}${isBangla ? '৳' : '$'} ${isBangla ? toBanglaNumber(paidVal) : paidVal}`, width - marginX - 15, summaryStartY + calcSpacing * 3);
     
     ctx.font = sizeType === 'pos' ? 'bold 10px sans-serif' : 'bold 14px sans-serif';
     ctx.fillStyle = dueVal > 0 ? '#B91C1C' : '#047857';
-    ctx.fillText(`${isBangla ? 'বাকি (বকেয়া): ' : 'Due Balance: '} ৳ ${isBangla ? toBanglaNumber(dueVal) : dueVal}`, width - marginX - 15, summaryStartY + calcSpacing * 4);
+    ctx.fillText(`${isBangla ? 'বাকি (বকেয়া): ' : 'Due Balance: '}${isBangla ? '৳' : '$'} ${isBangla ? toBanglaNumber(dueVal) : dueVal}`, width - marginX - 15, summaryStartY + calcSpacing * 4);
 
     // Custom Note (bottom left)
     ctx.textAlign = 'left';
@@ -1280,23 +1280,23 @@ export default function MemoTab({
             <div class="totals-container">
               <div class="totals-row">
                 <span>${isBangla ? 'মোট টাকা:' : 'Subtotal:'}</span>
-                <span>৳ ${isBangla ? toBanglaNumber(subTotal) : subTotal}</span>
+                <span>${isBangla ? '৳' : '$'} ${isBangla ? toBanglaNumber(subTotal) : subTotal}</span>
               </div>
               <div class="totals-row">
                 <span>${isBangla ? 'ডিসকাউন্ট:' : 'Discount:'}</span>
-                <span>- ৳ ${isBangla ? toBanglaNumber(discountVal) : discountVal}</span>
+                <span>- ${isBangla ? '৳' : '$'} ${isBangla ? toBanglaNumber(discountVal) : discountVal}</span>
               </div>
               <div class="totals-row bold">
                 <span>${isBangla ? 'সর্বমোট টাকা:' : 'Net Payable:'}</span>
-                <span>৳ ${isBangla ? toBanglaNumber(netTotal) : netTotal}</span>
+                <span>${isBangla ? '৳' : '$'} ${isBangla ? toBanglaNumber(netTotal) : netTotal}</span>
               </div>
               <div class="totals-row">
                 <span>${isBangla ? 'পরিশোধ:' : 'Paid Amount:'}</span>
-                <span>৳ ${isBangla ? toBanglaNumber(paidVal) : paidVal}</span>
+                <span>${isBangla ? '৳' : '$'} ${isBangla ? toBanglaNumber(paidVal) : paidVal}</span>
               </div>
               <div class="totals-row due">
                 <span>${isBangla ? 'বাকি (বকেয়া):' : 'Due Balance:'}</span>
-                <span>৳ ${isBangla ? toBanglaNumber(dueVal) : dueVal}</span>
+                <span>${isBangla ? '৳' : '$'} ${isBangla ? toBanglaNumber(dueVal) : dueVal}</span>
               </div>
             </div>
 
@@ -1382,7 +1382,7 @@ export default function MemoTab({
     setMemoShopName('মেসার্স রঞ্জু দত্ত এন্ড সন্স');
     setShopAddress('রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।');
     setShopPhone('রনি: 01767-665446, জনি: 01753-517899');
-    setMemoNote('বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি মালামাল পাওয়া যায়।');
+    setMemoNote('বি.দ্র: সকল প্রকার কবিরাজি এবং বনজি পণ্যসামগ্রী পাওয়া যায়।');
     localStorage.setItem('hisab_khata_shop_name', 'মেসার্স রঞ্জু দত্ত এন্ড সন্স');
     localStorage.setItem('memo_shop_address', 'রেলওয়ে স্টেশন রোড, বড়লেখা, মৌলভীবাজার।');
     localStorage.setItem('memo_shop_phone', 'রনি: 01767-665446, জনি: 01753-517899');
@@ -1742,8 +1742,8 @@ export default function MemoTab({
                               {item.unit}
                             </span>
                           </td>
-                          <td className="px-3 py-2.5 text-right">৳{isBangla ? toBanglaNumber(item.rate) : item.rate}</td>
-                          <td className="px-3 py-2.5 text-right text-teal-700 font-black">৳{isBangla ? toBanglaNumber(item.total) : item.total}</td>
+                          <td className="px-3 py-2.5 text-right">{isBangla ? '৳' : '$'}{isBangla ? toBanglaNumber(item.rate) : item.rate}</td>
+                          <td className="px-3 py-2.5 text-right text-teal-700 font-black">{isBangla ? '৳' : '$'}{isBangla ? toBanglaNumber(item.total) : item.total}</td>
                           <td className="px-3 py-2.5 text-center">
                             <button
                               type="button"
@@ -1776,7 +1776,7 @@ export default function MemoTab({
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500">{isBangla ? 'ডিসকাউন্ট (টাকা)' : 'Discount (৳)'}</label>
+                <label className="text-xs font-bold text-slate-500">{isBangla ? 'ডিসকাউন্ট (টাকা)' : 'Discount ($)'}</label>
                 <input
                   type="number"
                   min="0"
@@ -1794,7 +1794,7 @@ export default function MemoTab({
               </div>
 
               <div className="space-y-1.5 relative">
-                <label className="text-xs font-bold text-slate-500">{isBangla ? 'পরিশোধিত টাকা' : 'Paid Amount (৳)'}</label>
+                <label className="text-xs font-bold text-slate-500">{isBangla ? 'পরিশোধিত টাকা' : 'Paid Amount ($)'}</label>
                 <div className="relative">
                   <input
                     type="number"
@@ -1975,7 +1975,7 @@ export default function MemoTab({
                           localStorage.setItem('memo_custom_seal_nb', e.target.value);
                         }}
                         className="w-full text-xs font-bold text-slate-800 bg-white border border-purple-200/80 focus:border-purple-500 rounded-xl py-1.5 px-3 outline-none transition-all shadow-3xs"
-                        placeholder={isBangla ? 'বি.দ্র: সকল প্রকার কবিরাজি মালামাল...' : 'N.B. Sold items can not be returned'}
+                        placeholder={isBangla ? 'বি.দ্র: সকল প্রকার কবিরাজি পণ্যসামগ্রী...' : 'N.B. Sold items can not be returned'}
                       />
                     </div>
 
@@ -2093,7 +2093,7 @@ export default function MemoTab({
                             <span className="text-[8px] text-slate-400 font-bold">{item.unit || ''}</span>
                           </td>
                           <td className="px-1.5 py-1 text-center border-r border-slate-200/60">{isBangla ? toBanglaNumber(item.rate) : item.rate}</td>
-                          <td className="px-2 py-1 text-right text-teal-800 font-black">৳{isBangla ? toBanglaNumber(item.total) : item.total}</td>
+                          <td className="px-2 py-1 text-right text-teal-800 font-black">{isBangla ? '৳' : '$'}{isBangla ? toBanglaNumber(item.total) : item.total}</td>
                         </tr>
                       ))
                     ) : (
@@ -2175,23 +2175,23 @@ export default function MemoTab({
                 <div className="w-1/2 space-y-1 font-bold text-slate-600">
                   <div className="flex justify-between border-b border-slate-100 pb-0.5">
                     <span>{isBangla ? 'মোট টাকা:' : 'Subtotal:'}</span>
-                    <span className="text-slate-800">৳{isBangla ? toBanglaNumber(subTotal) : subTotal}</span>
+                    <span className="text-slate-800">{isBangla ? '৳' : '$'}{isBangla ? toBanglaNumber(subTotal) : subTotal}</span>
                   </div>
                   <div className="flex justify-between border-b border-slate-100 pb-0.5 text-slate-500">
                     <span>{isBangla ? 'ডিসকাউন্ট:' : 'Discount:'}</span>
-                    <span>- ৳{isBangla ? toBanglaNumber(discountVal) : discountVal}</span>
+                    <span>- {isBangla ? '৳' : '$'}{isBangla ? toBanglaNumber(discountVal) : discountVal}</span>
                   </div>
                   <div className="flex justify-between border-b border-teal-700/40 pb-0.5 font-extrabold text-teal-800 text-[11px]">
                     <span>{isBangla ? 'সর্বমোট টাকা:' : 'Net payable:'}</span>
-                    <span>৳{isBangla ? toBanglaNumber(netTotal) : netTotal}</span>
+                    <span>{isBangla ? '৳' : '$'}{isBangla ? toBanglaNumber(netTotal) : netTotal}</span>
                   </div>
                   <div className="flex justify-between border-b border-slate-100 pb-0.5 text-slate-500">
                     <span>{isBangla ? 'পরিশোধ:' : 'Paid:'}</span>
-                    <span className="text-slate-800">৳{isBangla ? toBanglaNumber(paidVal) : paidVal}</span>
+                    <span className="text-slate-800">{isBangla ? '৳' : '$'}{isBangla ? toBanglaNumber(paidVal) : paidVal}</span>
                   </div>
                   <div className="flex justify-between font-extrabold text-[11px]" style={{ color: dueVal > 0 ? '#b91c1c' : '#047857' }}>
                     <span>{isBangla ? 'বাকি বা বকেয়া:' : 'Due balance:'}</span>
-                    <span>৳{isBangla ? toBanglaNumber(dueVal) : dueVal}</span>
+                    <span>{isBangla ? '৳' : '$'}{isBangla ? toBanglaNumber(dueVal) : dueVal}</span>
                   </div>
                 </div>
               </div>

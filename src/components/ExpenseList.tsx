@@ -105,7 +105,7 @@ export default function ExpenseList({
                         </div>
                         <div>
                           <label className="block text-[10px] font-semibold text-slate-500 mb-1">
-                            {isBangla ? 'টাকার পরিমাণ (৳)' : 'Amount (৳)'}
+                            {isBangla ? 'টাকার পরিমাণ (৳)' : 'Amount ($)'}
                           </label>
                           <input
                             type="number"

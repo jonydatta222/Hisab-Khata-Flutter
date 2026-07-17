@@ -16,7 +16,7 @@ export function toBanglaNumber(input: string | number): string {
 /**
  * Returns a nicely formatted date string in English or Bangla.
  */
-export function formatDate(dateStr: string, isBangla: boolean): string {
+export function formatDate(dateStr: string, isBangla: boolean, excludeDay: boolean = false): string {
   const parts = dateStr.split('-');
   if (parts.length !== 3) return dateStr;
   
@@ -35,6 +35,14 @@ export function formatDate(dateStr: string, isBangla: boolean): string {
   
   const dayName = isBangla ? bnDays[dayIdx] : enDays[dayIdx];
   const monthName = isBangla ? bnMonths[monthIdx] : enMonths[monthIdx];
+  
+  if (excludeDay) {
+    if (isBangla) {
+      return `${toBanglaNumber(day)} ${monthName}, ${toBanglaNumber(year)}`;
+    } else {
+      return `${day} ${monthName}, ${year}`;
+    }
+  }
   
   if (isBangla) {
     return `${dayName}, ${toBanglaNumber(day)} ${monthName}, ${toBanglaNumber(year)}`;
@@ -65,11 +73,11 @@ export function getTodayDateString(): string {
 }
 
 /**
- * Format currency with appropriate symbol (৳) and locale digits
+ * Format currency with appropriate symbol (৳ or $) and locale digits
  */
 export function formatCurrency(amount: number, isBangla: boolean): string {
   const fixed = amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-  return `৳ ${isBangla ? toBanglaNumber(fixed) : fixed}`;
+  return `${isBangla ? '৳' : '$'} ${isBangla ? toBanglaNumber(fixed) : fixed}`;
 }
 
 /**

@@ -143,7 +143,7 @@ export default function TransactionList({
                               </div>
                               <div>
                                 <label className="block text-[10px] font-black text-slate-500 mb-0.5">
-                                  {isBangla ? 'দাম (৳)' : 'Price (৳)'}
+                                  {isBangla ? 'দাম (৳)' : 'Price ($)'}
                                 </label>
                                 <input
                                   type="number"
