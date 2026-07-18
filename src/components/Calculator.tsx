@@ -200,7 +200,7 @@ export default function Calculator({ onClose, isBangla, onApplyValue }: Calculat
           {/* Header */}
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-2">
-              <span className="p-2.5 bg-[#eefcf2] rounded-xl text-[#00c853] flex items-center justify-center shadow-sm">
+              <span id="calc-header-icon" className="p-2.5 bg-[#eefcf2] rounded-xl text-[#00c853] flex items-center justify-center shadow-sm">
                 <CalcIcon className="h-5 w-5" />
               </span>
               <h3 className="font-bold text-[#0f2d59] text-[1.25rem] tracking-tight font-sans">
@@ -218,7 +218,7 @@ export default function Calculator({ onClose, isBangla, onApplyValue }: Calculat
           </div>
 
           {/* Screen Display with Navy background, rounded corners and bold white value */}
-          <div className="bg-[#0f2d59] rounded-2xl p-5 mb-5 flex flex-col items-end justify-center min-h-[96px] shadow-inner relative overflow-hidden">
+          <div id="calc-screen" className="bg-[#0f2d59] rounded-2xl p-5 mb-5 flex flex-col items-end justify-center min-h-[96px] shadow-inner relative overflow-hidden">
             <span className="text-[#8a9db5] text-xs font-mono h-5 block select-none">
               {formatDisplay(equation)}
             </span>
@@ -234,14 +234,14 @@ export default function Calculator({ onClose, isBangla, onApplyValue }: Calculat
               <button
                 key={n}
                 onPointerDown={(e) => { e.preventDefault(); handleNumClick(n); }}
-                className="h-14 bg-white active:bg-slate-100 text-[#0f2d59] font-semibold text-xl rounded-2xl shadow-[0_4px_10px_rgba(15,45,89,0.06)] border border-slate-100/50 flex items-center justify-center cursor-pointer font-sans select-none touch-none"
+                className="calc-btn-num h-14 bg-white active:bg-slate-100 text-[#0f2d59] font-semibold text-xl rounded-2xl shadow-[0_4px_10px_rgba(15,45,89,0.06)] border border-slate-100/50 flex items-center justify-center cursor-pointer font-sans select-none touch-none"
               >
                 {n}
               </button>
             ))}
             <button
               onPointerDown={(e) => { e.preventDefault(); handleOperatorClick('*'); }}
-              className="h-14 bg-[#e3f2fd] active:bg-[#bbdefb] text-[#1565c0] font-bold text-2xl rounded-2xl shadow-[0_4px_10px_rgba(21,101,192,0.06)] border border-[#e3f2fd] flex items-center justify-center cursor-pointer font-sans select-none touch-none"
+              className="calc-btn-op h-14 bg-[#e3f2fd] active:bg-[#bbdefb] text-[#1565c0] font-bold text-2xl rounded-2xl shadow-[0_4px_10px_rgba(21,101,192,0.06)] border border-[#e3f2fd] flex items-center justify-center cursor-pointer font-sans select-none touch-none"
             >
               ×
             </button>
@@ -251,14 +251,14 @@ export default function Calculator({ onClose, isBangla, onApplyValue }: Calculat
               <button
                 key={n}
                 onPointerDown={(e) => { e.preventDefault(); handleNumClick(n); }}
-                className="h-14 bg-white active:bg-slate-100 text-[#0f2d59] font-semibold text-xl rounded-2xl shadow-[0_4px_10px_rgba(15,45,89,0.06)] border border-slate-100/50 flex items-center justify-center cursor-pointer font-sans select-none touch-none"
+                className="calc-btn-num h-14 bg-white active:bg-slate-100 text-[#0f2d59] font-semibold text-xl rounded-2xl shadow-[0_4px_10px_rgba(15,45,89,0.06)] border border-slate-100/50 flex items-center justify-center cursor-pointer font-sans select-none touch-none"
               >
                 {n}
               </button>
             ))}
             <button
               onPointerDown={(e) => { e.preventDefault(); handleOperatorClick('-'); }}
-              className="h-14 bg-[#e3f2fd] active:bg-[#bbdefb] text-[#1565c0] font-bold text-2xl rounded-2xl shadow-[0_4px_10px_rgba(21,101,192,0.06)] border border-[#e3f2fd] flex items-center justify-center cursor-pointer font-sans select-none touch-none"
+              className="calc-btn-op h-14 bg-[#e3f2fd] active:bg-[#bbdefb] text-[#1565c0] font-bold text-2xl rounded-2xl shadow-[0_4px_10px_rgba(21,101,192,0.06)] border border-[#e3f2fd] flex items-center justify-center cursor-pointer font-sans select-none touch-none"
             >
               −
             </button>
@@ -268,14 +268,14 @@ export default function Calculator({ onClose, isBangla, onApplyValue }: Calculat
               <button
                 key={n}
                 onPointerDown={(e) => { e.preventDefault(); handleNumClick(n); }}
-                className="h-14 bg-white active:bg-slate-100 text-[#0f2d59] font-semibold text-xl rounded-2xl shadow-[0_4px_10px_rgba(15,45,89,0.06)] border border-slate-100/50 flex items-center justify-center cursor-pointer font-sans select-none touch-none"
+                className="calc-btn-num h-14 bg-white active:bg-slate-100 text-[#0f2d59] font-semibold text-xl rounded-2xl shadow-[0_4px_10px_rgba(15,45,89,0.06)] border border-slate-100/50 flex items-center justify-center cursor-pointer font-sans select-none touch-none"
               >
                 {n}
               </button>
             ))}
             <button
               onPointerDown={(e) => { e.preventDefault(); handleOperatorClick('+'); }}
-              className="h-14 bg-[#e3f2fd] active:bg-[#bbdefb] text-[#1565c0] font-bold text-2xl rounded-2xl shadow-[0_4px_10px_rgba(21,101,192,0.06)] border border-[#e3f2fd] flex items-center justify-center cursor-pointer font-sans select-none touch-none"
+              className="calc-btn-op h-14 bg-[#e3f2fd] active:bg-[#bbdefb] text-[#1565c0] font-bold text-2xl rounded-2xl shadow-[0_4px_10px_rgba(21,101,192,0.06)] border border-[#e3f2fd] flex items-center justify-center cursor-pointer font-sans select-none touch-none"
             >
               +
             </button>
@@ -283,26 +283,26 @@ export default function Calculator({ onClose, isBangla, onApplyValue }: Calculat
             {/* Row 4: Backspace (originally C), 0, ., % */}
             <button
               onPointerDown={(e) => { e.preventDefault(); handleBackspace(); }}
-              className="h-14 bg-[#ffebee] active:bg-[#ffcdd2] text-[#e91e63] font-bold text-xl rounded-2xl shadow-[0_4px_10px_rgba(233,30,99,0.08)] border border-[#ffebee] flex items-center justify-center cursor-pointer font-sans select-none touch-none"
+              className="calc-btn-delete h-14 bg-[#ffebee] active:bg-[#ffcdd2] text-[#e91e63] font-bold text-xl rounded-2xl shadow-[0_4px_10px_rgba(233,30,99,0.08)] border border-[#ffebee] flex items-center justify-center cursor-pointer font-sans select-none touch-none"
               title="Backspace"
             >
               <Delete className="h-5.5 w-5.5 stroke-[2.5]" />
             </button>
             <button
               onPointerDown={(e) => { e.preventDefault(); handleNumClick('0'); }}
-              className="h-14 bg-white active:bg-slate-100 text-[#0f2d59] font-semibold text-xl rounded-2xl shadow-[0_4px_10px_rgba(15,45,89,0.06)] border border-slate-100/50 flex items-center justify-center cursor-pointer font-sans select-none touch-none"
+              className="calc-btn-num h-14 bg-white active:bg-slate-100 text-[#0f2d59] font-semibold text-xl rounded-2xl shadow-[0_4px_10px_rgba(15,45,89,0.06)] border border-slate-100/50 flex items-center justify-center cursor-pointer font-sans select-none touch-none"
             >
               0
             </button>
             <button
               onPointerDown={(e) => { e.preventDefault(); handleDecimal(); }}
-              className="h-14 bg-white active:bg-slate-100 text-[#0f2d59] font-semibold text-xl rounded-2xl shadow-[0_4px_10px_rgba(15,45,89,0.06)] border border-slate-100/50 flex items-center justify-center cursor-pointer font-sans select-none touch-none"
+              className="calc-btn-num h-14 bg-white active:bg-slate-100 text-[#0f2d59] font-semibold text-xl rounded-2xl shadow-[0_4px_10px_rgba(15,45,89,0.06)] border border-slate-100/50 flex items-center justify-center cursor-pointer font-sans select-none touch-none"
             >
               .
             </button>
             <button
               onPointerDown={(e) => { e.preventDefault(); handlePercent(); }}
-              className="h-14 bg-[#e8f5e9] active:bg-[#c8e6c9] text-[#2e7d32] font-bold text-xl rounded-2xl shadow-[0_4px_10px_rgba(46,125,50,0.06)] border border-[#e8f5e9] flex items-center justify-center cursor-pointer font-sans select-none touch-none"
+              className="calc-btn-percent h-14 bg-[#e8f5e9] active:bg-[#c8e6c9] text-[#2e7d32] font-bold text-xl rounded-2xl shadow-[0_4px_10px_rgba(46,125,50,0.06)] border border-[#e8f5e9] flex items-center justify-center cursor-pointer font-sans select-none touch-none"
             >
               %
             </button>
@@ -310,14 +310,14 @@ export default function Calculator({ onClose, isBangla, onApplyValue }: Calculat
             {/* Row 5: Clear All (colspan 2) & Equals/Apply (colspan 2) */}
             <button
               onPointerDown={(e) => { e.preventDefault(); handleClear(); }}
-              className="col-span-2 h-14 bg-[#ffebee] active:bg-[#ffcdd2] text-[#e91e63] font-bold text-[1.1rem] rounded-2xl shadow-[0_4px_10px_rgba(233,30,99,0.08)] border border-[#ffebee] flex items-center justify-center gap-2 cursor-pointer font-sans select-none touch-none"
+              className="calc-btn-clear col-span-2 h-14 bg-[#ffebee] active:bg-[#ffcdd2] text-[#e91e63] font-bold text-[1.1rem] rounded-2xl shadow-[0_4px_10px_rgba(233,30,99,0.08)] border border-[#ffebee] flex items-center justify-center gap-2 cursor-pointer font-sans select-none touch-none"
             >
-              <Trash2 className="h-5 w-5 text-[#e91e63]" />
+              <Trash2 className="calc-icon-trash h-5 w-5 text-[#e91e63]" />
               <span>Clear All</span>
             </button>
             <button
               onPointerDown={(e) => { e.preventDefault(); handleEqual(); }}
-              className="col-span-2 h-14 bg-[#00c853] active:bg-[#00a243] text-white font-bold text-2xl rounded-2xl shadow-[0_8px_20px_rgba(0,200,83,0.3)] flex items-center justify-center gap-2 cursor-pointer font-sans select-none touch-none"
+              className="calc-btn-apply col-span-2 h-14 bg-[#00c853] active:bg-[#00a243] text-white font-bold text-2xl rounded-2xl shadow-[0_8px_20px_rgba(0,200,83,0.3)] flex items-center justify-center gap-2 cursor-pointer font-sans select-none touch-none"
             >
               {equation ? (
                 <Equal className="h-5 w-5 stroke-[2.5]" />

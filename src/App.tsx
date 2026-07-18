@@ -3181,7 +3181,7 @@ export default function App() {
                     id="oos-trigger-btn"
                   >
                     <PlusCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                    <span className="truncate">{isBangla ? 'পণ্যে নেই' : 'No Goods'}</span>
+                    <span className="truncate">{isBangla ? 'পণ্যে নেই' : 'Stock/Out'}</span>
                   </motion.button>
                   
                   <motion.button
@@ -5497,54 +5497,106 @@ export default function App() {
                 className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start"
               >
                 {/* Shop Settings Card */}
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-4">
-                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-1">
-                    {isBangla ? 'দোকানের সেটিংস' : 'Store Settings'}
-                  </h3>
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-3xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                      {isBangla ? 'দোকানের নাম' : 'Store Name'}
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder={isBangla ? 'যেমন: মেসার্স জনি ট্রেডার্স' : 'e.g. M/S Jony Traders'}
+                    value={shopName}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setShopName(val);
+                      localStorage.setItem('hisab_khata_shop_name', val);
+                      localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
+                    }}
+                    onBlur={(e) => {
+                      const val = e.target.value;
+                      const now = Date.now();
+                      localStorage.setItem('hisab_khata_shop_name', val);
+                      localStorage.setItem('hisab_khata_last_updated', String(now));
+                      if (isSyncActive) {
+                        triggerCloudSync(transactions, expenses, val, userEmail);
+                      }
+                    }}
+                    className="w-full text-xs px-2 py-1 rounded-md border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-bold bg-slate-50/50"
+                  />
+                </div>
 
-                  <div className="space-y-2">
-                    <label className="block text-xs font-bold text-slate-600">
-                      {isBangla ? 'গ্রাহকের দোকানের নাম' : 'Store Name'}
-                    </label>
-                    <input
-                      type="text"
-                      placeholder={isBangla ? 'যেমন: মেসার্স জনি ট্রেডার্স' : 'e.g. M/S Jony Traders'}
-                      value={shopName}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setShopName(val);
-                        localStorage.setItem('hisab_khata_shop_name', val);
-                        localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
-                      }}
-                      onBlur={(e) => {
-                        const val = e.target.value;
-                        const now = Date.now();
-                        localStorage.setItem('hisab_khata_shop_name', val);
-                        localStorage.setItem('hisab_khata_last_updated', String(now));
-                        if (isSyncActive) {
-                          triggerCloudSync(transactions, expenses, val, userEmail);
-                        }
-                      }}
-                      className="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-bold"
+                {/* About Us Card - Displayed directly inside General settings */}
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs space-y-3 text-center w-full">
+                  <div className="flex justify-center">
+                    <img
+                      src={logoPngWithCache}
+                      onError={handleLogoError}
+                      alt="হিসাব খাতা"
+                      className="h-10 w-10 rounded-xl object-cover shadow-md border border-slate-200/60"
+                      referrerPolicy="no-referrer"
                     />
-                    <p className="text-[10px] text-slate-400">
-                      {isBangla ? '* এই নামটি লোগোর নিচে হোম স্ক্রিনে দেখাবে।' : '* This name will be displayed underneath the logo on header.'}
+                  </div>
+
+                  <div>
+                    <h3 className="text-xs font-black text-slate-900 leading-none">
+                      {isBangla ? 'হিসাব খাতা' : 'Hisab Khata'}
+                    </h3>
+                    <p className="text-[10px] text-slate-500 mt-1 font-bold">
+                      {isBangla ? 'নিরাপদ ও রিয়েল-টাইম ক্লাউড ব্যাকআপ হিসাব ব্যবস্থাপনাকারী' : 'Secure & Real-time Cloud Sync Ledger Manager'}
                     </p>
+                  </div>
+
+                  <div className="border-t border-slate-100 pt-2.5 text-left space-y-1.5 text-xs">
+                    <div className="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-150">
+                      <span className="text-[10px] text-slate-500 font-bold">{isBangla ? 'ব্যবস্থাপনাকারী:' : 'Managed By:'}</span>
+                      <span className="text-[11px] text-slate-800 font-extrabold">{isBangla ? 'জনি দত্ত' : 'Jony Datta'}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-150">
+                      <span className="text-[10px] text-slate-500 font-bold">{isBangla ? 'যোগাযোগ করুন:' : 'Contact Us:'}</span>
+                      <div className="flex items-center gap-2">
+                        <a
+                          href="https://www.facebook.com/jonydatta247"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-md transition-colors cursor-pointer border border-blue-100 flex items-center justify-center"
+                          title="Facebook"
+                        >
+                          <Facebook className="h-3 w-3" />
+                        </a>
+                        <a
+                          href="https://www.linkedin.com/in/jonydatta"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-md transition-colors cursor-pointer border border-sky-100 flex items-center justify-center"
+                          title="LinkedIn"
+                        >
+                          <Linkedin className="h-3 w-3" />
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-[9px] text-slate-400 leading-relaxed font-bold max-w-sm mx-auto">
+                    {isBangla 
+                      ? 'হিসাব খাতা আপনার বেচাকেনা, বাকির খাতা ও দৈনিক খরচ নিরাপদভাবে সহজে সংরক্ষণ করতে সাহায্য করে।' 
+                      : 'Hisab Khata securely manages and tracks your sales, daily store expenses, and customer dues.'}
                   </div>
                 </div>
 
                 {/* Theme/Dark Mode Settings Card */}
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-4">
-                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-1">
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-3xs space-y-2.5">
+                  <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest block">
                     {isBangla ? 'থিম ও ডার্ক মোড সেটিংস' : 'Theme & Dark Mode Settings'}
                   </h3>
 
-                  <div className="space-y-3">
-                    <label className="block text-xs font-bold text-slate-600">
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-bold text-slate-600">
                       {isBangla ? 'অ্যাপের ডিসপ্লে থিম' : 'App Display Theme'}
                     </label>
                     
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-3 gap-1.5">
                       <button
                         type="button"
                         onClick={() => {
@@ -5552,14 +5604,14 @@ export default function App() {
                           localStorage.setItem('hisab_khata_theme_mode', 'light');
                           showToast(isBangla ? 'লাইট মোড চালু করা হয়েছে!' : 'Light mode activated!');
                         }}
-                        className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                        className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
                           themeMode === 'light'
                             ? 'bg-teal-50 border-teal-500 text-teal-700'
                             : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-600'
                         }`}
                       >
-                        <Sun className="h-4 w-4 text-amber-500" />
-                        <span>{isBangla ? 'লাইট মোড' : 'Light Mode'}</span>
+                        <Sun className="h-3.5 w-3.5 text-amber-500" />
+                        <span>{isBangla ? 'লাইট' : 'Light'}</span>
                       </button>
 
                       <button
@@ -5569,14 +5621,14 @@ export default function App() {
                           localStorage.setItem('hisab_khata_theme_mode', 'dark');
                           showToast(isBangla ? 'ডার্ক মোড চালু করা হয়েছে!' : 'Dark mode activated!');
                         }}
-                        className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                        className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
                           themeMode === 'dark'
                             ? 'bg-teal-50 border-teal-500 text-teal-700'
                             : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-600'
                         }`}
                       >
-                        <Moon className="h-4 w-4 text-indigo-500" />
-                        <span>{isBangla ? 'ডার্ক মোড' : 'Dark Mode'}</span>
+                        <Moon className="h-3.5 w-3.5 text-indigo-500" />
+                        <span>{isBangla ? 'ডার্ক' : 'Dark'}</span>
                       </button>
 
                       <button
@@ -5586,81 +5638,22 @@ export default function App() {
                           localStorage.setItem('hisab_khata_theme_mode', 'system');
                           showToast(isBangla ? 'সিস্টেম অটো মোড চালু করা হয়েছে!' : 'System Auto mode activated!');
                         }}
-                        className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                        className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
                           themeMode === 'system'
                             ? 'bg-teal-50 border-teal-500 text-teal-700'
                             : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-600'
                         }`}
                       >
-                        <Monitor className="h-4 w-4 text-emerald-500" />
-                        <span>{isBangla ? 'অটো (সিস্টেম)' : 'Auto (System)'}</span>
+                        <Monitor className="h-3.5 w-3.5 text-emerald-500" />
+                        <span>{isBangla ? 'অটো' : 'Auto'}</span>
                       </button>
                     </div>
 
-                    <p className="text-[10px] text-slate-400 leading-relaxed">
+                    <p className="text-[9px] text-slate-400 leading-normal">
                       {isBangla 
                         ? '* অটো মোড অন রাখলে আপনার মোবাইলের থিমের সাথে সাথে অ্যাপের থিমও স্বয়ংক্রিয়ভাবে পরিবর্তিত হয়ে যাবে।' 
                         : '* Setting to Auto (System) will automatically sync the app theme with your device\'s default dark or light settings.'}
                     </p>
-                  </div>
-                </div>
-
-                {/* About Us Card - Displayed directly inside General settings */}
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-3xs space-y-4 text-center w-full">
-                  <div className="flex justify-center">
-                    <img
-                      src={logoPngWithCache}
-                      onError={handleLogoError}
-                      alt="হিসাব খাতা"
-                      className="h-14 w-14 rounded-2xl object-cover shadow-md border border-slate-200/60"
-                      referrerPolicy="no-referrer"
-                    />
-                  </div>
-
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900 leading-none">
-                      {isBangla ? 'হিসাব খাতা' : 'Hisab Khata'}
-                    </h3>
-                    <p className="text-[11px] text-slate-500 mt-1.5 font-bold">
-                      {isBangla ? 'নিরাপদ ও রিয়েল-টাইম ক্লাউড ব্যাকআপ হিসাব ব্যবস্থাপনাকারী' : 'Secure & Real-time Cloud Sync Ledger Manager'}
-                    </p>
-                  </div>
-
-                  <div className="border-t border-slate-100 pt-3 text-left space-y-2.5 text-xs">
-                    <div className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-150">
-                      <span className="text-slate-500 font-bold">{isBangla ? 'ব্যবস্থাপনাকারী:' : 'Managed By:'}</span>
-                      <span className="text-slate-800 font-extrabold">{isBangla ? 'জনি দত্ত' : 'Jony Datta'}</span>
-                    </div>
-
-                    <div className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-150">
-                      <span className="text-slate-500 font-bold">{isBangla ? 'যোগাযোগ করুন:' : 'Contact Us:'}</span>
-                      <div className="flex items-center gap-3">
-                        <a
-                          href="https://www.facebook.com/jonydatta247"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors cursor-pointer border border-blue-100 flex items-center justify-center"
-                          title="Facebook"
-                        >
-                          <Facebook className="h-4 w-4" />
-                        </a>
-                        <a
-                          href="https://www.linkedin.com/in/jonydatta"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-lg transition-colors cursor-pointer border border-sky-100 flex items-center justify-center"
-                          title="LinkedIn"
-                        >
-                          <Linkedin className="h-4 w-4" />
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-[10px] text-slate-400 leading-relaxed font-bold max-w-sm mx-auto">
-                    {isBangla 
-                      ? 'হিসাব খাতা আপনার বেচাকেনা, বাকির খাতা ও দৈনিক খরচ নিরাপদভাবে সহজে সংরক্ষণ করতে সাহায্য করে।' 
-                      : 'Hisab Khata securely manages and tracks your sales, daily store expenses, and customer dues.'}
                   </div>
                 </div>
               </motion.div>

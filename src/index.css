@@ -13,6 +13,16 @@
   --text-color: #000000;
 }
 
+html, body {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+}
+
 body {
   background-color: var(--background-color);
   color: var(--text-color);
@@ -82,8 +92,8 @@ html.dark {
   color: #64748b !important;
 }
 
-.dark .shadow-xs, .dark .shadow-sm, .dark .shadow-md, .dark .shadow-lg, .dark .shadow-3xs {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2) !important;
+.dark .shadow-xs, .dark .shadow-sm, .dark .shadow-md, .dark .shadow-lg, .dark .shadow-3xs, .dark .shadow-2xl {
+  box-shadow: none !important;
 }
 
 .dark .bg-white\/80 {
@@ -631,6 +641,110 @@ html.dark {
 }
 .dark .hover\:bg-rose-50\/50:hover {
   background-color: rgba(244, 63, 94, 0.15) !important;
+}
+
+/* --- Calculator Dark Mode Overrides --- */
+.dark #calc-backdrop {
+  background-color: rgba(0, 0, 0, 0.6) !important;
+}
+
+.dark #calc-modal {
+  background-color: #171717 !important;
+  border-color: #2e2e2e !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+}
+
+.dark #calc-modal h3 {
+  color: #e2e8f0 !important;
+}
+
+.dark #calc-header-icon {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+}
+
+.dark #close-calc-btn {
+  color: #94a3b8 !important;
+}
+
+.dark #close-calc-btn:hover {
+  background-color: #262626 !important;
+  color: #f1f5f9 !important;
+}
+
+.dark #calc-screen {
+  background-color: #0b0f19 !important;
+  box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.6) !important;
+}
+
+.dark #calc-screen span {
+  color: #f8fafc !important;
+}
+
+.dark #calc-screen span:first-child {
+  color: #94a3b8 !important;
+}
+
+.dark .calc-btn-num {
+  background-color: #262626 !important;
+  color: #e2e8f0 !important;
+  border-color: #383838 !important;
+  box-shadow: none !important;
+}
+
+.dark .calc-btn-num:active {
+  background-color: #333333 !important;
+}
+
+.dark .calc-btn-op {
+  background-color: rgba(37, 99, 235, 0.2) !important;
+  color: #60a5fa !important;
+  border-color: rgba(37, 99, 235, 0.3) !important;
+  box-shadow: none !important;
+}
+
+.dark .calc-btn-op:active {
+  background-color: rgba(37, 99, 235, 0.35) !important;
+}
+
+.dark .calc-btn-delete {
+  background-color: rgba(225, 29, 72, 0.2) !important;
+  color: #fda4af !important;
+  border-color: rgba(225, 29, 72, 0.3) !important;
+  box-shadow: none !important;
+}
+
+.dark .calc-btn-delete:active {
+  background-color: rgba(225, 29, 72, 0.35) !important;
+}
+
+.dark .calc-btn-percent {
+  background-color: rgba(16, 185, 129, 0.2) !important;
+  color: #6ee7b7 !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
+  box-shadow: none !important;
+}
+
+.dark .calc-btn-percent:active {
+  background-color: rgba(16, 185, 129, 0.35) !important;
+}
+
+.dark .calc-btn-clear {
+  background-color: rgba(225, 29, 72, 0.2) !important;
+  color: #fda4af !important;
+  border-color: rgba(225, 29, 72, 0.3) !important;
+  box-shadow: none !important;
+}
+
+.dark .calc-btn-clear:active {
+  background-color: rgba(225, 29, 72, 0.35) !important;
+}
+
+.dark .calc-btn-clear .calc-icon-trash {
+  color: #fda4af !important;
+}
+
+.dark .calc-btn-apply {
+  box-shadow: none !important;
 }
 
 
