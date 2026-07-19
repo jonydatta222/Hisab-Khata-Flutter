@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { toJpeg } from 'html-to-image';
 import {
   Calculator as CalcIcon,
   Cloud,
@@ -42,7 +43,8 @@ import {
   ShieldCheck,
   Moon,
   Sun,
-  Monitor
+  Monitor,
+  Printer
 } from 'lucide-react';
 
 import { Transaction, Expense, CustomerDue, DailySummary, OutOfStockItem, ProductRateItem, MemoItem } from './types';
@@ -461,6 +463,37 @@ export default function App() {
   const [searchTopProduct, setSearchTopProduct] = useState('');
   const [activeSliceIndex, setActiveSliceIndex] = useState<number | null>(null);
   const [isOthersModalOpen, setIsOthersModalOpen] = useState(false);
+  const [visibleOthersLimit, setVisibleOthersLimit] = useState(5);
+  const [isExportingJpg, setIsExportingJpg] = useState(false);
+
+  const handleDownloadJpg = async () => {
+    const element = document.getElementById('others-summary-modal-content');
+    if (!element) return;
+    setIsExportingJpg(true);
+    try {
+      const isDark = document.documentElement.classList.contains('dark');
+      const dataUrl = await toJpeg(element, {
+        quality: 0.98,
+        backgroundColor: isDark ? '#0f172a' : '#ffffff',
+        style: {
+          borderRadius: '0px',
+        }
+      });
+      const link = document.createElement('a');
+      link.download = isBangla ? `${shopName}_হিসাব_সামারি.jpg` : `${shopName}_ledger_summary.jpg`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error('Error exporting image:', err);
+    } finally {
+      setIsExportingJpg(false);
+    }
+  };
+
+  const closeOthersModal = () => {
+    setIsOthersModalOpen(false);
+    setVisibleOthersLimit(5);
+  };
   const [selectedCalendarDayData, setSelectedCalendarDayData] = useState<{
     day: number;
     dateKey: string;
@@ -1647,6 +1680,61 @@ export default function App() {
       (tx.customer && tx.customer.toLowerCase().includes(q))
     );
   }, [soldTransactions, historySearchQuery]);
+
+  // Complete Accounts Summary calculations (all time)
+  const completeAccountSummary = useMemo(() => {
+    let totalSales = 0;
+    let totalCashSales = 0;
+    let totalDueSales = 0;
+    let totalDueDeposits = 0;
+    let totalExpenses = 0;
+    
+    // Process transactions
+    transactions.forEach(tx => {
+      const prodLower = tx.product.toLowerCase().trim();
+      const isDueDeposit = prodLower.startsWith('বাকি টাকা জমা') || 
+                           prodLower.startsWith('বাকির টাকা জমা') || 
+                           prodLower.includes('due deposit');
+                           
+      if (isDueDeposit) {
+        totalDueDeposits += tx.amount;
+      } else {
+        totalSales += tx.amount;
+        if (tx.isCash) {
+          totalCashSales += tx.amount;
+        } else {
+          totalDueSales += tx.amount;
+        }
+      }
+    });
+    
+    // Process expenses
+    expenses.forEach(ex => {
+      totalExpenses += ex.amount;
+    });
+    
+    // Total cash in flow = Cash Sales + Due Deposits (since this represents real cash entering the hand/drawer)
+    const totalCashInFlow = totalCashSales + totalDueDeposits;
+    // Net Cash in Hand = Real cash entering - cash going out as expenses
+    const netCashInHand = totalCashInFlow - totalExpenses;
+    
+    // Get unique customers
+    const uniqueCustomers = new Set(
+      transactions.map(tx => tx.customer?.trim()).filter(Boolean)
+    );
+    
+    return {
+      totalSales,
+      totalCashSales,
+      totalDueSales,
+      totalDueDeposits,
+      totalExpenses,
+      netCashInHand,
+      uniqueCustomersCount: uniqueCustomers.size,
+      totalTransactionsCount: transactions.length,
+      totalExpensesCount: expenses.length,
+    };
+  }, [transactions, expenses]);
 
   // --- All-time Product Sales Helper for Donut Chart ---
   const allTimeSales = useMemo(() => {
@@ -3178,11 +3266,10 @@ export default function App() {
                 <button
                   type="button"
                   onClick={toggleLanguage}
-                  className="bg-white hover:bg-slate-50 border border-slate-200 rounded-md text-[11px] font-black text-slate-700 h-8 shadow-3xs transition-all flex items-center justify-center cursor-pointer active:scale-95 shrink-0 w-8 sm:w-auto sm:px-2 sm:gap-1"
+                  className="bg-white hover:bg-slate-50 border border-slate-200 rounded-md text-[11px] font-black text-slate-700 h-8 shadow-3xs transition-all flex items-center justify-center cursor-pointer active:scale-95 shrink-0 px-2 sm:px-2.5"
                   id="lang-toggler"
                   title={isBangla ? 'ভাষা পরিবর্তন করুন' : 'Change Language'}
                 >
-                  <Globe className="h-4 w-4 text-indigo-500 sm:block hidden" />
                   <span className="text-[10px] sm:text-[11px] font-black text-indigo-600 sm:text-slate-700">{isBangla ? 'EN' : 'বাং'}</span>
                 </button>
               </div>
@@ -3400,7 +3487,7 @@ export default function App() {
                   </div>
 
                   {/* Payment Type Selection (Mini capsule toggle) */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-slate-50">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
                     <div className="flex items-center justify-between sm:justify-start gap-3 flex-wrap w-full sm:w-auto">
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] font-bold text-slate-500">
@@ -3502,7 +3589,7 @@ export default function App() {
                   {/* Submit save button */}
                   <button
                     type="submit"
-                    className="w-full py-3 bg-[#009688] hover:bg-[#00897B] text-white font-black text-sm rounded-xl shadow-xl shadow-teal-700/5 hover:shadow transition-all active:scale-98 flex items-center justify-center gap-1.5 cursor-pointer h-12"
+                    className="w-full py-3 bg-[#009688] hover:bg-[#00897B] dark:bg-teal-700 dark:hover:bg-teal-800 text-white font-black text-sm rounded-xl shadow-xl shadow-teal-700/5 hover:shadow transition-all active:scale-98 flex items-center justify-center gap-1.5 cursor-pointer h-12"
                     id="submit-transaction-btn"
                   >
                     <Check className="h-4 w-4 stroke-[3.5]" />
@@ -5477,7 +5564,7 @@ export default function App() {
                   {isBangla ? 'এখনও কোনো পণ্যের বিক্রি রেকর্ড করা হয়নি।' : 'No product sales recorded yet.'}
                 </div>
               ) : (
-                <div className="bg-slate-50/40 rounded-2xl border border-slate-150 p-4 sm:p-5 flex flex-col md:flex-row items-center gap-6 md:gap-8">
+                <div className="flex flex-col md:flex-row items-center gap-6 md:gap-8 pt-2">
                   
                   {/* SVG Donut Chart container */}
                   <div className="relative w-32 h-32 sm:w-36 sm:h-36 flex-shrink-0 flex items-center justify-center mx-auto">
@@ -5515,15 +5602,10 @@ export default function App() {
                               initial={{ strokeDasharray: `0 ${circumference}` }}
                               animate={{ strokeDasharray: `${strokeLength} ${circumference}` }}
                               transition={{ duration: 0.8, ease: "easeOut", delay: index * 0.05 }}
-                              className="transition-all duration-200 cursor-pointer"
+                              className="transition-all duration-200 cursor-default"
                               style={{ transformOrigin: 'center' }}
                               onMouseEnter={() => setActiveSliceIndex(index)}
                               onMouseLeave={() => setActiveSliceIndex(null)}
-                              onClick={() => {
-                                if (isOthers) {
-                                  setIsOthersModalOpen(true);
-                                }
-                              }}
                             />
                           );
                         })}
@@ -5535,7 +5617,7 @@ export default function App() {
                       <span className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">
                         {isBangla ? 'মোট বিক্রি' : 'Total Sales'}
                       </span>
-                      <span className="text-[11px] sm:text-xs font-black text-slate-800 font-sans mt-1 leading-none max-w-[85px] truncate" title={formatCurrency(allTimeSales.totalAmount, isBangla)}>
+                      <span className="text-[11px] sm:text-xs font-black text-slate-800 dark:text-slate-200 font-sans mt-1 leading-none max-w-[85px] truncate" title={formatCurrency(allTimeSales.totalAmount, isBangla)}>
                         {formatCurrency(allTimeSales.totalAmount, isBangla)}
                       </span>
                     </div>
@@ -8014,14 +8096,14 @@ export default function App() {
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 20 }}
               transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-              className="bg-white rounded-2xl w-full max-w-lg shadow-2xl relative z-10 overflow-hidden border border-slate-100 flex flex-col max-h-[85vh]"
+              className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg shadow-2xl relative z-10 overflow-hidden border border-slate-100 dark:border-slate-800 flex flex-col max-h-[85vh]"
             >
               {/* Header */}
-              <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-5 w-5 text-teal-600 shrink-0 animate-pulse" />
                   <div>
-                    <h3 className="text-sm font-black text-slate-900 leading-none flex items-center gap-2">
+                    <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 leading-none flex items-center gap-2">
                       <span className="text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded text-xs">
                         {isBangla ? 'পণ্য' : 'Product'}
                       </span>
@@ -8151,148 +8233,314 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 0.5 }}
               exit={{ opacity: 0 }}
-              onClick={() => setIsOthersModalOpen(false)}
+              onClick={closeOthersModal}
               className="fixed inset-0 bg-black shadow-lg"
             />
 
             {/* Modal Box */}
             <motion.div
+              id="others-summary-modal-content"
               initial={{ scale: 0.95, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 20 }}
               transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-              className="bg-white rounded-2xl w-full max-w-md shadow-2xl relative z-10 overflow-hidden border border-slate-100 flex flex-col max-h-[80vh]"
+              className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg shadow-2xl relative z-10 overflow-hidden border border-slate-100 dark:border-slate-800 flex flex-col max-h-[90vh]"
             >
               {/* Header */}
-              <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                <div className="flex items-center gap-2">
-                  <span className="p-1.5 bg-slate-100 text-slate-700 rounded-lg shrink-0">
-                    <Sparkles className="h-4 w-4" />
+              <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950">
+                <div className="flex items-center gap-3">
+                  <span className="p-2.5 bg-indigo-500/10 dark:bg-indigo-500/20 rounded-2xl shrink-0">
+                    <Globe className="h-6 w-6 text-indigo-600 dark:text-indigo-400 animate-spin-slow" />
                   </span>
                   <div>
-                    <h3 className="text-sm font-black text-slate-900 leading-none">
-                      {isBangla ? 'অন্যান্য পণ্যের বিক্রয় খতিয়ান' : 'Other Products Sales Details'}
+                    <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100 leading-none">
+                      {isBangla ? 'অন্যান্য পণ্য ও সর্বমোট হিসাব' : 'Others & All-time Summary'}
                     </h3>
-                    <p className="text-[10px] text-slate-400 mt-1.5">
-                      {isBangla ? 'শীর্ষ ৬টি পণ্য বাদে অন্যান্য সব পণ্যের বিক্রির হিসাব।' : 'List of all other product sales outside the top 6.'}
+                    <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-300 font-bold mt-1.5">
+                      {isBangla ? 'শীর্ষ ৬ বাদে অন্য পণ্যের তালিকা এবং সর্বমোট আর্থিক সামারি।' : 'Other products list and comprehensive ledger overview.'}
                     </p>
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsOthersModalOpen(false)}
-                  className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                  data-html2canvas-ignore="true"
+                  onClick={closeOthersModal}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-150/50 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
                 >
                   <span className="text-base">✕</span>
                 </button>
               </div>
 
               {/* Body */}
-              <div className="p-5 overflow-y-auto flex-1 space-y-4">
-                {/* Total Summary of Others */}
-                {(() => {
-                  const isNogod = (name: string) => {
-                    const lower = name.toLowerCase().trim();
-                    return lower === 'নগদ' || lower === 'nogod' || lower === 'cash' || lower === 'নগদ হিসাব';
-                  };
-                  const nogodItems = allTimeSales.items.filter(item => isNogod(item.name));
-                  const nonNogodItems = allTimeSales.items.filter(item => !isNogod(item.name));
-                  const othersList = [...nonNogodItems.slice(6), ...nogodItems].sort((a, b) => b.amount - a.amount);
+              <div className="p-6 overflow-y-auto flex-1 space-y-6 select-none">
+                
+                {/* SECTION 1: OVERALL FINANCIAL STATEMENT */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-1.5">
+                    <span className="text-xs">📊</span>
+                    <h4 className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                      {isBangla ? 'সবকিছুর সামগ্রিক আর্থিক বিবরণী' : 'Overall Financial Summary'}
+                    </h4>
+                  </div>
 
-                  const totalOthersAmount = othersList.reduce((sum, item) => sum + item.amount, 0);
-                  const totalOthersCount = othersList.reduce((sum, item) => sum + item.count, 0);
-                  const othersPercentage = allTimeSales.totalAmount > 0 ? (totalOthersAmount / allTimeSales.totalAmount) * 100 : 0;
-
-                  return (
-                    <>
-                      <div className="p-3.5 bg-slate-50/70 border border-slate-150 rounded-xl text-xs space-y-1">
-                        <span className="font-extrabold text-slate-500 uppercase block tracking-wider text-[9px]">
-                          {isBangla ? 'অন্যান্য প্রোডাক্ট সামারি' : 'Others Category Summary'}
+                  {/* Cash in hand banner (High importance) */}
+                  <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 rounded-2xl border border-emerald-100 dark:border-emerald-900/60 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-emerald-500 rounded-xl text-white">
+                        <Wallet className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <span className="text-[11px] font-black text-emerald-700 dark:text-emerald-300 uppercase tracking-wider block">
+                          {isBangla ? 'হাতে নগদ ক্যাশ ব্যালেন্স (ক্যাশ ইন হ্যান্ড)' : 'Cash In Hand Balance'}
                         </span>
-                        <div className="flex justify-between items-center pt-1 font-bold">
-                          <span className="text-slate-500">
-                            {isBangla ? 'অন্যান্য পণ্যের মোট বিক্রি:' : 'Total sales from Others:'}
-                          </span>
-                          <span className="text-slate-800 font-sans font-black text-sm">
-                            {formatCurrency(totalOthersAmount, isBangla)}
+                        <span className="text-xl sm:text-2xl font-black text-emerald-800 dark:text-emerald-400 block leading-tight font-sans">
+                          {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(completeAccountSummary.netCashInHand, isBangla)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right hidden sm:block">
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-100/60 dark:bg-emerald-900/40 px-2.5 py-0.5 rounded-full">
+                        {isBangla ? 'সচল ক্যাপিটাল' : 'Active Capital'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Primary grid cards */}
+                  <div className="grid grid-cols-2 gap-3">
+                    
+                    {/* Total Sales Card */}
+                    <div className="bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 relative">
+                      <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
+                        {isBangla ? 'সর্বমোট বিক্রি (সব পণ্য)' : 'Total Sales (All)'}
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-indigo-600 dark:text-indigo-400 block font-sans">
+                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(completeAccountSummary.totalSales, isBangla)}
+                      </span>
+                      <div className="mt-2 pt-2 border-t border-slate-150 dark:border-slate-700 text-[10px] text-slate-500 dark:text-slate-400 space-y-1 font-bold">
+                        <div className="flex justify-between">
+                          <span>{isBangla ? 'নগদ বিক্রি:' : 'Cash Sales:'}</span>
+                          <span className="text-slate-700 dark:text-slate-300 font-sans">
+                            {isBalancesHidden ? '••••' : formatCurrency(completeAccountSummary.totalCashSales, isBangla)}
                           </span>
                         </div>
-                        <div className="flex justify-between items-center font-bold">
-                          <span className="text-slate-500">
-                            {isBangla ? 'মোট পণ্য সংখ্যা:' : 'Total other products:'}
-                          </span>
-                          <span className="text-slate-800 font-sans font-black text-xs">
-                            {isBangla ? `${toBanglaNumber(othersList.length)}টি` : `${othersList.length} products`}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center font-bold">
-                          <span className="text-slate-500">
-                            {isBangla ? 'মোট বিক্রির অংশীদারিত্ব:' : 'Share of overall sales:'}
-                          </span>
-                          <span className="text-indigo-600 font-sans font-black text-xs bg-indigo-50 px-1.5 py-0.5 rounded">
-                            {isBangla ? `${toBanglaNumber(othersPercentage.toFixed(1))}%` : `${othersPercentage.toFixed(1)}%`}
+                        <div className="flex justify-between">
+                          <span>{isBangla ? 'বাকি বিক্রি:' : 'Due Sales:'}</span>
+                          <span className="text-amber-600 dark:text-amber-400 font-sans">
+                            {isBalancesHidden ? '••••' : formatCurrency(completeAccountSummary.totalDueSales, isBangla)}
                           </span>
                         </div>
                       </div>
+                    </div>
 
-                      {/* Product details list */}
-                      <div className="space-y-3">
-                        <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-                          {isBangla ? 'অন্যান্য পণ্যের তালিকা' : 'List of other products'}
-                        </h4>
+                    {/* Dues & Receivables Card */}
+                    <div className="bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 relative">
+                      <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
+                        {isBangla ? 'বকেয়া পাওনা' : 'Outstanding Dues'}
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-amber-600 dark:text-amber-400 block font-sans">
+                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(globalTotalDue, isBangla)}
+                      </span>
+                      <div className="mt-2 pt-2 border-t border-slate-150 dark:border-slate-700 text-[10px] text-slate-500 dark:text-slate-400 space-y-1 font-bold">
+                        <div className="flex justify-between">
+                          <span>{isBangla ? 'বাকি বিক্রয়:' : 'Credit Given:'}</span>
+                          <span className="text-slate-700 dark:text-slate-300 font-sans">
+                            {isBalancesHidden ? '••••' : formatCurrency(completeAccountSummary.totalDueSales, isBangla)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>{isBangla ? 'বাকি আদায়:' : 'Due Deposits:'}</span>
+                          <span className="text-emerald-600 dark:text-emerald-400 font-sans">
+                            {isBalancesHidden ? '••••' : formatCurrency(completeAccountSummary.totalDueDeposits, isBangla)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Expenses Card */}
+                    <div className="bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 relative">
+                      <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
+                        {isBangla ? 'সর্বমোট খরচ' : 'Total Expense'}
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-rose-600 dark:text-rose-400 block font-sans">
+                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(completeAccountSummary.totalExpenses, isBangla)}
+                      </span>
+                      <div className="mt-2 pt-2 border-t border-slate-150 dark:border-slate-700 text-[10px] text-slate-500 dark:text-slate-400 space-y-1 font-bold">
+                        <div className="flex justify-between">
+                          <span>{isBangla ? 'খরচের ভাউচার:' : 'Overhead vouchers:'}</span>
+                          <span className="text-slate-700 dark:text-slate-300 font-sans">
+                            {isBangla ? toBanglaNumber(completeAccountSummary.totalExpensesCount) : completeAccountSummary.totalExpensesCount}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Ledger Activity & Customers Card */}
+                    <div className="bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 relative">
+                      <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
+                        {isBangla ? 'গ্রাহক ও অ্যাক্টিভিটি' : 'Customers & Activity'}
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-blue-600 dark:text-blue-400 block font-sans">
+                        {isBangla ? `${toBanglaNumber(completeAccountSummary.uniqueCustomersCount)} জন` : `${completeAccountSummary.uniqueCustomersCount} Customers`}
+                      </span>
+                      <div className="mt-2 pt-2 border-t border-slate-150 dark:border-slate-700 text-[10px] text-slate-500 dark:text-slate-400 space-y-1 font-bold">
+                        <div className="flex justify-between">
+                          <span>{isBangla ? 'মোট এন্ট্রি সংখ্যা:' : 'Total entries count:'}</span>
+                          <span className="text-slate-700 dark:text-slate-300 font-sans">
+                            {isBangla ? toBanglaNumber(completeAccountSummary.totalTransactionsCount + completeAccountSummary.totalExpensesCount) : (completeAccountSummary.totalTransactionsCount + completeAccountSummary.totalExpensesCount)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* SECTION 2: OTHER PRODUCTS LIST & DETAILS */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-1.5">
+                    <span className="text-xs">🛍️</span>
+                    <h4 className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                      {isBangla ? 'অন্যান্য পণ্যের বিক্রির খতিয়ান ও তালিকা' : 'Other Sold Products Details'}
+                    </h4>
+                  </div>
+
+                  {(() => {
+                    const isNogod = (name: string) => {
+                      const lower = name.toLowerCase().trim();
+                      return lower === 'নগদ' || lower === 'nogod' || lower === 'cash' || lower === 'নগদ হিসাব';
+                    };
+                    const nogodItems = allTimeSales.items.filter(item => isNogod(item.name));
+                    const nonNogodItems = allTimeSales.items.filter(item => !isNogod(item.name));
+                    const othersList = [...nonNogodItems.slice(6), ...nogodItems].sort((a, b) => b.amount - a.amount);
+
+                    const totalOthersAmount = othersList.reduce((sum, item) => sum + item.amount, 0);
+                    const othersPercentage = allTimeSales.totalAmount > 0 ? (totalOthersAmount / allTimeSales.totalAmount) * 100 : 0;
+
+                    return (
+                      <>
+                        <div className="p-3.5 bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-100/50 dark:border-indigo-900/30 rounded-2xl text-xs space-y-2">
+                          <div className="flex justify-between items-center font-bold">
+                            <span className="text-slate-500 dark:text-slate-400">
+                              {isBangla ? 'অন্যান্য পণ্যের মোট বিক্রি:' : 'Total sales from Others:'}
+                            </span>
+                            <span className="text-slate-800 dark:text-slate-200 font-sans font-black text-sm">
+                              {formatCurrency(totalOthersAmount, isBangla)}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between items-center font-bold">
+                            <span className="text-slate-500 dark:text-slate-400">
+                              {isBangla ? 'মোট পণ্য সংখ্যা:' : 'Total other products:'}
+                            </span>
+                            <span className="text-slate-800 dark:text-slate-200 font-sans font-black text-xs">
+                              {isBangla ? `${toBanglaNumber(othersList.length)}টি` : `${othersList.length} products`}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between items-center font-bold">
+                            <span className="text-slate-500 dark:text-slate-400">
+                              {isBangla ? 'অন্যান্য পণ্যের মোট বিক্রির অংশ:' : 'Share of overall sales:'}
+                            </span>
+                            <span className="text-indigo-600 dark:text-indigo-400 font-sans font-black text-xs bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-md">
+                              {isBangla ? `${toBanglaNumber(othersPercentage.toFixed(1))}%` : `${othersPercentage.toFixed(1)}%`}
+                            </span>
+                          </div>
+                        </div>
 
                         {othersList.length === 0 ? (
-                          <div className="text-center py-8 text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl font-semibold">
+                          <div className="text-center py-8 text-xs text-slate-400 dark:text-slate-500 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl font-semibold">
                             {isBangla ? 'কোনো পণ্য পাওয়া যায়নি।' : 'No other products found.'}
                           </div>
                         ) : (
-                          <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
-                            {othersList.map((item, index) => {
-                              const itemPercentage = allTimeSales.totalAmount > 0 ? (item.amount / allTimeSales.totalAmount) * 100 : 0;
-                              return (
-                                <div key={item.name} className="p-3 bg-white border border-slate-150 rounded-xl flex flex-col gap-1.5 shadow-3xs">
-                                  <div className="flex items-center justify-between text-xs font-bold">
-                                    <span className="text-slate-800 font-extrabold truncate max-w-[200px]" title={item.name}>
-                                      {item.name}
-                                    </span>
-                                    <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-900 shrink-0">
-                                      <span className="text-[9px] text-slate-400">
-                                        {isBangla ? `${toBanglaNumber(item.count)} বার` : `${item.count} sold`}
+                          <div className="space-y-2">
+                            <div className="space-y-0.5 max-h-[420px] overflow-y-auto pr-1">
+                              {othersList.slice(0, visibleOthersLimit).map((item, index) => {
+                                const itemPercentage = allTimeSales.totalAmount > 0 ? (item.amount / allTimeSales.totalAmount) * 100 : 0;
+                                return (
+                                  <div key={item.name} className="py-0.5 px-1.5 bg-white dark:bg-slate-800/50 border border-slate-150/60 dark:border-slate-800/60 rounded-md flex flex-col gap-0 shadow-4xs">
+                                    <div className="flex items-center justify-between text-[9px] font-bold">
+                                      <span className="text-slate-800 dark:text-slate-200 font-extrabold truncate max-w-[240px]" title={item.name}>
+                                        {item.name}
                                       </span>
-                                      <span className="font-black">
-                                        {formatCurrency(item.amount, isBangla)}
+                                      <div className="flex items-center gap-1 font-mono text-[8px] text-slate-900 dark:text-slate-100 shrink-0">
+                                        <span className="text-[7.5px] text-slate-400 dark:text-slate-500">
+                                          {isBangla ? `${toBanglaNumber(item.count)} বার` : `${item.count} sold`}
+                                        </span>
+                                        <span className="font-black">
+                                          {formatCurrency(item.amount, isBangla)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    {/* Progress bar */}
+                                    <div className="flex items-center gap-1.5">
+                                      <div className="flex-1 h-0.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                        <div
+                                          className="h-full bg-slate-400 dark:bg-slate-500 rounded-full"
+                                          style={{ width: `${itemPercentage}%` }}
+                                        />
+                                      </div>
+                                      <span className="text-[7px] font-bold text-slate-400 dark:text-slate-500 shrink-0 font-mono">
+                                        {isBangla ? `${toBanglaNumber(itemPercentage.toFixed(1))}%` : `${itemPercentage.toFixed(1)}%`}
                                       </span>
                                     </div>
                                   </div>
-                                  {/* Progress bar */}
-                                  <div className="flex items-center gap-2">
-                                    <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                      <div
-                                        className="h-full bg-slate-500 rounded-full"
-                                        style={{ width: `${itemPercentage}%` }}
-                                      />
-                                    </div>
-                                    <span className="text-[9px] font-black text-slate-400 shrink-0 font-mono">
-                                      {isBangla ? `${toBanglaNumber(itemPercentage.toFixed(1))}%` : `${itemPercentage.toFixed(1)}%`}
+                                );
+                              })}
+                            </div>
+
+                            {othersList.length > 5 && (
+                              <div className="flex justify-center gap-2" data-html2canvas-ignore="true">
+                                {visibleOthersLimit < othersList.length ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setVisibleOthersLimit(othersList.length)}
+                                    className="px-4 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-indigo-700 dark:text-indigo-300 text-xs font-extrabold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-3xs"
+                                  >
+                                    <span>{isBangla ? 'আরো দেখুন' : 'Show More'}</span>
+                                    <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-300 px-1.5 py-0.5 rounded-md">
+                                      +{isBangla ? toBanglaNumber(othersList.length - visibleOthersLimit) : othersList.length - visibleOthersLimit}
                                     </span>
-                                  </div>
-                                </div>
-                              );
-                            })}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setVisibleOthersLimit(5)}
+                                    className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-extrabold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-3xs"
+                                  >
+                                    <span>{isBangla ? 'কম দেখুন' : 'Show Less'}</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
-                      </div>
-                    </>
-                  );
-                })()}
+                      </>
+                    );
+                  })()}
+                </div>
+
               </div>
 
               {/* Footer */}
-              <div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50">
+              <div 
+                data-html2canvas-ignore="true"
+                className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900"
+              >
+                {/* JPG Download Button */}
+                <button
+                  type="button"
+                  disabled={isExportingJpg}
+                  onClick={handleDownloadJpg}
+                  className={`px-4 py-2 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-3xs ${isExportingJpg ? 'opacity-70 cursor-not-allowed' : 'active:scale-95'}`}
+                >
+                  <FileDown className={`h-3.5 w-3.5 ${isExportingJpg ? 'animate-bounce' : ''}`} />
+                  <span>{isExportingJpg ? (isBangla ? 'ডাউনলোড হচ্ছে...' : 'Downloading...') : (isBangla ? 'JPG ডাউনলোড করুন' : 'Download JPG')}</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setIsOthersModalOpen(false)}
-                  className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 hover:text-slate-800 text-xs font-black rounded-xl transition-all cursor-pointer shadow-3xs"
+                  className="px-5 py-2 bg-white hover:bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:text-slate-800 text-xs font-black rounded-xl transition-all cursor-pointer shadow-3xs active:scale-95"
                 >
                   {isBangla ? 'বন্ধ করুন' : 'Close'}
                 </button>

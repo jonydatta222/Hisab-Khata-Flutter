@@ -5,6 +5,7 @@
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --animate-spin-slow: spin 12s linear infinite;
 }
 
 /* ডিফল্ট লাইট মোড */
@@ -771,6 +772,14 @@ html.dark {
 
 .dark .calc-btn-apply {
   box-shadow: none !important;
+}
+
+/* --- Home Screen Save Button Dark Mode Override --- */
+.dark #submit-transaction-btn {
+  background-color: #0f766e !important;
+}
+.dark #submit-transaction-btn:hover {
+  background-color: #115e59 !important;
 }
 
 /* Content Visibility rendering optimization for long scrollable elements */
