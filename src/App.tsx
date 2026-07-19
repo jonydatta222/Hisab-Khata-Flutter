@@ -466,6 +466,18 @@ export default function App() {
   const [visibleOthersLimit, setVisibleOthersLimit] = useState(5);
   const [isExportingJpg, setIsExportingJpg] = useState(false);
 
+  const dataURLtoBlob = (dataurl: string) => {
+    const arr = dataurl.split(',');
+    const mime = arr[0].match(/:(.*?);/)![1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
+  };
+
   const handleDownloadJpg = async () => {
     const element = document.getElementById('others-summary-modal-content');
     if (!element) return;
@@ -479,12 +491,51 @@ export default function App() {
           borderRadius: '0px',
         }
       });
-      const link = document.createElement('a');
-      link.download = isBangla ? `${shopName}_হিসাব_সামারি.jpg` : `${shopName}_ledger_summary.jpg`;
-      link.href = dataUrl;
-      link.click();
+      if (isCapacitor) {
+        try {
+          const base64Data = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+          const fileName = isBangla ? `${shopName}_হিসাব_সামারি.jpg` : `${shopName}_ledger_summary.jpg`;
+          const writeResult = await Filesystem.writeFile({
+            path: fileName,
+            data: base64Data,
+            directory: Directory.Cache,
+          });
+
+          await Share.share({
+            title: isBangla ? 'হিসাব সামারি' : 'Ledger Summary',
+            text: isBangla ? 'আপনার হিসাব খাতা সামারি শেয়ার বা সেভ করুন' : 'Save or share your ledger summary',
+            url: writeResult.uri,
+            dialogTitle: isBangla ? 'সামারি ইমেজ সংরক্ষণ/শেয়ার করুন' : 'Save/Share Summary Image',
+          });
+
+          showToast(isBangla ? 'সামারি ইমেজ সফলভাবে ফোনে সেভ হয়েছে এবং শেয়ার করার জন্য প্রস্তুত!' : 'Summary image successfully saved on phone and ready to save/share!');
+        } catch (shareErr: any) {
+          console.warn('Capacitor share failed, falling back to direct blob download', shareErr);
+          const blob = dataURLtoBlob(dataUrl);
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.download = isBangla ? `${shopName}_হিসাব_সামারি.jpg` : `${shopName}_ledger_summary.jpg`;
+          link.href = blobUrl;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+          showToast(isBangla ? 'ইমেজ ডাউনলোড শুরু হয়েছে!' : 'Image download started!');
+        }
+      } else {
+        const blob = dataURLtoBlob(dataUrl);
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = isBangla ? `${shopName}_হিসাব_সামারি.jpg` : `${shopName}_ledger_summary.jpg`;
+        link.href = blobUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+      }
     } catch (err) {
       console.error('Error exporting image:', err);
+      showToast(isBangla ? 'ইমেজ ডাউনলোড করতে সমস্যা হয়েছে!' : 'Error downloading image!');
     } finally {
       setIsExportingJpg(false);
     }
@@ -2693,7 +2744,16 @@ export default function App() {
           showToast(isBangla ? 'ব্যাকআপ ফাইল শেয়ার করা বাতিল করা হয়েছে।' : 'Backup file sharing cancelled.');
         } else {
           console.error('Failed to save or share backup file via Capacitor:', error);
-          showToast(isBangla ? 'ব্যাকআপ ফাইল ফোনে সেভ বা শেয়ার করতে সমস্যা হয়েছে!' : 'Error saving or sharing backup file!');
+          const blob = new Blob([backupStr], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          showToast(isBangla ? 'শেয়ারিং ব্যর্থ হওয়ায় ব্যাকআপ ফাইল সরাসরি ডাউনলোড করা হয়েছে!' : 'Sharing failed, backup file downloaded directly!');
         }
       }
     } else {
@@ -8250,7 +8310,7 @@ export default function App() {
               <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950">
                 <div className="flex items-center gap-3">
                   <span className="p-2.5 bg-indigo-500/10 dark:bg-indigo-500/20 rounded-2xl shrink-0">
-                    <Globe className="h-6 w-6 text-indigo-600 dark:text-indigo-400 animate-spin-slow" />
+                    <Globe className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
                   </span>
                   <div>
                     <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100 leading-none">
