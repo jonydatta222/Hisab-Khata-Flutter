@@ -458,7 +458,7 @@ export default function App() {
   const [showAuthHelp, setShowAuthHelp] = useState(false);
   const [currentNavTab, setCurrentNavTab] = useState<'home' | 'info' | 'monthly' | 'settings'>('home');
   const [weeklyDetailModal, setWeeklyDetailModal] = useState<'sales' | 'expense' | 'net' | 'most_sold' | 'least_sold' | 'expensive' | 'due' | 'others' | null>(null);
-  const [weeklyPeriod, setWeeklyPeriod] = useState<'7D' | '1D' | '30D'>('1D');
+  const [weeklyPeriod, setWeeklyPeriod] = useState<'7D' | '1D' | '30D' | 'ALL'>('1D');
   const [showAllHistoryTxs, setShowAllHistoryTxs] = useState(false);
   const [showAllTopProducts, setShowAllTopProducts] = useState(false);
   const [searchTopProduct, setSearchTopProduct] = useState('');
@@ -912,6 +912,8 @@ export default function App() {
       isExpenseModalOpen ||
       isDueListModalOpen ||
       selectedCustomerForDetail !== null ||
+      selectedProductForDetail !== null ||
+      selectedCalendarDayData !== null ||
       isOutOfStockModalOpen ||
       isProductRateModalOpen ||
       activeProfitCalcProduct !== null ||
@@ -942,6 +944,8 @@ export default function App() {
     isExpenseModalOpen,
     isDueListModalOpen,
     selectedCustomerForDetail,
+    selectedProductForDetail,
+    selectedCalendarDayData,
     isOutOfStockModalOpen,
     isProductRateModalOpen,
     activeProfitCalcProduct,
@@ -1931,7 +1935,7 @@ export default function App() {
   const calculateWeeklyReportSync = (
     txs: Transaction[],
     exs: Expense[],
-    period: '1D' | '7D' | '30D'
+    period: '1D' | '7D' | '30D' | 'ALL'
   ) => {
     const getDaysAgoDate = (days: number) => {
       const d = new Date();
@@ -1942,14 +1946,14 @@ export default function App() {
       return `${yyyy}-${mm}-${dd}`;
     };
     
-    let daysToSubtract = 6;
+    let daysToSubtract = 0;
+    if (period === '7D') daysToSubtract = 6;
     if (period === '30D') daysToSubtract = 29;
-    if (period === '1D') daysToSubtract = 0;
     
     const periodStartDateStr = getDaysAgoDate(daysToSubtract);
     
-    const weeklyTxs = txs.filter(tx => tx.date >= periodStartDateStr);
-    const weeklyExs = exs.filter(ex => ex.date >= periodStartDateStr);
+    const weeklyTxs = period === 'ALL' ? txs : txs.filter(tx => tx.date >= periodStartDateStr);
+    const weeklyExs = period === 'ALL' ? exs : exs.filter(ex => ex.date >= periodStartDateStr);
     
     const totalSales = weeklyTxs.reduce((sum, tx) => sum + tx.amount, 0);
     const totalCashSales = weeklyTxs.filter(tx => tx.isCash).reduce((sum, tx) => sum + tx.amount, 0);
@@ -4509,12 +4513,15 @@ export default function App() {
                   <div className="min-w-0">
                     <h3 className="text-sm sm:text-base font-black text-slate-800 tracking-tight leading-normal pt-1 pb-0.5 truncate">
                       {isBangla 
-                        ? (weeklyPeriod === '7D' ? 'সাপ্তাহিক সামারি' : weeklyPeriod === '1D' ? 'আজকের সামারি' : '৩০ দিনের সামারি') 
-                        : (weeklyPeriod === '7D' ? 'Weekly Summary' : weeklyPeriod === '1D' ? "Today's Summary" : '30 Days Summary')}
+                        ? (weeklyPeriod === '7D' ? 'সাপ্তাহিক সামারি' : weeklyPeriod === '1D' ? 'আজকের সামারি' : weeklyPeriod === 'ALL' ? 'লাইফ টাইম সামারি' : '৩০ দিনের সামারি') 
+                        : (weeklyPeriod === '7D' ? 'Weekly Summary' : weeklyPeriod === '1D' ? "Today's Summary" : weeklyPeriod === 'ALL' ? 'Lifetime Summary' : '30 Days Summary')}
                     </h3>
                     <p className="text-[10px] sm:text-xs text-slate-400 font-extrabold mt-0.5 font-mono truncate">
                       {(() => {
                         try {
+                          if (weeklyPeriod === 'ALL') {
+                            return isBangla ? 'শুরু থেকে বর্তমান পর্যন্ত' : 'From start to present';
+                          }
                           const start = new Date(weeklyReport.startDate);
                           const end = new Date();
                           const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
@@ -4526,8 +4533,8 @@ export default function App() {
                           return `${startStr} - ${endStr}`;
                         } catch (e) {
                           return isBangla 
-                            ? (weeklyPeriod === '7D' ? 'গত ৭ দিন' : weeklyPeriod === '1D' ? 'আজ' : 'গত ৩০ দিন') 
-                            : (weeklyPeriod === '7D' ? 'Last 7 Days' : weeklyPeriod === '1D' ? 'Today' : 'Last 30 Days');
+                            ? (weeklyPeriod === '7D' ? 'গত ৭ দিন' : weeklyPeriod === '1D' ? 'আজ' : weeklyPeriod === 'ALL' ? 'শুরু থেকে বর্তমান' : 'গত ৩০ দিন') 
+                            : (weeklyPeriod === '7D' ? 'Last 7 Days' : weeklyPeriod === '1D' ? 'Today' : weeklyPeriod === 'ALL' ? 'Lifetime' : 'Last 30 Days');
                         }
                       })()}
                     </p>
@@ -4535,29 +4542,44 @@ export default function App() {
                 </div>
 
                 {/* 7D, 1D, 30D Segmented Capsule Switcher matching the exact visual spec of the screenshot but with smaller size and Indigo theme colors */}
-                <div id="period-switcher-container" className="flex items-center bg-indigo-600 p-0.5 rounded-full border border-indigo-500 shadow-xs relative select-none shrink-0">
-                  {(['7D', '1D', '30D'] as const).map((period) => {
-                    const isActive = weeklyPeriod === period;
-                    return (
-                      <button
-                        key={period}
-                        type="button"
-                        onClick={() => setWeeklyPeriod(period)}
-                        className="relative px-2.5 py-0.5 text-[10px] font-black transition-all duration-[270ms] rounded-full cursor-pointer focus:outline-hidden"
-                      >
-                        {isActive && (
-                          <motion.div
-                            layoutId="activePeriodPill"
-                            className="absolute inset-0 bg-white rounded-full shadow-xs"
-                            transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                          />
-                        )}
-                        <span className={`relative z-10 ${isActive ? 'text-indigo-600' : 'text-indigo-100/70 hover:text-white'}`}>
-                          {period}
-                        </span>
-                      </button>
-                    );
-                  })}
+                <div className="flex flex-col items-center gap-1.5 shrink-0">
+                  <div id="period-switcher-container" className="flex items-center bg-indigo-600 p-0.5 rounded-full border border-indigo-500 shadow-xs relative select-none shrink-0">
+                    {(['7D', '1D', '30D'] as const).map((period) => {
+                      const isActive = weeklyPeriod === period;
+                      return (
+                        <button
+                          key={period}
+                          type="button"
+                          onClick={() => setWeeklyPeriod(period)}
+                          className="relative px-2.5 py-0.5 text-[10px] font-black transition-all duration-[270ms] rounded-full cursor-pointer focus:outline-hidden"
+                        >
+                          {isActive && (
+                            <motion.div
+                              layoutId="activePeriodPill"
+                              className="absolute inset-0 bg-white rounded-full shadow-xs"
+                              transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                            />
+                          )}
+                          <span className={`relative z-10 ${isActive ? 'text-indigo-600' : 'text-indigo-100/70 hover:text-white'}`}>
+                            {period}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* Lifetime button below, aligned perfectly under 1D (the center) with custom indigo/blue styling matching the switcher, turning green when active */}
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyPeriod('ALL')}
+                    className={`px-3 py-0.5 text-[10px] font-black transition-all duration-200 rounded-full cursor-pointer border shadow-xs select-none ${
+                      weeklyPeriod === 'ALL'
+                        ? 'bg-emerald-600 border-emerald-500 text-white'
+                        : 'bg-indigo-600 border-indigo-500 text-indigo-100/70 hover:text-white'
+                    }`}
+                  >
+                    {isBangla ? 'লাইফ টাইম' : 'Lifetime'}
+                  </button>
                 </div>
               </div>
 
@@ -4723,8 +4745,8 @@ export default function App() {
                         </h4>
                         <p className="text-[10px] text-slate-400 font-extrabold mt-0.5">
                           {isBangla 
-                            ? (weeklyPeriod === '7D' ? 'বিগত ৭ দিনের বিশ্লেষণ' : weeklyPeriod === '1D' ? 'আজকের দিনের বিশ্লেষণ' : 'বিগত ৩০ দিনের বিশ্লেষণ') 
-                            : (weeklyPeriod === '7D' ? '7 Days Analysis' : weeklyPeriod === '1D' ? "Today's Analysis" : '30 Days Analysis')}
+                            ? (weeklyPeriod === '7D' ? 'বিগত ৭ দিনের বিশ্লেষণ' : weeklyPeriod === '1D' ? 'আজকের দিনের বিশ্লেষণ' : weeklyPeriod === 'ALL' ? 'শুরু থেকে বর্তমানের বিশ্লেষণ' : 'বিগত ৩০ দিনের বিশ্লেষণ') 
+                            : (weeklyPeriod === '7D' ? '7 Days Analysis' : weeklyPeriod === '1D' ? "Today's Analysis" : weeklyPeriod === 'ALL' ? 'Lifetime Analysis' : '30 Days Analysis')}
                         </p>
                       </div>
                       <button
@@ -4775,8 +4797,8 @@ export default function App() {
                           <div className="space-y-2">
                             <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">
                               {isBangla 
-                                ? (weeklyPeriod === '7D' ? 'সাপ্তাহিক বিক্রয় তালিকা:' : weeklyPeriod === '1D' ? 'আজকের বিক্রয় তালিকা:' : '৩০ দিনের বিক্রয় তালিকা:') 
-                                : (weeklyPeriod === '7D' ? 'Weekly Sales Transactions:' : weeklyPeriod === '1D' ? "Today's Sales Transactions:" : '30 Days Sales Transactions:')}
+                                ? (weeklyPeriod === '7D' ? 'সাপ্তাহিক বিক্রয় তালিকা:' : weeklyPeriod === '1D' ? 'আজকের বিক্রয় তালিকা:' : weeklyPeriod === 'ALL' ? 'শুরু থেকে বিক্রয় তালিকা:' : '৩০ দিনের বিক্রয় তালিকা:') 
+                                : (weeklyPeriod === '7D' ? 'Weekly Sales Transactions:' : weeklyPeriod === '1D' ? "Today's Sales Transactions:" : weeklyPeriod === 'ALL' ? 'Lifetime Sales Transactions:' : '30 Days Sales Transactions:')}
                             </h5>
                             {(() => {
                               const getDaysAgoDate = (days: number) => {
@@ -4791,13 +4813,15 @@ export default function App() {
                               if (weeklyPeriod === '30D') daysToSubtract = 29;
                               if (weeklyPeriod === '1D') daysToSubtract = 0;
                               const periodStartDateStr = getDaysAgoDate(daysToSubtract);
-                              const weeklyTxs = transactions.filter(tx => tx.date >= periodStartDateStr);
+                              const weeklyTxs = weeklyPeriod === 'ALL'
+                                ? transactions
+                                : transactions.filter(tx => tx.date >= periodStartDateStr);
                               
                               if (weeklyTxs.length === 0) {
                                 return (
                                   <div className="text-center py-6 text-xs text-slate-400 bg-slate-50 rounded-xl border border-slate-100">
                                     {isBangla 
-                                      ? (weeklyPeriod === '7D' ? 'গত ৭ দিনে কোনো বিক্রি পাওয়া যায়নি।' : weeklyPeriod === '1D' ? 'আজ কোনো বিক্রি পাওয়া যায়নি।' : 'গত ৩০ দিনে কোনো বিক্রি পাওয়া যায়নি।') 
+                                      ? (weeklyPeriod === '7D' ? 'গত ৭ দিনে কোনো বিক্রি পাওয়া যায়নি।' : weeklyPeriod === '1D' ? 'আজ কোনো বিক্রি পাওয়া যায়নি।' : weeklyPeriod === 'ALL' ? 'শুরু থেকে কোনো বিক্রি পাওয়া যায়নি।' : 'গত ৩০ দিনে কোনো বিক্রি পাওয়া যায়নি।') 
                                       : (weeklyPeriod === '7D' ? 'No sales records found in last 7 days.' : weeklyPeriod === '1D' ? "No sales records found today." : 'No sales records found in last 30 days.')
                                     }
                                   </div>
@@ -4843,8 +4867,8 @@ export default function App() {
                           <div className="space-y-2">
                             <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">
                               {isBangla 
-                                ? (weeklyPeriod === '7D' ? 'সাপ্তাহিক খরচের তালিকা:' : weeklyPeriod === '1D' ? 'আজকের খরচের তালিকা:' : '৩০ দিনের খরচের তালিকা:') 
-                                : (weeklyPeriod === '7D' ? 'Weekly Expense List:' : weeklyPeriod === '1D' ? "Today's Expense List:" : '30 Days Expense List:')}
+                                ? (weeklyPeriod === '7D' ? 'সাপ্তাহিক খরচের তালিকা:' : weeklyPeriod === '1D' ? 'আজকের খরচের তালিকা:' : weeklyPeriod === 'ALL' ? 'শুরু থেকে খরচের তালিকা:' : '৩০ দিনের খরচের তালিকা:') 
+                                : (weeklyPeriod === '7D' ? 'Weekly Expense List:' : weeklyPeriod === '1D' ? "Today's Expense List:" : weeklyPeriod === 'ALL' ? 'Lifetime Expense List:' : '30 Days Expense List:')}
                             </h5>
                             {weeklyReport.weeklyExs.length === 0 ? (
                               <div className="text-center py-8 text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-slate-100">
@@ -4903,12 +4927,16 @@ export default function App() {
                                       ? '⚠️ আপনার মোট খরচ এই সপ্তাহে মোট বিক্রয়কে ছাড়িয়ে গেছে। খরচ ও লেনদেনসমূহ পুনঃপরীক্ষা করুন।' 
                                       : weeklyPeriod === '1D'
                                         ? '⚠️ আপনার মোট খরচ আজ মোট বিক্রয়কে ছাড়িয়ে গেছে। খরচ ও লেনদেনসমূহ পুনঃপরীক্ষা করুন।'
-                                        : '⚠️ আপনার মোট খরচ গত ৩০ দিনে মোট বিক্রয়কে ছাড়িয়ে গেছে। খরচ ও লেনদেনসমূহ পুনঃপরীক্ষা করুন।') 
+                                        : weeklyPeriod === 'ALL'
+                                          ? '⚠️ আপনার মোট খরচ শুরু থেকে আজ পর্যন্ত মোট বিক্রয়কে ছাড়িয়ে গেছে। খরচ ও লেনদেনসমূহ পুনঃপরীক্ষা করুন।'
+                                          : '⚠️ আপনার মোট খরচ গত ৩০ দিনে মোট বিক্রয়কে ছাড়িয়ে গেছে। খরচ ও লেনদেনসমূহ পুনঃপরীক্ষা করুন।') 
                                   : (weeklyPeriod === '7D' 
                                       ? '⚠️ Net balance is negative for this specific timeframe. Audit current overhead expenses.' 
                                       : weeklyPeriod === '1D'
                                         ? '⚠️ Your total expenses today have exceeded your total sales. Please audit current overhead expenses.'
-                                        : '⚠️ Your total expenses in the last 30 days have exceeded your total sales. Please audit current overhead expenses.'))}
+                                        : weeklyPeriod === 'ALL'
+                                          ? '⚠️ Your total lifetime expenses have exceeded your total sales. Please audit current overhead expenses.'
+                                          : '⚠️ Your total expenses in the last 30 days have exceeded your total sales. Please audit current overhead expenses.'))}
                           </div>
                         </div>
                       )}
@@ -4922,12 +4950,16 @@ export default function App() {
                                   ? 'চলতি সপ্তাহে গ্রাহকদের চাহিদার ভিত্তিতে সেরা বিক্রিত ১০টি পণ্যের তালিকা নিচে দেওয়া হলো (নগদ এন্ট্রি বাদে):'
                                   : weeklyPeriod === '1D'
                                     ? 'আজকে গ্রাহকদের চাহিদার ভিত্তিতে সেরা বিক্রিত ১০টি পণ্যের তালিকা নিচে দেওয়া হলো (নগদ এন্ট্রি বাদে):'
-                                    : 'গত ৩০ দিনে গ্রাহকদের চাহিদার ভিত্তিতে সেরা বিক্রিত ১০টি পণ্যের তালিকা নিচে দেওয়া হলো (নগদ এন্ট্রি বাদে):') 
+                                    : weeklyPeriod === 'ALL'
+                                      ? 'শুরু থেকে আজ পর্যন্ত গ্রাহকদের চাহিদার ভিত্তিতে সেরা বিক্রিত ১০টি পণ্যের তালিকা নিচে দেওয়া হলো (নগদ এন্ট্রি বাদে):'
+                                      : 'গত ৩০ দিনে গ্রাহকদের চাহিদার ভিত্তিতে সেরা বিক্রিত ১০টি পণ্যের তালিকা নিচে দেওয়া হলো (নগদ এন্ট্রি বাদে):') 
                               : (weeklyPeriod === '7D'
                                   ? 'Below are the top 10 most selling items of the week sorted by transaction count (excluding cash products):'
                                   : weeklyPeriod === '1D'
                                     ? 'Below are the top 10 most selling items of today sorted by transaction count (excluding cash products):'
-                                    : 'Below are the top 10 most selling items of the last 30 days sorted by transaction count (excluding cash products):')}
+                                    : weeklyPeriod === 'ALL'
+                                      ? 'Below are the top 10 most selling items of all time sorted by transaction count (excluding cash products):'
+                                      : 'Below are the top 10 most selling items of the last 30 days sorted by transaction count (excluding cash products):')}
                           </p>
                           {weeklyReport.mostSoldProducts.length === 0 ? (
                             <div className="text-center py-8 text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-slate-100">
@@ -4963,12 +4995,16 @@ export default function App() {
                                   ? 'চলতি সপ্তাহে সবচেয়ে কম বিক্রি হওয়া ১০টি পণ্যের তালিকা (যাতে সহজে সঠিক সিদ্ধান্ত নেওয়া যায়):' 
                                   : weeklyPeriod === '1D'
                                     ? 'আজকে সবচেয়ে কম বিক্রি হওয়া ১০টি পণ্যের তালিকা (যাতে সহজে সঠিক সিদ্ধান্ত নেওয়া যায়):'
-                                    : 'গত ৩০ দিনে সবচেয়ে কম বিক্রি হওয়া ১০টি পণ্যের তালিকা (যাতে সহজে সঠিক সিদ্ধান্ত নেওয়া যায়):')
+                                    : weeklyPeriod === 'ALL'
+                                      ? 'শুরু থেকে আজ পর্যন্ত সবচেয়ে কম বিক্রি হওয়া ১০টি পণ্যের তালিকা (যাতে সহজে সঠিক সিদ্ধান্ত নেওয়া যায়):'
+                                      : 'গত ৩০ দিনে সবচেয়ে কম বিক্রি হওয়া ১০টি পণ্যের তালিকা (যাতে সহজে সঠিক সিদ্ধান্ত নেওয়া যায়):')
                               : (weeklyPeriod === '7D'
                                   ? 'Here are the top 10 least selling items of the week sorted by transaction count:'
                                   : weeklyPeriod === '1D'
                                     ? 'Here are the top 10 least selling items of today sorted by transaction count:'
-                                    : 'Here are the top 10 least selling items of the last 30 days sorted by transaction count:')}
+                                    : weeklyPeriod === 'ALL'
+                                      ? 'Here are the top 10 least selling items of all time sorted by transaction count:'
+                                      : 'Here are the top 10 least selling items of the last 30 days sorted by transaction count:')}
                           </p>
                           {weeklyReport.leastSoldProducts.length === 0 ? (
                             <div className="text-center py-8 text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-slate-100">
@@ -5004,12 +5040,16 @@ export default function App() {
                                   ? 'চলতি সপ্তাহে সর্বোচ্চ মূল্যের ১০টি একক বিক্রয়ের বিবরণী:' 
                                   : weeklyPeriod === '1D'
                                     ? 'আজকে সর্বোচ্চ মূল্যের ১০টি একক বিক্রয়ের বিবরণী:'
-                                    : 'গত ৩০ দিনে সর্বোচ্চ মূল্যের ১০টি একক বিক্রয়ের বিবরণী:')
+                                    : weeklyPeriod === 'ALL'
+                                      ? 'শুরু থেকে আজ পর্যন্ত সর্বোচ্চ মূল্যের ১০টি একক বিক্রয়ের বিবরণী:'
+                                      : 'গত ৩০ দিনে সর্বোচ্চ মূল্যের ১০টি একক বিক্রয়ের বিবরণী:')
                               : (weeklyPeriod === '7D'
                                   ? 'Top 10 highest priced product sales recorded this week:'
                                   : weeklyPeriod === '1D'
                                     ? 'Top 10 highest priced product sales recorded today:'
-                                    : 'Top 10 highest priced product sales recorded in the last 30 days:')}
+                                    : weeklyPeriod === 'ALL'
+                                      ? 'Top 10 highest priced product sales recorded of all time:'
+                                      : 'Top 10 highest priced product sales recorded in the last 30 days:')}
                           </p>
                           {(!weeklyReport.mostExpensiveProducts || weeklyReport.mostExpensiveProducts.length === 0) ? (
                             <div className="text-center py-8 text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-slate-100">
@@ -5056,7 +5096,23 @@ export default function App() {
                           const dd = String(d.getDate()).padStart(2, '0');
                           return `${yyyy}-${mm}-${dd}`;
                         })();
-                        const dueTxs = transactions.filter(tx => tx.date >= periodStartDateStr && !tx.isCash);
+                        const dueTxs = transactions
+                          .filter(tx => (weeklyPeriod === 'ALL' || tx.date >= periodStartDateStr) && !tx.isCash)
+                          .sort((a, b) => {
+                            const customerDueA = customerDues.find(
+                              (cd) => cd.name.trim().toLowerCase() === (a.customer || '').trim().toLowerCase()
+                            );
+                            const isPaidOffA = customerDueA ? customerDueA.amount <= 0 : false;
+
+                            const customerDueB = customerDues.find(
+                              (cd) => cd.name.trim().toLowerCase() === (b.customer || '').trim().toLowerCase()
+                            );
+                            const isPaidOffB = customerDueB ? customerDueB.amount <= 0 : false;
+
+                            if (isPaidOffA && !isPaidOffB) return 1;
+                            if (!isPaidOffA && isPaidOffB) return -1;
+                            return 0;
+                          });
 
                         return (
                           <div className="space-y-3">
