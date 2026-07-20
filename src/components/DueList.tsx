@@ -258,18 +258,27 @@ function DueList({
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-[450px] overflow-y-auto pr-1">
               {filteredDues.slice(0, visibleDuesCount).map((cd) => {
+                const isPaidOff = cd.amount <= 0;
                 return (
                   <motion.div
                     key={cd.name}
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.12 }}
-                    className="p-2 sm:p-2.5 rounded-xl border border-slate-100 bg-rose-50/10 hover:bg-rose-50/20 hover:border-rose-100/60 flex flex-col justify-between gap-2 transition-all shadow-3xs"
+                    className={`p-2 sm:p-2.5 rounded-xl border transition-all shadow-3xs ${
+                      isPaidOff
+                        ? 'border-emerald-100 bg-emerald-50/5 hover:bg-emerald-50/15 hover:border-emerald-100/40 dark:border-emerald-900/40 dark:bg-emerald-950/5 dark:hover:bg-emerald-950/15'
+                        : 'border-slate-100 bg-rose-50/10 hover:bg-rose-50/20 hover:border-rose-100/60 dark:border-slate-800/80 dark:bg-rose-950/5 dark:hover:bg-rose-950/15'
+                    }`}
                   >
                     {/* Main card row: Info on left, Actions on right */}
                     <div className="flex items-center justify-between gap-1.5">
                       <div className="flex items-start gap-1.5 min-w-0 flex-1">
-                        <span className="p-1 bg-rose-50 text-rose-600 rounded-md shrink-0 mt-0.5">
+                        <span className={`p-1 rounded-md shrink-0 mt-0.5 ${
+                          isPaidOff 
+                            ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400' 
+                            : 'bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400'
+                        }`}>
                           <Landmark className="h-3.5 w-3.5" />
                         </span>
                         <div 
@@ -277,14 +286,26 @@ function DueList({
                           onClick={() => onViewDetail?.(cd.name)}
                           title={isBangla ? 'বিস্তারিত খতিয়ান দেখতে ক্লিক করুন' : 'Click to view detailed ledger'}
                         >
-                          <h4 className="text-[10.5px] sm:text-[11.5px] font-black text-slate-800 group-hover:text-rose-600 group-hover:underline truncate" title={cd.name}>
+                          <h4 className={`text-[10.5px] sm:text-[11.5px] font-black truncate ${
+                            isPaidOff 
+                              ? 'text-slate-700 group-hover:text-emerald-600 group-hover:underline dark:text-slate-300 dark:group-hover:text-emerald-400' 
+                              : 'text-slate-800 group-hover:text-rose-600 group-hover:underline dark:text-slate-200 dark:group-hover:text-rose-400'
+                          }`} title={cd.name}>
                             {cd.name}
                           </h4>
-                          <div className="flex items-center gap-1 text-[9.5px] sm:text-[10px] text-slate-500 font-bold">
-                            <span>{isBangla ? 'বাকি:' : 'Due:'}</span>
-                            <span className="text-rose-600 font-black group-hover:text-rose-700">
-                              {formatCurrency(cd.amount, isBangla)}
-                            </span>
+                          <div className="flex items-center gap-1 text-[9.5px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-bold mt-0.5">
+                            {isPaidOff ? (
+                              <span className="text-emerald-600 font-black bg-emerald-50 px-1.5 py-0.5 rounded-md dark:text-emerald-400 dark:bg-emerald-950/50">
+                                {isBangla ? 'পরিশোধিত' : 'Paid'}
+                              </span>
+                            ) : (
+                              <>
+                                <span>{isBangla ? 'বাকি:' : 'Due:'}</span>
+                                <span className="text-rose-600 font-black group-hover:text-rose-700 dark:text-rose-400">
+                                  {formatCurrency(cd.amount, isBangla)}
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -305,13 +326,15 @@ function DueList({
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
-                        <button
-                          onClick={() => startDeposit(cd)}
-                          className="text-[9px] text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100/85 px-1.5 py-1 rounded font-bold flex items-center gap-0.5 transition-all cursor-pointer shadow-3xs active:scale-95"
-                        >
-                          <Coins className="h-2.5 w-2.5" />
-                          <span>{isBangla ? 'জমা' : 'Deposit'}</span>
-                        </button>
+                        {!isPaidOff && (
+                          <button
+                            onClick={() => startDeposit(cd)}
+                            className="text-[9px] text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100/85 px-1.5 py-1 rounded font-bold flex items-center gap-0.5 transition-all cursor-pointer shadow-3xs active:scale-95"
+                          >
+                            <Coins className="h-2.5 w-2.5" />
+                            <span>{isBangla ? 'জমা' : 'Deposit'}</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </motion.div>

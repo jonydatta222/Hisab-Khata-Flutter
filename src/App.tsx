@@ -44,7 +44,8 @@ import {
   Moon,
   Sun,
   Monitor,
-  Printer
+  Printer,
+  Store
 } from 'lucide-react';
 
 import { Transaction, Expense, CustomerDue, DailySummary, OutOfStockItem, ProductRateItem, MemoItem } from './types';
@@ -1687,11 +1688,10 @@ export default function App() {
         lastDate: duesMap[name].lastDate,
         lastTime: duesMap[name].lastTime,
       }))
-      .filter((cd) => cd.amount > 0)
       .sort((a, b) => getTimestamp(b.lastDate, b.lastTime) - getTimestamp(a.lastDate, a.lastTime));
   }, [transactions]);
 
-  const globalTotalDue = useMemo(() => customerDues.reduce((sum, cd) => sum + cd.amount, 0), [customerDues]);
+  const globalTotalDue = useMemo(() => customerDues.reduce((sum, cd) => sum + (cd.amount > 0 ? cd.amount : 0), 0), [customerDues]);
 
   // Selected customer details and transaction history calculations
   const selectedCustomerTxHistory = useMemo(() => {
@@ -5071,23 +5071,56 @@ export default function App() {
                               </div>
                             ) : (
                               <div className="space-y-2">
-                                {dueTxs.map((tx, idx) => (
-                                  <div key={tx.id || idx} className="flex justify-between items-center p-3 rounded-xl bg-orange-50/40 border border-orange-100/40 text-xs font-bold font-sans">
-                                    <div className="flex items-center gap-2.5 min-w-0">
-                                      <span className="w-5 h-5 flex items-center justify-center rounded-full bg-orange-100 text-orange-700 font-black font-mono text-[10px] shrink-0">
-                                        {idx + 1}
-                                      </span>
-                                      <div className="min-w-0">
-                                        <p className="text-slate-800 font-extrabold truncate max-w-[180px]">{tx.customer || (isBangla ? 'সাধারণ বাকি' : 'General Due')}</p>
-                                        <p className="text-[9px] text-slate-400 font-bold truncate mt-0.5">{tx.product}</p>
+                                {dueTxs.map((tx, idx) => {
+                                  const customerDue = customerDues.find(
+                                    (cd) => cd.name.trim().toLowerCase() === (tx.customer || '').trim().toLowerCase()
+                                  );
+                                  const isPaidOff = customerDue ? customerDue.amount <= 0 : false;
+
+                                  return (
+                                    <div 
+                                      key={tx.id || idx} 
+                                      className={`flex justify-between items-center p-3 rounded-xl text-xs font-bold font-sans transition-all border ${
+                                        isPaidOff 
+                                          ? 'bg-emerald-50/40 border-emerald-100/40 dark:bg-emerald-950/20 dark:border-emerald-900/30' 
+                                          : 'bg-orange-50/40 border-orange-100/40 dark:bg-orange-950/10 dark:border-orange-900/20'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2.5 min-w-0">
+                                        <span className={`w-5 h-5 flex items-center justify-center rounded-full font-black font-mono text-[10px] shrink-0 ${
+                                          isPaidOff 
+                                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300' 
+                                            : 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300'
+                                        }`}>
+                                          {idx + 1}
+                                        </span>
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <p className="text-slate-800 dark:text-slate-200 font-extrabold truncate max-w-[150px]">
+                                              {tx.customer || (isBangla ? 'সাধারণ বাকি' : 'General Due')}
+                                            </p>
+                                            {isPaidOff && (
+                                              <span className="text-[8px] font-black text-emerald-700 bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded-md shrink-0 dark:text-emerald-300 dark:bg-emerald-950/50 dark:border-emerald-900/40">
+                                                {isBangla ? 'পরিশোধিত' : 'Paid'}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold truncate mt-0.5">{tx.product}</p>
+                                        </div>
+                                      </div>
+                                      <div className="text-right shrink-0">
+                                        <p className={`font-black ${
+                                          isPaidOff 
+                                            ? 'text-emerald-600 dark:text-emerald-400' 
+                                            : 'text-orange-600 dark:text-orange-400'
+                                        }`}>
+                                          {formatCurrency(tx.amount, isBangla)}
+                                        </p>
+                                        <p className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold mt-0.5">{formatDate(tx.date, isBangla)}</p>
                                       </div>
                                     </div>
-                                    <div className="text-right shrink-0">
-                                      <p className="text-orange-600 font-black">{formatCurrency(tx.amount, isBangla)}</p>
-                                      <p className="text-[9px] text-slate-400 font-semibold mt-0.5">{formatDate(tx.date, isBangla)}</p>
-                                    </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
@@ -5817,91 +5850,140 @@ export default function App() {
                 className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start"
               >
                 {/* Shop Settings Card */}
-                <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-3xs space-y-1.5">
+                <div className="bg-gradient-to-br from-white via-slate-50/20 to-teal-50/5 dark:from-slate-900 dark:via-slate-900/95 dark:to-teal-950/10 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden w-full flex flex-col gap-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                      {isBangla ? 'দোকানের নাম' : 'Store Name'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <div className="p-1 bg-teal-50 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400 rounded-lg border border-teal-100/30">
+                        <Store className="h-3.5 w-3.5" />
+                      </div>
+                      <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wide">
+                        {isBangla ? 'দোকানের নাম' : 'Store Name'}
+                      </span>
+                    </div>
                   </div>
-                  <input
-                    type="text"
-                    placeholder={isBangla ? 'যেমন: মেসার্স জনি ট্রেডার্স' : 'e.g. M/S Jony Traders'}
-                    value={shopName}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setShopName(val);
-                      localStorage.setItem('hisab_khata_shop_name', val);
-                      localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
-                    }}
-                    onBlur={(e) => {
-                      const val = e.target.value;
-                      const now = Date.now();
-                      localStorage.setItem('hisab_khata_shop_name', val);
-                      localStorage.setItem('hisab_khata_last_updated', String(now));
-                      if (isSyncActive) {
-                        triggerCloudSync(transactions, expenses, val, userEmail);
-                      }
-                    }}
-                    className="w-full text-xs px-2 py-1 rounded-md border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-bold bg-slate-50/50"
-                  />
+
+                  <div className="relative group">
+                    <input
+                      type="text"
+                      placeholder={isBangla ? 'যেমন: মেসার্স জনি ট্রেডার্স' : 'e.g. M/S Jony Traders'}
+                      value={shopName}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setShopName(val);
+                        localStorage.setItem('hisab_khata_shop_name', val);
+                        localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
+                      }}
+                      onBlur={(e) => {
+                        const val = e.target.value;
+                        const now = Date.now();
+                        localStorage.setItem('hisab_khata_shop_name', val);
+                        localStorage.setItem('hisab_khata_last_updated', String(now));
+                        if (isSyncActive) {
+                          triggerCloudSync(transactions, expenses, val, userEmail);
+                        }
+                      }}
+                      className="w-full text-xs font-bold pl-3 pr-9 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 dark:focus:border-teal-500 transition-all duration-200 shadow-3xs group-hover:border-slate-300 dark:group-hover:border-slate-600"
+                    />
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none group-focus-within:text-teal-500 group-hover:text-teal-500 transition-colors">
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </div>
+                  </div>
                 </div>
 
                 {/* About Us Card - Displayed directly inside General settings */}
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-3xs space-y-3 text-center w-full">
-                  <div className="flex justify-center">
-                    <img
-                      src={logoPngWithCache}
-                      onError={handleLogoError}
-                      alt="হিসাব খাতা"
-                      className="h-10 w-10 rounded-xl object-cover shadow-md border border-slate-200/60"
-                      referrerPolicy="no-referrer"
-                    />
+                <div className="bg-gradient-to-br from-white via-slate-50/25 to-teal-50/10 dark:from-slate-900 dark:via-slate-900/90 dark:to-teal-950/15 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden w-full flex flex-col gap-4">
+                  {/* Logo Section */}
+                  <div className="flex flex-col items-center relative z-10 mt-1">
+                    <div className="relative">
+                      <div className="relative p-1 bg-white dark:bg-slate-800 rounded-2xl shadow-xs border border-slate-150 dark:border-slate-700/60">
+                        <img
+                          src={logoPngWithCache}
+                          onError={handleLogoError}
+                          alt="হিসাব খাতা"
+                          className="h-14 w-14 rounded-xl object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                    </div>
                   </div>
 
-                  <div>
-                    <h3 className="text-xs font-black text-slate-900 leading-none">
+                  {/* App Name & Tagline */}
+                  <div className="text-center relative z-10 space-y-1">
+                    <h3 className="text-base font-black text-slate-900 dark:text-slate-50 flex items-center justify-center gap-1.5">
                       {isBangla ? 'হিসাব খাতা' : 'Hisab Khata'}
                     </h3>
-                    <p className="text-[10px] text-slate-500 mt-1 font-bold">
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold max-w-xs mx-auto leading-normal">
                       {isBangla ? 'নিরাপদ ও রিয়েল-টাইম ক্লাউড ব্যাকআপ হিসাব ব্যবস্থাপনাকারী' : 'Secure & Real-time Cloud Sync Ledger Manager'}
                     </p>
                   </div>
 
-                  <div className="border-t border-slate-100 pt-2.5 text-left space-y-1.5 text-xs">
-                    <div className="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-150">
-                      <span className="text-[10px] text-slate-500 font-bold">{isBangla ? 'ব্যবস্থাপনাকারী:' : 'Managed By:'}</span>
-                      <span className="text-[11px] text-slate-800 font-extrabold">{isBangla ? 'জনি দত্ত' : 'Jony Datta'}</span>
+                  {/* Micro Badges / Feature Pills */}
+                  <div className="flex flex-wrap items-center justify-center gap-1.5 relative z-10 py-1">
+                    <span className="text-[8.5px] font-extrabold text-teal-700 dark:text-teal-400 bg-teal-50/60 dark:bg-teal-950/40 border border-teal-150/50 dark:border-teal-900/40 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                      🔒 {isBangla ? '১০০% নিরাপদ' : '100% Safe'}
+                    </span>
+                    <span className="text-[8.5px] font-extrabold text-indigo-700 dark:text-indigo-400 bg-indigo-50/60 dark:bg-indigo-950/40 border border-indigo-150/50 dark:border-indigo-900/40 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                      ⚡ {isBangla ? 'অফলাইন/অনলাইন' : 'Offline/Online'}
+                    </span>
+                    <span className="text-[8.5px] font-extrabold text-amber-700 dark:text-amber-400 bg-amber-50/60 dark:bg-amber-950/40 border border-amber-150/50 dark:border-amber-900/40 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                      🛡️ {isBangla ? 'সুরক্ষিত' : 'Secured'}
+                    </span>
+                  </div>
+
+                  {/* Redesigned Info Rows */}
+                  <div className="relative z-10 space-y-2.5 pt-1">
+                    {/* Developer Row */}
+                    <div className="flex items-center gap-3 bg-white/70 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-150/60 dark:border-slate-800/80 transition-all hover:bg-slate-50/50 dark:hover:bg-slate-800/60 shadow-3xs">
+                      <div className="p-2 bg-teal-50 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400 rounded-lg shrink-0 border border-teal-100/30">
+                        <User className="h-4 w-4" />
+                      </div>
+                      <div className="text-left min-w-0 flex-1">
+                        <p className="text-[9px] text-slate-400 dark:text-slate-500 font-extrabold uppercase tracking-wider">
+                          {isBangla ? 'প্রতিষ্ঠাতা ও ডেভেলপার' : 'Founder & Developer'}
+                        </p>
+                        <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 mt-0.5">
+                          {isBangla ? 'জনি দত্ত' : 'Jony Datta'}
+                        </h4>
+                      </div>
                     </div>
 
-                    <div className="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-150">
-                      <span className="text-[10px] text-slate-500 font-bold">{isBangla ? 'যোগাযোগ করুন:' : 'Contact Us:'}</span>
-                      <div className="flex items-center gap-2">
+                    {/* Social Media Row */}
+                    <div className="flex items-center justify-between gap-3 bg-white/70 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-150/60 dark:border-slate-800/80 transition-all hover:bg-slate-50/50 dark:hover:bg-slate-800/60 shadow-3xs">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="p-2 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-lg shrink-0 border border-indigo-100/30">
+                          <Globe className="h-4 w-4" />
+                        </div>
+                        <div className="text-left min-w-0">
+                          <p className="text-[9px] text-slate-400 dark:text-slate-500 font-extrabold uppercase tracking-wider">
+                            {isBangla ? 'যোগাযোগ করুন' : 'Connect With Us'}
+                          </p>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold mt-0.5">
+                            {isBangla ? 'সামাজিক যোগাযোগ মাধ্যম' : 'Social Platforms'}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-1.5 shrink-0 pl-1">
                         <a
                           href="https://www.facebook.com/jonydatta247"
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="p-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-md transition-colors cursor-pointer border border-blue-100 flex items-center justify-center"
+                          className="p-1.5 bg-blue-50 hover:bg-blue-600 hover:text-white dark:bg-blue-950/40 dark:hover:bg-blue-600 text-blue-600 dark:text-blue-400 rounded-lg transition-all cursor-pointer border border-blue-100/40 dark:border-blue-900/50 flex items-center justify-center hover:scale-110 active:scale-95"
                           title="Facebook"
                         >
-                          <Facebook className="h-3 w-3" />
+                          <Facebook className="h-4 w-4" />
                         </a>
                         <a
                           href="https://www.linkedin.com/in/jonydatta"
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="p-1 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-md transition-colors cursor-pointer border border-sky-100 flex items-center justify-center"
+                          className="p-1.5 bg-sky-50 hover:bg-sky-600 hover:text-white dark:bg-sky-950/40 dark:hover:bg-sky-600 text-sky-600 dark:text-sky-400 rounded-lg transition-all cursor-pointer border border-sky-100/40 dark:border-sky-900/50 flex items-center justify-center hover:scale-110 active:scale-95"
                           title="LinkedIn"
                         >
-                          <Linkedin className="h-3 w-3" />
+                          <Linkedin className="h-4 w-4" />
                         </a>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="text-[9px] text-slate-400 leading-relaxed font-bold max-w-sm mx-auto">
-                    {isBangla 
-                      ? 'হিসাব খাতা আপনার বেচাকেনা, বাকির খাতা ও দৈনিক খরচ নিরাপদভাবে সহজে সংরক্ষণ করতে সাহায্য করে।' 
-                      : 'Hisab Khata securely manages and tracks your sales, daily store expenses, and customer dues.'}
                   </div>
                 </div>
 
@@ -7117,7 +7199,11 @@ export default function App() {
                       return (
                         <div
                           key={cd.name}
-                          className="p-3 rounded-xl border border-slate-100 bg-rose-50/10 hover:bg-rose-50/20 flex flex-col gap-2 transition-colors"
+                          className={`p-3 rounded-xl border transition-colors ${
+                            cd.amount <= 0 
+                              ? 'border-emerald-100 bg-emerald-50/5 hover:bg-emerald-50/15 dark:border-emerald-900/40 dark:bg-emerald-950/5 dark:hover:bg-emerald-950/15' 
+                              : 'border-slate-100 bg-rose-50/10 hover:bg-rose-50/20 dark:border-slate-800/80 dark:bg-rose-950/5 dark:hover:bg-rose-950/15'
+                          }`}
                         >
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0 flex-1">
@@ -7126,8 +7212,14 @@ export default function App() {
                                 onClick={() => setSelectedCustomerForDetail(cd.name)}
                                 title={isBangla ? 'বিস্তারিত খতিয়ান দেখতে ক্লিক করুন' : 'Click to view detailed ledger'}
                               >
-                                <span className="h-2 w-2 rounded-full bg-rose-500 shrink-0 group-hover:bg-rose-600"></span>
-                                <h4 className="text-xs sm:text-sm font-black text-slate-800 group-hover:text-rose-600 group-hover:underline truncate">{cd.name}</h4>
+                                <span className={`h-2 w-2 rounded-full shrink-0 transition-colors ${
+                                  cd.amount <= 0 ? 'bg-emerald-500' : 'bg-rose-500'
+                                }`}></span>
+                                <h4 className={`text-xs sm:text-sm font-black truncate transition-colors ${
+                                  cd.amount <= 0 
+                                    ? 'text-slate-700 group-hover:text-emerald-600 group-hover:underline dark:text-slate-300 dark:group-hover:text-emerald-400' 
+                                    : 'text-slate-800 group-hover:text-rose-600 group-hover:underline dark:text-slate-200 dark:group-hover:text-rose-400'
+                                }`}>{cd.name}</h4>
                               </div>
                               <div className="text-[10px] text-slate-400 font-bold mt-1 pl-3.5">
                                 {isBangla ? 'সর্বশেষ লেনদেন:' : 'Last active:'} <span className="font-mono">{isBangla ? toBanglaNumber(cd.lastDate) : cd.lastDate}</span>
@@ -7135,11 +7227,17 @@ export default function App() {
                             </div>
                             
                             <div className="text-right shrink-0 flex flex-col items-end">
-                              <span className="text-xs sm:text-sm font-black text-rose-600 block">
-                                {formatCurrency(cd.amount, isBangla)}
-                              </span>
+                              {cd.amount <= 0 ? (
+                                <span className="text-[10px] sm:text-xs font-black text-emerald-600 bg-emerald-50/80 border border-emerald-200/50 px-2.5 py-0.5 rounded-lg block text-center shrink-0 dark:text-emerald-400 dark:bg-emerald-950/40 dark:border-emerald-800/50">
+                                  {isBangla ? 'পরিশোধিত' : 'Paid'}
+                                </span>
+                              ) : (
+                                <span className="text-xs sm:text-sm font-black text-rose-600 block">
+                                  {formatCurrency(cd.amount, isBangla)}
+                                </span>
+                              )}
                               
-                              {!isDepositingThis && (
+                              {!isDepositingThis && cd.amount > 0 && (
                                 <button
                                   onClick={() => {
                                     setDepositingCustomerName(cd.name);
