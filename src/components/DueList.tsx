@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Landmark, Coins, X, Check, Edit2, Trash2, Clock, User, History, Calendar } from 'lucide-react';
 import { CustomerDue, Transaction } from '../types';
-import { formatCurrency, toBanglaNumber, formatDate, formatTimeStr } from '../utils';
+import { formatCurrency, toBanglaNumber, formatDate, formatTimeStr, toEnglishNumber } from '../utils';
 
 interface DueListProps {
   dueList: CustomerDue[];
@@ -119,7 +119,7 @@ function DueList({
 
   const handleRenameSubmit = (oldName: string) => {
     if (!newNameValue.trim()) return;
-    const parsedAmount = parseFloat(newAmountValue);
+    const parsedAmount = parseFloat(toEnglishNumber(newAmountValue));
     onRename(oldName, newNameValue.trim(), isNaN(parsedAmount) ? undefined : parsedAmount);
     setEditingCustomer(null);
     setNewNameValue('');
@@ -133,7 +133,7 @@ function DueList({
   };
 
   const handleDepositSubmit = (customerName: string, maxDue: number) => {
-    const amt = parseFloat(depositAmount);
+    const amt = parseFloat(toEnglishNumber(depositAmount));
     if (isNaN(amt) || amt <= 0) {
       setErrorMsg(isBangla ? 'সঠিক টাকা লিখুন' : 'Enter a valid amount');
       return;

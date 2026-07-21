@@ -7,6 +7,7 @@ export interface Transaction {
   isCash: boolean; // true = cash sale/deposit, false = due (baki) sale
   customer: string; // customer name for due sales
   quantity?: number; // quantity sold
+  parentDueId?: string; // ID of the due transaction that this cash transaction pays for
 }
 
 export interface Expense {

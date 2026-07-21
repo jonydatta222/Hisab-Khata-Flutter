@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Trash2, Edit2, Check, X, Tag, User, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Transaction } from '../types';
@@ -21,6 +21,22 @@ function TransactionList({
   const [showAll, setShowAll] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Lock body scroll when a modal is open
+  useEffect(() => {
+    const isModalOpen = editingId !== null || deletingId !== null;
+    if (isModalOpen) {
+      document.body.style.overflow = 'hidden';
+      document.body.classList.add('overflow-hidden');
+    } else {
+      document.body.style.overflow = '';
+      document.body.classList.remove('overflow-hidden');
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.body.classList.remove('overflow-hidden');
+    };
+  }, [editingId, deletingId]);
   
   // Edit form states
   const [editProduct, setEditProduct] = useState('');
@@ -116,189 +132,88 @@ function TransactionList({
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
               <AnimatePresence initial={false}>
                 {displayedTransactions.map((tx) => {
-                  const isEditing = editingId === tx.id;
+                  const paidAmount = !tx.isCash
+                    ? transactions.filter(t => t.parentDueId === tx.id).reduce((sum, t) => sum + t.amount, 0)
+                    : 0;
+                  const remainingDue = !tx.isCash ? Math.max(0, tx.amount - paidAmount) : 0;
+                  const isPaidOff = !tx.isCash ? remainingDue === 0 : false;
 
                   return (
                     <tr 
                       key={tx.id} 
-                      className={`hover:bg-slate-50/50 transition-colors ${
-                        isEditing ? 'bg-teal-50/40' : ''
-                      }`}
+                      className="hover:bg-slate-50/50 transition-colors"
                     >
-                      {isEditing ? (
-                        /* Inline Edit Interface inside Table */
-                        <td colSpan={4} className="p-3">
-                          <div className="flex flex-col gap-2.5 bg-slate-50 p-3 rounded-lg border border-teal-150">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              <div>
-                                <label className="block text-[10px] font-black text-slate-500 mb-0.5">
-                                  {isBangla ? 'পণ্যের বিবরণ' : 'Product Details'}
-                                </label>
-                                <input
-                                  type="text"
-                                  value={editProduct}
-                                  onChange={(e) => setEditProduct(e.target.value)}
-                                  className="w-full text-xs p-1.5 rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white font-medium"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-black text-slate-500 mb-0.5">
-                                  {isBangla ? 'দাম (৳)' : 'Price ($)'}
-                                </label>
-                                <input
-                                  type="number"
-                                  value={editAmount}
-                                  onChange={(e) => {
-                                    let val = e.target.value;
-                                    if (val.length > 1 && val.startsWith('0') && !val.startsWith('0.')) {
-                                      val = val.replace(/^0+/, '');
-                                    }
-                                    setEditAmount(val);
-                                  }}
-                                  className="w-full text-xs p-1.5 rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white font-bold"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-100">
-                              <div className="flex items-center gap-3">
-                                <label className="flex items-center text-[11px] gap-1 cursor-pointer">
-                                  <input
-                                    type="radio"
-                                    name={`edit-type-${tx.id}`}
-                                    checked={editIsCash}
-                                    onChange={() => setEditIsCash(true)}
-                                    className="text-teal-600 focus:ring-teal-500"
-                                  />
-                                  <span>{isBangla ? 'নগদ' : 'Cash'}</span>
-                                </label>
-                                <label className="flex items-center text-[11px] gap-1 cursor-pointer">
-                                  <input
-                                    type="radio"
-                                    name={`edit-type-${tx.id}`}
-                                    checked={!editIsCash}
-                                    onChange={() => setEditIsCash(false)}
-                                    className="text-teal-600 focus:ring-teal-500"
-                                  />
-                                  <span>{isBangla ? 'বাকি' : 'Due'}</span>
-                                </label>
-
-                                {!editIsCash && (
-                                  <input
-                                    type="text"
-                                    placeholder={isBangla ? 'ক্রেতার নাম' : 'Customer Name'}
-                                    value={editCustomer}
-                                    onChange={(e) => setEditCustomer(e.target.value)}
-                                    className="text-xs p-1 px-2 rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white font-medium min-w-[110px]"
-                                  />
-                                )}
-                              </div>
-
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={cancelEditing}
-                                  className="px-2.5 py-1 text-[10px] text-slate-500 hover:bg-slate-200 rounded flex items-center gap-1 border border-slate-200 bg-white font-bold cursor-pointer"
-                                >
-                                  <X className="h-3 w-3" />
-                                  <span>{isBangla ? 'বাতিল' : 'Cancel'}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => saveEdit(tx.id)}
-                                  className="px-2.5 py-1 text-[10px] text-white bg-teal-600 hover:bg-teal-500 rounded flex items-center gap-1 font-bold cursor-pointer"
-                                >
-                                  <Check className="h-3 w-3" />
-                                  <span>{isBangla ? 'সেভ' : 'Save'}</span>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      ) : (
-                        /* Normal Table Row */
-                        <>
-                          <td className="py-2 px-2">
-                            <div className="flex flex-col gap-0.5">
-                              <div className="flex items-center flex-wrap gap-1.5">
-                                <span className="font-bold text-slate-800 text-xs sm:text-[13px] break-words whitespace-normal leading-tight">{tx.product}</span>
-                                <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-400 font-bold font-mono shrink-0">
-                                  <Clock className="h-2.5 w-2.5 shrink-0" />
-                                  {tx.time}
-                                </span>
-                              </div>
-                              {!tx.isCash && tx.customer && (
-                                <span className="text-[10px] text-rose-600 font-extrabold bg-rose-50 px-1.5 py-0.2 rounded w-fit border border-rose-100/40 break-words whitespace-normal leading-tight">
-                                  👤 {tx.customer}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-2 px-2 w-[65px] min-w-[65px] text-center">
-                            {tx.isCash ? (
-                              <span className="inline-flex items-center justify-center gap-0.5 text-[9px] font-black bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100">
-                                <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
-                                {isBangla ? 'নগদ' : 'Cash'}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center justify-center gap-0.5 text-[9px] font-black bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded border border-rose-100">
-                                <AlertCircle className="h-2.5 w-2.5 shrink-0" />
-                                {isBangla ? 'বাকি' : 'Due'}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2 px-2 text-right w-[75px] min-w-[75px]">
-                            <span className="font-extrabold text-slate-900 text-xs sm:text-[13px] font-sans">
-                              {formatCurrency(tx.amount, isBangla)}
+                      <td className="py-2.5 px-2">
+                        <div className="flex flex-col gap-0.5 text-left">
+                          <div className="flex items-center flex-wrap gap-1.5">
+                            <span className="font-bold text-slate-800 text-xs sm:text-[13px] break-words whitespace-normal leading-tight">{tx.product}</span>
+                            <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-400 font-bold font-mono shrink-0">
+                              <Clock className="h-2.5 w-2.5 shrink-0" />
+                              {tx.time}
                             </span>
-                          </td>
-                          <td className="py-2 px-2 w-[85px] min-w-[85px] text-center">
-                            <div className="flex items-center justify-center gap-1 flex-nowrap">
-                              {deletingId === tx.id ? (
-                                <div className="flex items-center justify-center gap-0.5 bg-rose-50 border border-rose-100 p-0.5 px-1 rounded-md shrink-0">
-                                  <span className="text-[9px] text-rose-700 font-black">{isBangla ? 'মুছবেন?' : 'Sure?'}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      onDelete(tx.id);
-                                      setDeletingId(null);
-                                    }}
-                                    className="px-1 py-0.5 bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-bold rounded cursor-pointer shrink-0"
-                                  >
-                                    {isBangla ? 'হ্যাঁ' : 'Yes'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setDeletingId(null)}
-                                    className="px-1 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[9px] font-bold rounded cursor-pointer shrink-0"
-                                  >
-                                    {isBangla ? 'না' : 'No'}
-                                  </button>
-                                </div>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => startEditing(tx)}
-                                    className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-md transition-colors cursor-pointer shrink-0"
-                                    title={isBangla ? 'হিসাব পরিবর্তন' : 'Edit'}
-                                  >
-                                    <Edit2 className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setDeletingId(tx.id)}
-                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer shrink-0"
-                                    title={isBangla ? 'হিসাব মুছুন' : 'Delete'}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </>
-                      )}
+                          </div>
+                          {!tx.isCash && tx.customer && (
+                            <span className="text-[10px] text-rose-600 font-extrabold bg-rose-50 px-1.5 py-0.2 rounded w-fit border border-rose-100/40 break-words whitespace-normal leading-tight">
+                              👤 {tx.customer}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-2 w-[65px] min-w-[65px] text-center">
+                        {tx.isCash ? (
+                          <span className="inline-flex items-center justify-center gap-0.5 text-[9px] font-black bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100">
+                            <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
+                            {isBangla ? 'নগদ' : 'Cash'}
+                          </span>
+                        ) : isPaidOff ? (
+                          <span className="inline-flex items-center justify-center gap-0.5 text-[9px] font-black bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100">
+                            <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
+                            {isBangla ? 'পরিশোধিত' : 'Paid'}
+                          </span>
+                        ) : paidAmount > 0 ? (
+                          <span className="inline-flex items-center justify-center gap-0.5 text-[9px] font-black bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-100">
+                            <AlertCircle className="h-2.5 w-2.5 shrink-0" />
+                            {isBangla ? 'আংশিক' : 'Partial'}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center justify-center gap-0.5 text-[9px] font-black bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded border border-rose-100">
+                            <AlertCircle className="h-2.5 w-2.5 shrink-0" />
+                            {isBangla ? 'বাকি' : 'Due'}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-2 text-right w-[75px] min-w-[75px]">
+                        <div className="flex flex-col items-end">
+                          <span className="font-extrabold text-slate-900 text-xs sm:text-[13px] font-sans">
+                            {formatCurrency(tx.amount, isBangla)}
+                          </span>
+                          {!tx.isCash && paidAmount > 0 && (
+                            <span className="text-[8px] text-slate-400 font-bold">
+                              {isBangla ? `বাকি: ${formatCurrency(remainingDue, true)}` : `Due: ${formatCurrency(remainingDue, false)}`}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-2 w-[85px] min-w-[85px] text-center">
+                        <div className="flex items-center justify-center gap-1.5 flex-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => startEditing(tx)}
+                            className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-md transition-colors cursor-pointer shrink-0"
+                            title={isBangla ? 'হিসাব পরিবর্তন' : 'Edit'}
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingId(tx.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer shrink-0"
+                            title={isBangla ? 'হিসাব মুছুন' : 'Delete'}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -321,6 +236,202 @@ function TransactionList({
           </button>
         </div>
       )}
+
+      {/* --- EDIT TRANSACTION MODAL --- */}
+      <AnimatePresence>
+        {editingId !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={cancelEditing}
+              className="fixed inset-0 bg-black"
+            />
+
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 border border-slate-100 overflow-hidden z-50 text-left"
+              id="edit-transaction-modal-box"
+            >
+              <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                <h3 className="font-bold text-slate-800 text-base flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 bg-teal-500 rounded-full animate-pulse"></span>
+                  {isBangla ? 'বিক্রির বিবরণ পরিবর্তন' : 'Edit Sale Details'}
+                </h3>
+                <button
+                  onClick={cancelEditing}
+                  className="text-slate-400 hover:text-slate-650 transition-colors cursor-pointer text-xs font-bold p-1 hover:bg-slate-100 rounded-full"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">
+                    {isBangla ? 'পণ্যের বিবরণ' : 'Product Details'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editProduct}
+                    onChange={(e) => setEditProduct(e.target.value)}
+                    className="w-full text-sm p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 bg-slate-50 hover:bg-white focus:bg-white transition-all font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">
+                    {isBangla ? 'দাম (টাকা)' : 'Price (৳)'}
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    value={editAmount}
+                    onChange={(e) => {
+                      let val = e.target.value;
+                      if (val.length > 1 && val.startsWith('0') && !val.startsWith('0.')) {
+                        val = val.replace(/^0+/, '');
+                      }
+                      setEditAmount(val);
+                    }}
+                    className="w-full text-sm p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 bg-slate-50 hover:bg-white focus:bg-white transition-all font-sans font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5">
+                    {isBangla ? 'পেমেন্ট ধরন' : 'Payment Type'}
+                  </label>
+                  <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 mb-2 text-xs font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setEditIsCash(true)}
+                      className={`flex-1 py-2 px-2 rounded-md text-center transition-all cursor-pointer ${
+                        editIsCash
+                          ? 'bg-white text-teal-800 shadow-3xs font-extrabold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      {isBangla ? '💸 নগদ' : '💸 Cash'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditIsCash(false)}
+                      className={`flex-1 py-2 px-2 rounded-md text-center transition-all cursor-pointer ${
+                        !editIsCash
+                          ? 'bg-rose-50 text-rose-700 shadow-3xs font-extrabold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      {isBangla ? '👤 বাকি' : '👤 Due'}
+                    </button>
+                  </div>
+                </div>
+
+                {!editIsCash && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">
+                      {isBangla ? 'ক্রেতার নাম' : 'Customer Name'}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder={isBangla ? 'যেমন: রহিম মিয়া' : 'e.g. Rahim Miah'}
+                      value={editCustomer}
+                      onChange={(e) => setEditCustomer(e.target.value)}
+                      className="w-full text-sm p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 bg-slate-50 hover:bg-white focus:bg-white transition-all font-semibold"
+                    />
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={cancelEditing}
+                    className="px-4 py-2 text-xs font-black text-slate-500 hover:bg-slate-100 rounded-xl border border-slate-200 cursor-pointer"
+                  >
+                    {isBangla ? 'বাতিল' : 'Cancel'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => saveEdit(editingId!)}
+                    className="px-5 py-2 text-xs font-black text-white bg-teal-600 hover:bg-teal-500 rounded-xl shadow-sm cursor-pointer"
+                  >
+                    {isBangla ? 'পরিবর্তন করুন' : 'Update Sale'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- DELETE TRANSACTION MODAL --- */}
+      <AnimatePresence>
+        {deletingId !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setDeletingId(null)}
+              className="fixed inset-0 bg-black"
+            />
+
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 border border-slate-100 overflow-hidden z-50 text-left"
+              id="delete-transaction-modal-box"
+            >
+              <div className="flex items-start gap-3">
+                <span className="p-2.5 bg-rose-50 text-rose-600 rounded-xl shrink-0">
+                  <Trash2 className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 leading-none">
+                    {isBangla ? 'হিসাব ডিলিট করুন' : 'Delete Sale Entry'}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                    {isBangla 
+                      ? 'আপনি কি নিশ্চিতভাবে এই বিক্রির হিসাবটি মুছে ফেলতে চান?' 
+                      : 'Are you sure you want to delete this sale record?'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 mt-4 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setDeletingId(null)}
+                  className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-black text-xs rounded-xl transition-all cursor-pointer shadow-3xs"
+                >
+                  {isBangla ? 'না' : 'No'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDelete(deletingId!);
+                    setDeletingId(null);
+                  }}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl transition-all cursor-pointer shadow-sm"
+                >
+                  {isBangla ? 'হ্যাঁ' : 'Yes'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

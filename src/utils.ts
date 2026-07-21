@@ -14,6 +14,21 @@ export function toBanglaNumber(input: string | number): string {
 }
 
 /**
+ * Converts Bangla numbers/digits to English digits.
+ */
+export function toEnglishNumber(input: string | number): string {
+  const str = String(input);
+  const engDigits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+  const bngDigits = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+  
+  let result = str;
+  for (let i = 0; i < bngDigits.length; i++) {
+    result = result.replace(new RegExp(bngDigits[i], 'g'), engDigits[i]);
+  }
+  return result;
+}
+
+/**
  * Returns a nicely formatted date string in English or Bangla.
  */
 export function formatDate(dateStr: string, isBangla: boolean, excludeDay: boolean = false): string {
@@ -114,6 +129,21 @@ export function getTimestamp(dateStr: string, timeStr?: string): number {
   
   const [year, month, day] = dateStr.split('-').map(Number);
   return new Date(year, month - 1, day, hours, minutes).getTime();
+}
+
+/**
+ * Checks if a transaction is a due repayment/deposit (not a product sale).
+ */
+export function isTransactionRepayment(tx: { product: string; isCash: boolean; customer?: string }): boolean {
+  if (!tx) return false;
+  const prodLower = (tx.product || '').toLowerCase().trim();
+  const isRepayment = (tx.isCash && tx.customer && tx.customer.trim().length > 0) ||
+                      prodLower.startsWith('বাকি টাকা জমা') || 
+                      prodLower.startsWith('বাকির টাকা জমা') || 
+                      prodLower.includes('due deposit') ||
+                      prodLower.includes('বাকি পরিশোধ') ||
+                      prodLower.includes('due paid');
+  return !!isRepayment;
 }
 
 /**

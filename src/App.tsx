@@ -51,12 +51,14 @@ import {
 import { Transaction, Expense, CustomerDue, DailySummary, OutOfStockItem, ProductRateItem, MemoItem } from './types';
 import {
   toBanglaNumber,
+  toEnglishNumber,
   formatDate,
   formatTimeStr,
   getTodayDateString,
   formatCurrency,
   generateId,
-  getTimestamp
+  getTimestamp,
+  isTransactionRepayment
 } from './utils';
 
 import { 
@@ -310,8 +312,33 @@ export default function App() {
   const [isCalcOpen, setIsCalcOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isDueListModalOpen, setIsDueListModalOpen] = useState(false);
+  const [activeCardDetailModal, setActiveCardDetailModal] = useState<'sales' | 'cash' | 'expenses' | null>(null);
   const [modalDuesLimit, setModalDuesLimit] = useState(15);
   const [selectedCustomerForDetail, setSelectedCustomerForDetail] = useState<string | null>(null);
+
+  // States for detailed customer ledger action panel (add due / add deposit)
+  const [detailActionTab, setDetailActionTab] = useState<'none' | 'add_due' | 'add_deposit'>('none');
+  const [detailDueProductName, setDetailDueProductName] = useState('');
+  const [detailDueProductAmount, setDetailDueProductAmount] = useState('');
+  const [detailDepositAmount, setDetailDepositAmount] = useState('');
+  const [detailDepositNote, setDetailDepositNote] = useState('');
+  const [detailActionError, setDetailActionError] = useState('');
+  const [activePayingDueId, setActivePayingDueId] = useState<string | null>(null);
+  const [paymentAmt, setPaymentAmt] = useState('');
+  const [selectedParentDueIdForDeposit, setSelectedParentDueIdForDeposit] = useState<string>('');
+
+  useEffect(() => {
+    setDetailActionTab('none');
+    setDetailDueProductName('');
+    setDetailDueProductAmount('');
+    setDetailDepositAmount('');
+    setDetailDepositNote('');
+    setDetailActionError('');
+    setActivePayingDueId(null);
+    setPaymentAmt('');
+    setSelectedParentDueIdForDeposit('');
+  }, [selectedCustomerForDetail]);
+
   const [isOutOfStockModalOpen, setIsOutOfStockModalOpen] = useState(false);
   const [isProductRateModalOpen, setIsProductRateModalOpen] = useState(false);
   const [activeProfitCalcProduct, setActiveProfitCalcProduct] = useState<ProductRateItem | null>(null);
@@ -911,6 +938,7 @@ export default function App() {
       isCalcOpen ||
       isExpenseModalOpen ||
       isDueListModalOpen ||
+      activeCardDetailModal !== null ||
       selectedCustomerForDetail !== null ||
       selectedProductForDetail !== null ||
       selectedCalendarDayData !== null ||
@@ -943,6 +971,7 @@ export default function App() {
     isCalcOpen,
     isExpenseModalOpen,
     isDueListModalOpen,
+    activeCardDetailModal,
     selectedCustomerForDetail,
     selectedProductForDetail,
     selectedCalendarDayData,
@@ -1156,7 +1185,7 @@ export default function App() {
 
   // --- Delete and Rename Customer Dues ---
   const handleDeleteCustomerDues = (customerName: string) => {
-    const updated = transactions.filter(tx => tx.customer !== customerName);
+    const updated = transactions.filter(tx => !tx.customer || tx.customer.trim().toLowerCase() !== customerName.trim().toLowerCase());
     saveTransactionsToStorage(updated);
     showToast(isBangla ? 'গ্রাহকের সকল হিসাব ডিলিট করা হয়েছে!' : 'Customer dues deleted successfully!');
   };
@@ -1165,9 +1194,9 @@ export default function App() {
     const trimmedNewName = newName.trim();
     if (!trimmedNewName) return;
 
-    // 1. Rename all transactions first
+    // 1. Rename all transactions first, using case-insensitive check to catch any variant
     let updated = transactions.map(tx => {
-      if (tx.customer === oldName) {
+      if (tx.customer && tx.customer.trim().toLowerCase() === oldName.trim().toLowerCase()) {
         return { ...tx, customer: trimmedNewName };
       }
       return tx;
@@ -1176,7 +1205,7 @@ export default function App() {
     // 2. Adjust amount if provided and different from current calculated amount
     if (newAmount !== undefined && !isNaN(newAmount)) {
       // Find current due for this customer
-      const currentCd = customerDues.find(cd => cd.name === oldName);
+      const currentCd = customerDues.find(cd => cd.name.trim().toLowerCase() === oldName.trim().toLowerCase());
       const currentAmount = currentCd ? currentCd.amount : 0;
 
       if (newAmount !== currentAmount) {
@@ -1219,6 +1248,66 @@ export default function App() {
     setDeleteDateTarget(dateToDelete);
     setIsDeleteDateModalOpen(true);
   };
+
+  // --- Prevent background scrolling when any popup/modal is open ---
+  useEffect(() => {
+    const isModalOpen = !!(
+      isCalcOpen ||
+      isExpenseModalOpen ||
+      isDueListModalOpen ||
+      selectedCustomerForDetail !== null ||
+      isOutOfStockModalOpen ||
+      isProductRateModalOpen ||
+      activeProfitCalcProduct !== null ||
+      isAddDueModalOpen ||
+      isSyncModalOpen ||
+      isRestoreChoiceModalOpen ||
+      isDeleteDateModalOpen ||
+      isOthersModalOpen ||
+      depositingCustomerName !== null ||
+      syncConflictData !== null ||
+      (confirmModal !== null && confirmModal.isOpen) ||
+      weeklyDetailModal !== null ||
+      selectedProductForDetail !== null ||
+      editingRateId !== null ||
+      editingOosId !== null ||
+      selectedCalendarDayData !== null
+    );
+
+    if (isModalOpen) {
+      document.body.style.overflow = 'hidden';
+      document.body.classList.add('overflow-hidden');
+    } else {
+      document.body.style.overflow = '';
+      document.body.classList.remove('overflow-hidden');
+    }
+
+    return () => {
+      document.body.style.overflow = '';
+      document.body.classList.remove('overflow-hidden');
+    };
+  }, [
+    isCalcOpen,
+    isExpenseModalOpen,
+    isDueListModalOpen,
+    selectedCustomerForDetail,
+    isOutOfStockModalOpen,
+    isProductRateModalOpen,
+    activeProfitCalcProduct,
+    isAddDueModalOpen,
+    isSyncModalOpen,
+    isRestoreChoiceModalOpen,
+    isDeleteDateModalOpen,
+    isOthersModalOpen,
+    depositingCustomerName,
+    syncConflictData,
+    confirmModal,
+    weeklyDetailModal,
+    selectedProductForDetail,
+    editingRateId,
+    editingOosId,
+    selectedCalendarDayData
+  ]);
 
   // --- Back Button Navigation with popstate history ---
   useEffect(() => {
@@ -1634,8 +1723,10 @@ export default function App() {
 
   // Dynamic calculations
   const todaySales = useMemo(() => todayTransactions.reduce((sum, tx) => {
-    // Only regular sales count as total sales (exclude due payment collections as they are already accounted for in sales of the day credit was given, or treated as cash flow).
-    // To match this literal Flutter app behavior perfectly, we will count all today's ledger entry amounts in total sales!
+    // Only regular sales count as total sales (exclude due payment collections as they are already accounted for in sales of the day credit was given).
+    if (isTransactionRepayment(tx)) {
+      return sum;
+    }
     return sum + tx.amount;
   }, 0), [todayTransactions]);
 
@@ -1643,16 +1734,24 @@ export default function App() {
     return sum + (tx.isCash ? tx.amount : 0);
   }, 0), [todayTransactions]);
 
-  const todayDueTaken = useMemo(() => todayTransactions.reduce((sum, tx) => {
-    return sum + (!tx.isCash ? tx.amount : 0);
-  }, 0), [todayTransactions]);
+  const todayDueTaken = useMemo(() => {
+    const duesToday = todayTransactions.filter(tx => !tx.isCash && !isTransactionRepayment(tx));
+    const totalDuesTaken = duesToday.reduce((sum, tx) => sum + tx.amount, 0);
+    
+    // Find all repayments across all time linked to dues taken on this selected date
+    const dueIdsToday = duesToday.map(tx => tx.id);
+    const repaymentsForTodayDues = transactions.filter(tx => tx.parentDueId && dueIdsToday.includes(tx.parentDueId));
+    const totalRepayments = repaymentsForTodayDues.reduce((sum, tx) => sum + tx.amount, 0);
+    
+    return Math.max(0, totalDuesTaken - totalRepayments);
+  }, [todayTransactions, transactions]);
 
   const todayExpenseTotal = useMemo(() => todayExpenses.reduce((sum, ex) => sum + ex.amount, 0), [todayExpenses]);
 
   // --- Global Customer Due Calculation across all time ---
   // Calculates live customer due lists dynamically from all recorded transactions.
   const customerDues = useMemo((): CustomerDue[] => {
-    const duesMap: Record<string, { amount: number; lastDate: string; lastTime: string }> = {};
+    const duesMap: Record<string, { amount: number; lastDate: string; lastTime: string; originalName: string }> = {};
     
     // Sort transactions chronologically to build correct cumulative balances
     const sortedTxs = [...transactions].sort((a, b) => {
@@ -1666,31 +1765,33 @@ export default function App() {
       const name = tx.customer.trim();
       if (!name) return;
       
+      const key = name.toLowerCase();
+      
       if (!tx.isCash) {
         // Due taken (increases balance)
-        if (!duesMap[name]) {
-          duesMap[name] = { amount: 0, lastDate: '', lastTime: '' };
+        if (!duesMap[key]) {
+          duesMap[key] = { amount: 0, lastDate: '', lastTime: '', originalName: name };
         }
-        duesMap[name].amount += tx.amount;
-        duesMap[name].lastDate = tx.date;
-        duesMap[name].lastTime = tx.time;
-      } else if (tx.product.startsWith('বাকির টাকা জমা') || tx.product.startsWith('বাকি টাকা জমা') || tx.product.includes('Due Deposit')) {
+        duesMap[key].amount += tx.amount;
+        duesMap[key].lastDate = tx.date;
+        duesMap[key].lastTime = tx.time;
+      } else {
         // Due deposit payment (reduces balance)
-        if (!duesMap[name]) {
-          duesMap[name] = { amount: 0, lastDate: '', lastTime: '' };
+        if (!duesMap[key]) {
+          duesMap[key] = { amount: 0, lastDate: '', lastTime: '', originalName: name };
         }
-        duesMap[name].amount -= tx.amount;
-        duesMap[name].lastDate = tx.date;
-        duesMap[name].lastTime = tx.time;
+        duesMap[key].amount -= tx.amount;
+        duesMap[key].lastDate = tx.date;
+        duesMap[key].lastTime = tx.time;
       }
     });
 
     return Object.keys(duesMap)
-      .map((name) => ({
-        name,
-        amount: duesMap[name].amount,
-        lastDate: duesMap[name].lastDate,
-        lastTime: duesMap[name].lastTime,
+      .map((key) => ({
+        name: duesMap[key].originalName,
+        amount: duesMap[key].amount,
+        lastDate: duesMap[key].lastDate,
+        lastTime: duesMap[key].lastTime,
       }))
       .sort((a, b) => getTimestamp(b.lastDate, b.lastTime) - getTimestamp(a.lastDate, a.lastTime));
   }, [transactions]);
@@ -1716,15 +1817,21 @@ export default function App() {
     return found ? found.amount : 0;
   }, [customerDues, selectedCustomerForDetail]);
 
+  const selectedCustomerUnpaidDues = useMemo(() => {
+    if (!selectedCustomerForDetail) return [];
+    return transactions.filter(t => 
+      !t.isCash && 
+      t.customer && 
+      t.customer.trim().toLowerCase() === selectedCustomerForDetail.trim().toLowerCase()
+    ).map(t => {
+      const paid = transactions.filter(sub => sub.parentDueId === t.id).reduce((sum, sub) => sum + sub.amount, 0);
+      const remaining = Math.max(0, t.amount - paid);
+      return { tx: t, remaining };
+    }).filter(item => item.remaining > 0);
+  }, [transactions, selectedCustomerForDetail]);
+
   const soldTransactions = useMemo(() => {
-    return transactions.filter(tx => {
-      const prodLower = tx.product.toLowerCase().trim();
-      return !(
-        prodLower.startsWith('বাকি টাকা জমা') || 
-        prodLower.startsWith('বাকির টাকা জমা') || 
-        prodLower.includes('due deposit')
-      );
-    }).sort((a, b) => getTimestamp(b.date, b.time) - getTimestamp(a.date, a.time));
+    return transactions.filter(tx => !isTransactionRepayment(tx)).sort((a, b) => getTimestamp(b.date, b.time) - getTimestamp(a.date, a.time));
   }, [transactions]);
 
   const filteredSoldTransactions = useMemo(() => {
@@ -1747,9 +1854,13 @@ export default function App() {
     // Process transactions
     transactions.forEach(tx => {
       const prodLower = tx.product.toLowerCase().trim();
-      const isDueDeposit = prodLower.startsWith('বাকি টাকা জমা') || 
+      const isDueDeposit = isTransactionRepayment(tx);
+      const _ignored = (tx.isCash && tx.customer) ||
+                           prodLower.startsWith('বাকি টাকা জমা') || 
                            prodLower.startsWith('বাকির টাকা জমা') || 
-                           prodLower.includes('due deposit');
+                           prodLower.includes('due deposit') ||
+                           prodLower.includes('বাকি পরিশোধ') ||
+                           prodLower.includes('due paid');
                            
       if (isDueDeposit) {
         totalDueDeposits += tx.amount;
@@ -1797,13 +1908,8 @@ export default function App() {
     let totalAllTimeSalesAmount = 0;
 
     transactions.forEach(tx => {
-      const prodLower = tx.product.toLowerCase().trim();
       // Exclude due deposits (which are not product sales)
-      if (
-        prodLower.startsWith('বাকি টাকা জমা') || 
-        prodLower.startsWith('বাকির টাকা জমা') || 
-        prodLower.includes('due deposit')
-      ) {
+      if (isTransactionRepayment(tx)) {
         return;
       }
 
@@ -1923,9 +2029,20 @@ export default function App() {
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
     });
     
-    const sales = monthlyTxs.reduce((sum, tx) => sum + tx.amount, 0);
+    const sales = monthlyTxs.reduce((sum, tx) => {
+      if (isTransactionRepayment(tx)) return sum;
+      return sum + tx.amount;
+    }, 0);
     const cash = monthlyTxs.reduce((sum, tx) => sum + (tx.isCash ? tx.amount : 0), 0);
-    const due = monthlyTxs.reduce((sum, tx) => sum + (!tx.isCash ? tx.amount : 0), 0);
+    
+    // Calculate remaining monthly due by subtracting payments made towards this month's dues
+    const monthlyDues = monthlyTxs.filter(tx => !tx.isCash && !isTransactionRepayment(tx));
+    const totalMonthlyDues = monthlyDues.reduce((sum, tx) => sum + tx.amount, 0);
+    const monthlyDueIds = monthlyDues.map(tx => tx.id);
+    const repaymentsForMonthlyDues = transactions.filter(tx => tx.parentDueId && monthlyDueIds.includes(tx.parentDueId));
+    const totalRepayments = repaymentsForMonthlyDues.reduce((sum, tx) => sum + tx.amount, 0);
+    const due = Math.max(0, totalMonthlyDues - totalRepayments);
+    
     const expense = monthlyExs.reduce((sum, ex) => sum + ex.amount, 0);
     
     return { sales, cash, due, expense };
@@ -1955,21 +2072,20 @@ export default function App() {
     const weeklyTxs = period === 'ALL' ? txs : txs.filter(tx => tx.date >= periodStartDateStr);
     const weeklyExs = period === 'ALL' ? exs : exs.filter(ex => ex.date >= periodStartDateStr);
     
-    const totalSales = weeklyTxs.reduce((sum, tx) => sum + tx.amount, 0);
-    const totalCashSales = weeklyTxs.filter(tx => tx.isCash).reduce((sum, tx) => sum + tx.amount, 0);
-    const totalDueSales = weeklyTxs.filter(tx => !tx.isCash).reduce((sum, tx) => sum + tx.amount, 0);
-    
     const isProductSale = (tx: Transaction) => {
-      const prodLower = tx.product.toLowerCase().trim();
-      return !(
-        prodLower.startsWith('বাকি টাকা জমা') || 
-        prodLower.startsWith('বাকির টাকা জমা') || 
-        prodLower.includes('due deposit') ||
-        prodLower.includes('বাকি টাকা জমা')
-      );
+      return !isTransactionRepayment(tx);
     };
     
     const weeklySalesTxs = weeklyTxs.filter(isProductSale);
+    
+    const totalSales = weeklySalesTxs.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+    const totalCashSales = weeklySalesTxs.filter(tx => tx.isCash).reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+    const weeklyDues = weeklySalesTxs.filter(tx => !tx.isCash);
+    const totalWeeklyDues = weeklyDues.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+    const weeklyDueIds = weeklyDues.map(tx => tx.id);
+    const repaymentsForWeeklyDues = txs.filter(tx => tx.parentDueId && weeklyDueIds.includes(tx.parentDueId));
+    const totalRepaymentsForWeekly = repaymentsForWeeklyDues.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+    const totalDueSales = Math.max(0, totalWeeklyDues - totalRepaymentsForWeekly);
     
     const productMap: Record<string, { name: string; count: number; totalAmount: number; txs: { date: string; customer?: string; amount: number }[] }> = {};
     let mostExpensiveProduct = { name: '', price: 0, date: '' };
@@ -1980,7 +2096,7 @@ export default function App() {
         return pl !== '' && pl !== 'নগদ' && pl !== 'cash';
       });
       if (parts.length === 0) return;
-      const splitAmount = tx.amount / parts.length;
+      const splitAmount = (Number(tx.amount) || 0) / parts.length;
       
       parts.forEach(part => {
         const key = part.toLowerCase();
@@ -2033,7 +2149,7 @@ export default function App() {
         return pl !== '' && pl !== 'নগদ' && pl !== 'cash';
       });
       if (parts.length === 0) return;
-      const splitAmount = tx.amount / parts.length;
+      const splitAmount = (Number(tx.amount) || 0) / parts.length;
       parts.forEach(part => {
         individualSales.push({
           name: part,
@@ -2048,18 +2164,47 @@ export default function App() {
       .sort((a, b) => b.price - a.price)
       .slice(0, 10);
 
-    const totalExpense = weeklyExs.reduce((sum, ex) => sum + ex.amount, 0);
-    const totalDueDeposits = weeklyTxs.filter(tx => !isProductSale(tx)).reduce((sum, tx) => sum + tx.amount, 0);
+    const totalExpense = weeklyExs.reduce((sum, ex) => sum + (Number(ex.amount) || 0), 0);
+    const totalDueDeposits = weeklyTxs.filter(tx => !isProductSale(tx)).reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
     
     const parseHourStr = (timeStr: string) => {
       if (!timeStr) return null;
-      const match = timeStr.trim().match(/^(\d+):(\d+)\s*(AM|PM)$/i);
-      if (!match) return null;
-      let hour = parseInt(match[1], 10);
-      const ampm = match[3].toUpperCase();
-      if (ampm === 'PM' && hour < 12) hour += 12;
-      if (ampm === 'AM' && hour === 12) hour = 0;
-      return hour;
+      const trimmed = timeStr.trim().replace(/\u202f/g, ' '); // Normalize Unicode NNBSP space
+      
+      // Try standard HH:MM AM/PM
+      let match = trimmed.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
+      if (match) {
+        let hour = parseInt(match[1], 10);
+        const ampm = match[3].toUpperCase();
+        if (ampm === 'PM' && hour < 12) hour += 12;
+        if (ampm === 'AM' && hour === 12) hour = 0;
+        return hour;
+      }
+      
+      // Try HH:MM:SS AM/PM
+      match = trimmed.match(/^(\d+):(\d+):(\d+)\s*(AM|PM)$/i);
+      if (match) {
+        let hour = parseInt(match[1], 10);
+        const ampm = match[4].toUpperCase();
+        if (ampm === 'PM' && hour < 12) hour += 12;
+        if (ampm === 'AM' && hour === 12) hour = 0;
+        return hour;
+      }
+      
+      // Try 24-hour format (HH:MM or HH:MM:SS)
+      match = trimmed.match(/^(\d+):(\d+)(?::\d+)?$/);
+      if (match) {
+        let hour = parseInt(match[1], 10);
+        if (hour >= 0 && hour < 24) return hour;
+      }
+      
+      // Try raw hour number
+      if (/^\d+$/.test(trimmed)) {
+        const hour = parseInt(trimmed, 10);
+        if (hour >= 0 && hour < 24) return hour;
+      }
+      
+      return null;
     };
 
     const hourAmountMap: Record<number, number> = {};
@@ -2074,8 +2219,10 @@ export default function App() {
       }
 
       const h = parseHourStr(tx.time);
+      const txAmount = Number(tx.amount) || 0;
+      
       if (h !== null) {
-        hourAmountMap[h] = (hourAmountMap[h] || 0) + tx.amount;
+        hourAmountMap[h] = (hourAmountMap[h] || 0) + txAmount;
         hourCountMap[h] = (hourCountMap[h] || 0) + 1;
       }
       
@@ -2085,7 +2232,7 @@ export default function App() {
           const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
           const day = d.getDay();
           if (!isNaN(day)) {
-            dayAmountMap[day] = (dayAmountMap[day] || 0) + tx.amount;
+            dayAmountMap[day] = (dayAmountMap[day] || 0) + txAmount;
             dayCountMap[day] = (dayCountMap[day] || 0) + 1;
           }
         }
@@ -2164,7 +2311,10 @@ export default function App() {
       
       const daySales = transactions
         .filter(t => t.date === dateKey)
-        .reduce((sum, t) => sum + t.amount, 0);
+        .reduce((sum, t) => {
+          if (isTransactionRepayment(t)) return sum;
+          return sum + t.amount;
+        }, 0);
         
       const dayExpenses = expenses
         .filter(e => e.date === dateKey)
@@ -2214,13 +2364,14 @@ export default function App() {
       if (!isCurrentMonth) return false;
       
       const prodLower = tx.product.toLowerCase().trim();
+      const isRepayment = (tx.isCash && tx.customer) ||
+                          prodLower.startsWith('বাকি টাকা জমা') || 
+                          prodLower.startsWith('বাকির টাকা জমা') || 
+                          prodLower.includes('due deposit') ||
+                          prodLower.includes('বাকি পরিশোধ') ||
+                          prodLower.includes('due paid');
       // Exclude due deposits (which are not product sales)
-      if (
-        prodLower.startsWith('বাকি টাকা জমা') || 
-        prodLower.startsWith('বাকির টাকা জমা') || 
-        prodLower.includes('due deposit') ||
-        prodLower.includes('বাকি টাকা জমা')
-      ) {
+      if (isRepayment) {
         return false;
       }
       return true;
@@ -2396,8 +2547,11 @@ export default function App() {
   const handleAddTransaction = (e: React.FormEvent) => {
     e.preventDefault();
     if (!productName.trim() || !amount) return;
-    const price = parseFloat(amount);
-    if (isNaN(price) || price <= 0) return;
+
+    const productParts = productName.split('+').map(p => p.trim()).filter(Boolean);
+    const amountParts = amount.split('+').map(a => a.trim()).filter(Boolean);
+
+    if (productParts.length === 0 || amountParts.length === 0) return;
     if (!isCashTransaction && !customerName.trim()) return;
 
     const now = new Date();
@@ -2407,38 +2561,100 @@ export default function App() {
       hour12: true
     });
 
-    const newTx: Transaction = {
-      id: generateId(),
-      date: selectedDate,
-      time: timeFormatted,
-      product: productName.trim(),
-      amount: price,
-      isCash: isCashTransaction,
-      customer: isCashTransaction ? '' : customerName.trim()
+    const newTxs: Transaction[] = [];
+    const itemsToDeduct: { name: string; qty: number }[] = [];
+
+    // Normalize customer name to prevent spelling/casing mismatches (e.g., Rahim vs rahim)
+    const trimmedCustomer = customerName.trim();
+    let normalizedCustomerName = trimmedCustomer;
+    if (trimmedCustomer) {
+      const existingCd = customerDues.find(
+        cd => cd.name.trim().toLowerCase() === trimmedCustomer.toLowerCase()
+      );
+      if (existingCd) {
+        normalizedCustomerName = existingCd.name;
+      }
+    }
+
+    let hasDuplicate = false;
+    let duplicateInfo = '';
+
+    for (let i = 0; i < productParts.length; i++) {
+      const prodName = productParts[i];
+      // Get corresponding price or default to '0'
+      const priceStr = amountParts[i] || '0';
+      const englishPriceStr = toEnglishNumber(priceStr);
+      const price = parseFloat(englishPriceStr);
+      const finalPrice = isNaN(price) || price < 0 ? 0 : price;
+
+      // Check if this identical entry already exists today
+      const duplicate = transactions.find(tx => 
+        tx.date === selectedDate &&
+        tx.isCash === isCashTransaction &&
+        tx.amount === finalPrice &&
+        tx.product.trim().toLowerCase() === prodName.trim().toLowerCase() &&
+        (isCashTransaction ? true : tx.customer.trim().toLowerCase() === normalizedCustomerName.toLowerCase())
+      );
+
+      if (duplicate) {
+        hasDuplicate = true;
+        duplicateInfo = isBangla
+          ? `পণ্য: "${prodName}", পরিমাণ: ৳${toBanglaNumber(finalPrice)}${!isCashTransaction ? `, ক্রেতা: "${normalizedCustomerName}"` : ''}`
+          : `Product: "${prodName}", Amount: ৳${finalPrice}${!isCashTransaction ? `, Customer: "${normalizedCustomerName}"` : ''}`;
+      }
+
+      const newTx: Transaction = {
+        id: generateId(),
+        date: selectedDate,
+        time: timeFormatted,
+        product: prodName,
+        amount: finalPrice,
+        isCash: isCashTransaction,
+        customer: isCashTransaction ? '' : normalizedCustomerName
+      };
+      newTxs.push(newTx);
+
+      const subParts = prodName.split(/[,,/]+/).map(p => p.trim()).filter(Boolean);
+      subParts.forEach(subPart => {
+        itemsToDeduct.push(parseProductAndQty(subPart));
+      });
+    }
+
+    if (newTxs.length === 0) return;
+
+    const proceedAdd = () => {
+      const updated = [...newTxs, ...transactions];
+      saveTransactionsToStorage(updated);
+      deductMultipleStock(itemsToDeduct);
+
+      // Reset Form
+      setProductName('');
+      setAmount('');
+      setIsCashTransaction(true);
+      setCustomerName('');
+
+      showToast(isBangla ? 'বিক্রি সফলভাবে হিসাবভুক্ত হয়েছে!' : 'Sale added to ledger!');
     };
 
-    const updated = [newTx, ...transactions];
-    saveTransactionsToStorage(updated);
-
-    // Deduct stock if matching product exists
-    const parts = productName.trim().split(/[+,/]+/).map(p => p.trim()).filter(Boolean);
-    const itemsToDeduct = parts.map(part => parseProductAndQty(part));
-    deductMultipleStock(itemsToDeduct);
-
-    // Reset Form
-    setProductName('');
-    setAmount('');
-    setIsCashTransaction(true);
-    setCustomerName('');
-
-    showToast(isBangla ? 'বিক্রি সফলভাবে হিসাবভুক্ত হয়েছে!' : 'Sale added to ledger!');
+    if (hasDuplicate) {
+      setConfirmModal({
+        isOpen: true,
+        title: isBangla ? 'একই বিক্রির হিসাব ইতিমধ্যে বিদ্যমান!' : 'Duplicate Sale Detected!',
+        message: isBangla
+          ? `আজকে এই হিসাবটি ইতিমধ্যে যুক্ত করা হয়েছে:\n(${duplicateInfo})\n\nআপনি কি নিশ্চিত যে আপনি এটি আবার যোগ করতে চান?`
+          : `This sale record has already been added today:\n(${duplicateInfo})\n\nAre you sure you want to add it again?`,
+        onConfirm: proceedAdd
+      });
+    } else {
+      proceedAdd();
+    }
   };
 
   // Add an expense
   const handleAddExpense = (e: React.FormEvent) => {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount) return;
-    const cost = parseFloat(expenseAmount);
+    const cost = parseFloat(toEnglishNumber(expenseAmount));
     if (isNaN(cost) || cost <= 0) return;
 
     const now = new Date();
@@ -2448,23 +2664,47 @@ export default function App() {
       hour12: true
     });
 
-    const newEx: Expense = {
-      id: generateId(),
-      date: selectedDate,
-      time: timeFormatted,
-      description: expenseDesc.trim(),
-      amount: cost
+    const trimmedDesc = expenseDesc.trim();
+
+    // Check if this identical expense already exists today
+    const duplicate = expenses.find(ex => 
+      ex.date === selectedDate &&
+      ex.description.trim().toLowerCase() === trimmedDesc.toLowerCase() &&
+      ex.amount === cost
+    );
+
+    const proceedAddEx = () => {
+      const newEx: Expense = {
+        id: generateId(),
+        date: selectedDate,
+        time: timeFormatted,
+        description: trimmedDesc,
+        amount: cost
+      };
+
+      const updated = [newEx, ...expenses];
+      saveExpensesToStorage(updated);
+
+      // Reset Form & Close Modal
+      setExpenseDesc('');
+      setExpenseAmount('');
+      setIsExpenseModalOpen(false);
+
+      showToast(isBangla ? 'আজকের খরচ হিসাবভুক্ত হয়েছে!' : 'Expense saved successfully!');
     };
 
-    const updated = [newEx, ...expenses];
-    saveExpensesToStorage(updated);
-
-    // Reset Form & Close Modal
-    setExpenseDesc('');
-    setExpenseAmount('');
-    setIsExpenseModalOpen(false);
-
-    showToast(isBangla ? 'আজকের খরচ হিসাবভুক্ত হয়েছে!' : 'Expense saved successfully!');
+    if (duplicate) {
+      setConfirmModal({
+        isOpen: true,
+        title: isBangla ? 'একই খরচের হিসাব ইতিমধ্যে বিদ্যমান!' : 'Duplicate Expense Detected!',
+        message: isBangla
+          ? `আজকে এই খরচের হিসাবটি ইতিমধ্যে যুক্ত করা হয়েছে:\n"${trimmedDesc}" - ৳${toBanglaNumber(cost)}\n\nআপনি কি নিশ্চিত যে আপনি এটি আবার যোগ করতে চান?`
+          : `This expense has already been added today:\n"${trimmedDesc}" - ৳${cost}\n\nAre you sure you want to add it again?`,
+        onConfirm: proceedAddEx
+      });
+    } else {
+      proceedAddEx();
+    }
   };
 
   // Delete expense
@@ -2486,12 +2726,19 @@ export default function App() {
     e.preventDefault();
     if (!oosItemName.trim()) return;
 
-    const parsedStock = parseFloat(oosItemStock);
+    const trimmedName = oosItemName.trim();
+    const duplicate = outOfStockItems.find(item => item.name.toLowerCase().trim() === trimmedName.toLowerCase());
+    if (duplicate) {
+      showToast(isBangla ? 'এই পণ্যটি ইতিমধ্যে তালিকায় আছে!' : 'Item already in list!');
+      return;
+    }
+
+    const parsedStock = parseFloat(toEnglishNumber(oosItemStock));
     const stockCount = isNaN(parsedStock) ? 0 : parsedStock;
 
     const newItem: OutOfStockItem = {
       id: generateId(),
-      name: oosItemName.trim(),
+      name: trimmedName,
       dateAdded: selectedDate, // YYYY-MM-DD
       stock: stockCount,
       initialStock: stockCount
@@ -2529,12 +2776,19 @@ export default function App() {
   const handleAddProductRate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!rateItemName.trim() || !rateItemPrice) return;
-    const price = parseFloat(rateItemPrice);
+    const price = parseFloat(toEnglishNumber(rateItemPrice));
     if (isNaN(price) || price < 0) return;
+
+    const trimmedName = rateItemName.trim();
+    const duplicate = productRates.find(item => item.name.toLowerCase().trim() === trimmedName.toLowerCase());
+    if (duplicate) {
+      showToast(isBangla ? 'এই পণ্যের রেট ইতিমধ্যে তালিকায় আছে!' : 'Product rate already in list!');
+      return;
+    }
 
     const newItem: ProductRateItem = {
       id: generateId(),
-      name: rateItemName.trim(),
+      name: trimmedName,
       buyingPrice: price,
       dateAdded: selectedDate, // YYYY-MM-DD
       keywords: rateItemKeywords.trim() || undefined
@@ -2557,7 +2811,7 @@ export default function App() {
   const handleAddDue = (e: React.FormEvent) => {
     e.preventDefault();
     if (!addDueCustomerName.trim() || !addDueAmount) return;
-    const price = parseFloat(addDueAmount);
+    const price = parseFloat(toEnglishNumber(addDueAmount));
     if (isNaN(price) || price <= 0) return;
 
     const now = new Date();
@@ -2568,35 +2822,72 @@ export default function App() {
     });
 
     const hasProd = addDueProduct.trim().length > 0;
+    const prodDesc = addDueProduct.trim() || (isBangla ? 'পূর্বের বকেয়া বাকি' : 'Previous Due');
 
-    const newTx: Transaction = {
-      id: generateId(),
-      date: selectedDate,
-      time: timeFormatted,
-      product: addDueProduct.trim() || (isBangla ? 'পূর্বের বকেয়া বাকি' : 'Previous Due'),
-      amount: price,
-      isCash: false,
-      customer: addDueCustomerName.trim(),
-      quantity: hasProd ? 1 : undefined
-    };
-
-    const updated = [newTx, ...transactions];
-    saveTransactionsToStorage(updated);
-
-    // Deduct stock if matching product exists
-    if (hasProd) {
-      const parts = addDueProduct.trim().split(/[+,/]+/).map(p => p.trim()).filter(Boolean);
-      const itemsToDeduct = parts.map(part => parseProductAndQty(part));
-      deductMultipleStock(itemsToDeduct);
+    // Normalize customer name to prevent spelling/casing mismatches (e.g., Rahim vs rahim)
+    const trimmedCustomer = addDueCustomerName.trim();
+    let normalizedCustomerName = trimmedCustomer;
+    if (trimmedCustomer) {
+      const existingCd = customerDues.find(
+        cd => cd.name.trim().toLowerCase() === trimmedCustomer.toLowerCase()
+      );
+      if (existingCd) {
+        normalizedCustomerName = existingCd.name;
+      }
     }
 
-    // Reset Form & Close Modal
-    setAddDueCustomerName('');
-    setAddDueAmount('');
-    setAddDueProduct('');
-    setIsAddDueModalOpen(false);
+    // Check if duplicate due entry already exists today
+    const duplicate = transactions.find(tx => 
+      tx.date === selectedDate &&
+      !tx.isCash &&
+      tx.amount === price &&
+      tx.product.trim().toLowerCase() === prodDesc.trim().toLowerCase() &&
+      tx.customer.trim().toLowerCase() === normalizedCustomerName.toLowerCase()
+    );
 
-    showToast(isBangla ? 'বকেয়া হিসাব সফলভাবে যোগ হয়েছে!' : 'Due outstanding added successfully!');
+    const proceedAddDue = () => {
+      const newTx: Transaction = {
+        id: generateId(),
+        date: selectedDate,
+        time: timeFormatted,
+        product: prodDesc,
+        amount: price,
+        isCash: false,
+        customer: normalizedCustomerName,
+        quantity: hasProd ? 1 : undefined
+      };
+
+      const updated = [newTx, ...transactions];
+      saveTransactionsToStorage(updated);
+
+      // Deduct stock if matching product exists
+      if (hasProd) {
+        const parts = addDueProduct.trim().split(/[+,/]+/).map(p => p.trim()).filter(Boolean);
+        const itemsToDeduct = parts.map(part => parseProductAndQty(part));
+        deductMultipleStock(itemsToDeduct);
+      }
+
+      // Reset Form & Close Modal
+      setAddDueCustomerName('');
+      setAddDueAmount('');
+      setAddDueProduct('');
+      setIsAddDueModalOpen(false);
+
+      showToast(isBangla ? 'বকেয়া হিসাব সফলভাবে যোগ হয়েছে!' : 'Due outstanding added successfully!');
+    };
+
+    if (duplicate) {
+      setConfirmModal({
+        isOpen: true,
+        title: isBangla ? 'একই বকেয়া হিসাব ইতিমধ্যে বিদ্যমান!' : 'Duplicate Due Detected!',
+        message: isBangla
+          ? `আজকে এই বকেয়া হিসাবটি ইতিমধ্যে যুক্ত করা হয়েছে:\nক্রেতা: "${normalizedCustomerName}", বিবরণ: "${prodDesc}", বকেয়া: ৳${toBanglaNumber(price)}\n\nআপনি কি নিশ্চিত যে আপনি এটি আবার যোগ করতে চান?`
+          : `This due entry has already been added today:\nCustomer: "${normalizedCustomerName}", Details: "${prodDesc}", Amount: ৳${price}\n\nAre you sure you want to add it again?`,
+        onConfirm: proceedAddDue
+      });
+    } else {
+      proceedAddDue();
+    }
   };
 
   // Delete Product rate item
@@ -2618,7 +2909,7 @@ export default function App() {
   };
 
   // Handle Due Deposit (বাকির টাকা জমা)
-  const handleDueDeposit = (custName: string, depositAmt: number) => {
+  const handleDueDeposit = (custName: string, depositAmt: number, note?: string, parentDueId?: string) => {
     const now = new Date();
     const timeFormatted = now.toLocaleTimeString('en-US', {
       hour: '2-digit',
@@ -2626,24 +2917,174 @@ export default function App() {
       hour12: true
     });
 
-    const newTx: Transaction = {
-      id: generateId(),
-      date: selectedDate,
-      time: timeFormatted,
-      product: isBangla ? `বাকি টাকা জমা (${custName})` : `Due Deposit (${custName})`,
-      amount: depositAmt,
-      isCash: true,
-      customer: custName // Save customer name so getCustomerDues can match it
+    let finalNote = note?.trim() || "";
+    if (!finalNote && parentDueId) {
+      const parentTx = transactions.find(t => t.id === parentDueId);
+      if (parentTx) {
+        finalNote = parentTx.product;
+      }
+    }
+
+    const productDesc = finalNote
+      ? (isBangla ? `${finalNote} - ${custName} বাকি পরিশোধ` : `${finalNote} - ${custName} Due Paid`)
+      : (isBangla ? `${custName} বাকি পরিশোধ` : `${custName} Due Paid`);
+
+    // Normalize customer name to prevent spelling/casing mismatches (e.g., Rahim vs rahim)
+    const trimmedCustomer = custName.trim();
+    let normalizedCustomerName = trimmedCustomer;
+    if (trimmedCustomer) {
+      const existingCd = customerDues.find(
+        cd => cd.name.trim().toLowerCase() === trimmedCustomer.toLowerCase()
+      );
+      if (existingCd) {
+        normalizedCustomerName = existingCd.name;
+      }
+    }
+
+    // Check if duplicate deposit entry already exists today
+    const duplicate = transactions.find(tx => 
+      tx.date === selectedDate &&
+      tx.isCash &&
+      tx.amount === depositAmt &&
+      tx.product.trim().toLowerCase() === productDesc.trim().toLowerCase() &&
+      tx.customer.trim().toLowerCase() === normalizedCustomerName.toLowerCase()
+    );
+
+    const proceedDueDeposit = () => {
+      const newTx: Transaction = {
+        id: generateId(),
+        date: selectedDate,
+        time: timeFormatted,
+        product: productDesc,
+        amount: depositAmt,
+        isCash: true,
+        customer: normalizedCustomerName, // Save customer name so getCustomerDues can match it
+        parentDueId: parentDueId
+      };
+
+      const updated = [newTx, ...transactions];
+      saveTransactionsToStorage(updated);
+      
+      showToast(
+        isBangla 
+          ? `${normalizedCustomerName}-এর কাছ থেকে ${formatCurrency(depositAmt, true)} জমা নেওয়া হয়েছে` 
+          : `Deposited ${formatCurrency(depositAmt, false)} from ${normalizedCustomerName}`
+      );
     };
 
-    const updated = [newTx, ...transactions];
-    saveTransactionsToStorage(updated);
-    
-    showToast(
-      isBangla 
-        ? `${custName}-এর কাছ থেকে ${formatCurrency(depositAmt, true)} জমা নেওয়া হয়েছে` 
-        : `Deposited ${formatCurrency(depositAmt, false)} from ${custName}`
+    if (duplicate) {
+      setConfirmModal({
+        isOpen: true,
+        title: isBangla ? 'একই জমার হিসাব ইতিমধ্যে বিদ্যমান!' : 'Duplicate Deposit Detected!',
+        message: isBangla
+          ? `আজকে এই জমার হিসাবটি ইতিমধ্যে যুক্ত করা হয়েছে:\nক্রেতা: "${normalizedCustomerName}", পরিমাণ: ৳${toBanglaNumber(depositAmt)}\n\nআপনি কি নিশ্চিত যে আপনি এটি আবার যোগ করতে চান?`
+          : `This deposit entry has already been added today:\nCustomer: "${normalizedCustomerName}", Amount: ৳${depositAmt}\n\nAre you sure you want to add it again?`,
+        onConfirm: proceedDueDeposit
+      });
+    } else {
+      proceedDueDeposit();
+    }
+  };
+
+  // Submit handler to add new due (product & price) from inside the customer details modal
+  const handleDetailAddDueSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomerForDetail) return;
+    const price = parseFloat(toEnglishNumber(detailDueProductAmount));
+    if (isNaN(price) || price <= 0) {
+      setDetailActionError(isBangla ? 'সঠিক দাম লিখুন' : 'Enter a valid price');
+      return;
+    }
+
+    const now = new Date();
+    const timeFormatted = now.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+
+    const hasProd = detailDueProductName.trim().length > 0;
+    const prodDesc = detailDueProductName.trim() || (isBangla ? 'পূর্বের বকেয়া বাকি' : 'Previous Due');
+
+    // Check if duplicate due entry already exists today
+    const duplicate = transactions.find(tx => 
+      tx.date === selectedDate &&
+      !tx.isCash &&
+      tx.amount === price &&
+      tx.product.trim().toLowerCase() === prodDesc.trim().toLowerCase() &&
+      tx.customer.trim().toLowerCase() === selectedCustomerForDetail.trim().toLowerCase()
     );
+
+    const proceedDetailAddDue = () => {
+      const newTx: Transaction = {
+        id: generateId(),
+        date: selectedDate,
+        time: timeFormatted,
+        product: prodDesc,
+        amount: price,
+        isCash: false,
+        customer: selectedCustomerForDetail.trim(),
+        quantity: hasProd ? 1 : undefined
+      };
+
+      const updated = [newTx, ...transactions];
+      saveTransactionsToStorage(updated);
+
+      if (hasProd) {
+        const parts = detailDueProductName.trim().split(/[+,/]+/).map(p => p.trim()).filter(Boolean);
+        const itemsToDeduct = parts.map(part => parseProductAndQty(part));
+        deductMultipleStock(itemsToDeduct);
+      }
+
+      setDetailDueProductName('');
+      setDetailDueProductAmount('');
+      setDetailActionTab('none');
+      setDetailActionError('');
+
+      showToast(isBangla ? 'বকেয়া হিসাব সফলভাবে যোগ হয়েছে!' : 'Due outstanding added successfully!');
+    };
+
+    if (duplicate) {
+      setConfirmModal({
+        isOpen: true,
+        title: isBangla ? 'একই বকেয়া হিসাব ইতিমধ্যে বিদ্যমান!' : 'Duplicate Due Detected!',
+        message: isBangla
+          ? `আজকে এই বকেয়া হিসাবটি ইতিমধ্যে যুক্ত করা হয়েছে:\nক্রেতা: "${selectedCustomerForDetail}", বিবরণ: "${prodDesc}", বকেয়া: ৳${toBanglaNumber(price)}\n\nআপনি কি নিশ্চিত যে আপনি এটি আবার যোগ করতে চান?`
+          : `This due entry has already been added today:\nCustomer: "${selectedCustomerForDetail}", Details: "${prodDesc}", Amount: ৳${price}\n\nAre you sure you want to add it again?`,
+        onConfirm: proceedDetailAddDue
+      });
+    } else {
+      proceedDetailAddDue();
+    }
+  };
+
+  // Submit handler to record a deposit payment from inside the customer details modal
+  const handleDetailDepositSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomerForDetail) return;
+    const amt = parseFloat(toEnglishNumber(detailDepositAmount));
+    if (isNaN(amt) || amt <= 0) {
+      setDetailActionError(isBangla ? 'সঠিক টাকা লিখুন' : 'Enter a valid amount');
+      return;
+    }
+
+    const currentOutstanding = selectedCustomerTotalDue;
+    if (amt > currentOutstanding) {
+      setDetailActionError(
+        isBangla 
+          ? `সর্বোচ্চ ${formatCurrency(currentOutstanding, true)} জমা করা যাবে` 
+          : `Cannot deposit more than ${formatCurrency(currentOutstanding, false)}`
+      );
+      return;
+    }
+
+    handleDueDeposit(selectedCustomerForDetail, amt, detailDepositNote, selectedParentDueIdForDeposit || undefined);
+
+    setDetailDepositAmount('');
+    setDetailDepositNote('');
+    setSelectedParentDueIdForDeposit('');
+    setDetailActionTab('none');
+    setDetailActionError('');
   };
 
   // Delete transaction with safety rollback
@@ -3366,33 +3807,65 @@ export default function App() {
                   <span>📊</span>
                   <span>{isBangla ? 'আজকের হিসাব বিবরণী' : "Today's Account Summary"}</span>
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextVal = !isBalancesHidden;
-                    setIsBalancesHidden(nextVal);
-                    localStorage.setItem('hisab_khata_balances_hidden', String(nextVal));
-                  }}
-                  className="flex items-center gap-1 px-2 py-1 text-[10px] font-black rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 shadow-3xs cursor-pointer active:scale-95 transition-all shrink-0"
-                  id="stats-eye-toggle-master"
-                >
-                  {isBalancesHidden ? (
-                    <>
-                      <Eye className="h-3 w-3 text-emerald-600 animate-pulse" />
-                      <span>{isBangla ? 'টাকা দেখান' : 'Show Money'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <EyeOff className="h-3 w-3 text-slate-400" />
-                      <span>{isBangla ? 'টাকা লুকান' : 'Hide Money'}</span>
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextVal = !isBalancesHidden;
+                      setIsBalancesHidden(nextVal);
+                      localStorage.setItem('hisab_khata_balances_hidden', String(nextVal));
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-black rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-3xs cursor-pointer active:scale-95 transition-all shrink-0"
+                    id="stats-eye-toggle-master"
+                  >
+                    {isBalancesHidden ? (
+                      <>
+                        <Eye className="h-3 w-3 text-emerald-600 dark:text-emerald-400 animate-pulse" />
+                        <span>{isBangla ? 'টাকা দেখান' : 'Show Money'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <EyeOff className="h-3 w-3 text-slate-400 dark:text-slate-500" />
+                        <span>{isBangla ? 'টাকা লুকান' : 'Hide Money'}</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const isDarkActive = themeMode === 'dark' || (themeMode === 'system' && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                      const nextTheme = isDarkActive ? 'light' : 'dark';
+                      setThemeMode(nextTheme);
+                      localStorage.setItem('hisab_khata_theme_mode', nextTheme);
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-black rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-3xs cursor-pointer active:scale-95 transition-all shrink-0"
+                    id="dark-mode-quick-toggle"
+                  >
+                    {(() => {
+                      const isDarkActive = themeMode === 'dark' || (themeMode === 'system' && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                      return isDarkActive ? (
+                        <>
+                          <Sun className="h-3 w-3 text-amber-500" />
+                          <span>{isBangla ? 'লাইট মোড' : 'Light'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Moon className="h-3 w-3 text-indigo-500" />
+                          <span>{isBangla ? 'ডার্ক মোড' : 'Dark'}</span>
+                        </>
+                      );
+                    })()}
+                  </button>
+                </div>
               </div>
 
               <section className="grid grid-cols-2 gap-2" id="stats-dashboard-grid">
                 
-                <div className="bg-white py-2 px-3 rounded-xl border border-slate-200 shadow-3xs relative overflow-hidden">
+                <div 
+                  onClick={() => setActiveCardDetailModal('sales')}
+                  className="bg-white py-2 px-3 rounded-xl border border-slate-200 shadow-3xs cursor-pointer hover:bg-slate-50/50 transition-colors relative overflow-hidden"
+                >
                   <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block leading-tight">
                     {isBangla ? 'মোট বিক্রি' : 'Total Sales'}
                   </span>
@@ -3401,7 +3874,10 @@ export default function App() {
                   </span>
                 </div>
 
-                <div className="bg-white py-2 px-3 rounded-xl border border-slate-200 shadow-3xs relative overflow-hidden">
+                <div 
+                  onClick={() => setActiveCardDetailModal('cash')}
+                  className="bg-white py-2 px-3 rounded-xl border border-slate-200 shadow-3xs cursor-pointer hover:bg-slate-50/50 transition-colors relative overflow-hidden"
+                >
                   <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block leading-tight">
                     {isBangla ? 'নগদ জমা' : 'Cash Deposit'}
                   </span>
@@ -3422,7 +3898,10 @@ export default function App() {
                   </span>
                 </div>
 
-                <div className="bg-white py-2 px-3 rounded-xl border border-slate-200 shadow-3xs relative overflow-hidden">
+                <div 
+                  onClick={() => setActiveCardDetailModal('expenses')}
+                  className="bg-white py-2 px-3 rounded-xl border border-slate-200 shadow-3xs cursor-pointer hover:bg-slate-50/50 transition-colors relative overflow-hidden"
+                >
                   <span className="text-[13px] sm:text-sm font-extrabold text-slate-600 uppercase tracking-wide block leading-tight">
                     {isBangla ? 'আজকের খরচ' : "Today's Expense"}
                   </span>
@@ -3532,15 +4011,17 @@ export default function App() {
                       </div>
                       <input
                         ref={amountInputRef}
-                        type="number"
-                        inputMode="decimal"
+                        type="text"
+                        inputMode="text"
                         required
-                        placeholder={isBangla ? "৳ ০.০০" : "$ 0.00"}
+                        placeholder={isBangla ? "৳ ৫০ + ১০০" : "$ 50 + 100"}
                         value={amount}
                         onChange={(e) => {
                           let val = e.target.value;
-                          if (val.length > 1 && val.startsWith('0') && !val.startsWith('0.')) {
-                            val = val.replace(/^0+/, '');
+                          if (!val.includes('+')) {
+                            if (val.length > 1 && val.startsWith('0') && !val.startsWith('0.')) {
+                              val = val.replace(/^0+/, '');
+                            }
                           }
                           setAmount(val);
                         }}
@@ -3946,155 +4427,89 @@ export default function App() {
                             <div className="flex-1 flex flex-col justify-between">
                               <div className="max-h-[380px] overflow-y-auto pr-1 space-y-1.5 no-scrollbar">
                                 {itemsToShow.map((item) => {
-                                  const isEditing = editingOosId === item.id;
                                   return (
                                     <div 
                                       key={item.id} 
-                                      className={`flex items-center justify-between p-1 px-2.5 rounded-lg border transition-all duration-150 ${
-                                        isEditing 
-                                          ? 'bg-amber-50 border-amber-300 shadow-3xs' 
-                                          : 'bg-amber-50/40 border-amber-100 hover:bg-amber-50/80 hover:border-amber-200'
-                                      }`}
+                                      className="flex items-center justify-between p-2 px-2.5 rounded-lg border transition-all duration-150 bg-amber-50/40 border-amber-100 hover:bg-amber-50/80 hover:border-amber-200"
                                     >
-                                      {isEditing ? (
-                                        <div className="flex-1 flex flex-col gap-2.5">
-                                          <div className="grid grid-cols-3 gap-2">
-                                            <div className="col-span-2">
-                                              <label className="block text-[9px] font-bold text-slate-400 mb-0.5">
-                                                {isBangla ? 'পণ্যের নাম' : 'Goods Name'}
-                                              </label>
-                                              <input
-                                                type="text"
-                                                value={editOosName}
-                                                onChange={(e) => setEditOosName(e.target.value)}
-                                                className="w-full text-xs p-1.5 rounded-lg border border-amber-300 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white font-bold text-slate-800"
-                                                autoFocus
-                                              />
-                                            </div>
-                                            <div>
-                                              <label className="block text-[9px] font-bold text-slate-400 mb-0.5">
-                                                {isBangla ? 'স্টক সংখ্যা' : 'Stock Qty'}
-                                              </label>
-                                              <input
-                                                type="number"
-                                                min="0"
-                                                value={editOosStock}
-                                                onChange={(e) => {
-                                                  let val = e.target.value;
-                                                  if (val.length > 1 && val.startsWith('0')) {
-                                                    val = val.replace(/^0+/, '');
-                                                  }
-                                                  setEditOosStock(val);
-                                                }}
-                                                className="w-full text-xs p-1.5 rounded-lg border border-amber-300 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white font-bold text-slate-800 font-sans"
-                                              />
-                                            </div>
-                                          </div>
-                                          <div className="flex items-center gap-1.5 justify-end">
-                                            <button
-                                              type="button"
-                                              onClick={() => setEditingOosId(null)}
-                                              className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[10px] rounded-md transition-colors cursor-pointer flex items-center gap-0.5"
-                                            >
-                                              <X className="h-3 w-3" />
-                                              <span>{isBangla ? 'বাতিল' : 'Cancel'}</span>
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                if (editOosName.trim()) {
-                                                  const val = parseFloat(editOosStock);
-                                                  handleUpdateOutOfStock(item.id, editOosName, isNaN(val) ? 0 : val);
-                                                  setEditingOosId(null);
-                                                }
-                                              }}
-                                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] rounded-md transition-colors cursor-pointer flex items-center gap-0.5"
-                                            >
-                                              <Check className="h-3 w-3" />
-                                              <span>{isBangla ? 'সেভ' : 'Save'}</span>
-                                            </button>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <>
-                                          <div className="min-w-0 flex-1 pr-2">
-                                            <div className="flex items-center gap-1 flex-wrap">
-                                              <h4 className="text-xs font-bold text-slate-800 break-words whitespace-normal leading-tight">{item.name}</h4>
-                                              {(item.stock || 0) <= 0 ? (
-                                                <span className="px-1 py-0.2 rounded bg-rose-50 border border-rose-100 text-rose-600 font-extrabold text-[8px] leading-none">
-                                                  {isBangla ? 'নেই' : 'Out!'}
-                                                </span>
-                                              ) : (
-                                                <span className="px-1 py-0.2 rounded bg-emerald-50 border border-emerald-100 text-emerald-700 font-extrabold text-[8px] leading-none">
-                                                  {isBangla ? 'আছে' : 'In'}
-                                                </span>
-                                              )}
-                                            </div>
-                                            <span className="text-[9px] text-slate-400 font-sans block mt-0.5">
-                                              {isBangla ? 'যোগ: ' : 'Added: '} {formatDate(item.dateAdded, isBangla)}
-                                            </span>
-                                          </div>
-                                          
-                                          <div className="flex items-center gap-1 shrink-0">
-                                            {/* Quick Stock Adjustment */}
-                                            <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5 shadow-3xs mr-0.5 font-sans">
-                                              <button
-                                                onClick={() => {
-                                                  const newStock = Math.max(0, (item.stock || 0) - 1);
-                                                  handleUpdateOutOfStock(item.id, item.name, newStock);
-                                                }}
-                                                className="w-5 h-5 flex items-center justify-center text-[10px] font-black text-slate-500 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
-                                                title={isBangla ? '১টি কমান' : 'Decrease by 1'}
-                                              >
-                                                -
-                                              </button>
-                                              <span className="px-1 text-[10px] font-black text-slate-755 min-w-[15px] text-center font-mono">
-                                                {isBangla ? toBanglaNumber(item.stock || 0) : (item.stock || 0)}
+                                      <>
+                                        <div className="min-w-0 flex-1 pr-2">
+                                          <div className="flex items-center gap-1 flex-wrap">
+                                            <h4 className="text-xs font-bold text-slate-800 break-words whitespace-normal leading-tight">{item.name}</h4>
+                                            {(item.stock || 0) <= 0 ? (
+                                              <span className="px-1 py-0.2 rounded bg-rose-50 border border-rose-100 text-rose-600 font-extrabold text-[8px] leading-none">
+                                                {isBangla ? 'নেই' : 'Out!'}
                                               </span>
-                                              <button
-                                                onClick={() => {
-                                                  const newStock = (item.stock || 0) + 1;
-                                                  handleUpdateOutOfStock(item.id, item.name, newStock);
-                                                }}
-                                                className="w-5 h-5 flex items-center justify-center text-[10px] font-black text-slate-500 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
-                                                title={isBangla ? '১টি বাড়ান' : 'Increase by 1'}
-                                              >
-                                                +
-                                              </button>
-                                            </div>
-
+                                            ) : (
+                                              <span className="px-1 py-0.2 rounded bg-emerald-50 border border-emerald-100 text-emerald-700 font-extrabold text-[8px] leading-none">
+                                                {isBangla ? 'আছে' : 'In'}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <span className="text-[9px] text-slate-400 font-sans block mt-0.5">
+                                            {isBangla ? 'যোগ: ' : 'Added: '} {formatDate(item.dateAdded, isBangla)}
+                                          </span>
+                                        </div>
+                                        
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          {/* Quick Stock Adjustment */}
+                                          <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5 shadow-3xs mr-0.5 font-sans">
                                             <button
                                               onClick={() => {
-                                                setEditingOosId(item.id);
-                                                setEditOosName(item.name);
-                                                setEditOosStock(String(item.stock || 0));
-                                                setDeletingOosId(null);
+                                                const newStock = Math.max(0, (item.stock || 0) - 1);
+                                                handleUpdateOutOfStock(item.id, item.name, newStock);
                                               }}
-                                              className="p-1 hover:bg-amber-100/50 text-slate-400 hover:text-amber-600 rounded-md transition-colors cursor-pointer"
-                                              title={isBangla ? 'সম্পাদনা' : 'Edit'}
+                                              className="w-5 h-5 flex items-center justify-center text-[10px] font-black text-slate-500 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+                                              title={isBangla ? '১টি কমান' : 'Decrease by 1'}
                                             >
-                                              <Edit2 className="h-3 w-3" />
+                                              -
                                             </button>
+                                            <span className="px-1 text-[10px] font-black text-slate-755 min-w-[15px] text-center font-mono">
+                                              {isBangla ? toBanglaNumber(item.stock || 0) : (item.stock || 0)}
+                                            </span>
                                             <button
                                               onClick={() => {
-                                                setEditingOosId(null);
-                                                setConfirmModal({
-                                                  isOpen: true,
-                                                  title: isBangla ? 'ঘাটতি পণ্য মুছুন' : 'Delete Shortage Item',
-                                                  message: isBangla 
-                                                    ? `আপনি কি নিশ্চিতভাবে "${item.name}" তালিকা থেকে মুছে ফেলতে চান?` 
-                                                    : `Are you sure you want to delete "${item.name}" from the shortage list?`,
-                                                  onConfirm: () => handleDeleteOutOfStock(item.id)
-                                                });
+                                                const newStock = (item.stock || 0) + 1;
+                                                handleUpdateOutOfStock(item.id, item.name, newStock);
                                               }}
-                                              className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-md transition-colors cursor-pointer shrink-0"
-                                              title={isBangla ? 'মুছে ফেলুন' : 'Delete'}
+                                              className="w-5 h-5 flex items-center justify-center text-[10px] font-black text-slate-500 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+                                              title={isBangla ? '১টি বাড়ান' : 'Increase by 1'}
                                             >
-                                              <Trash2 className="h-3 w-3" />
+                                              +
                                             </button>
                                           </div>
-                                        </>
-                                      )}
+
+                                          <button
+                                            onClick={() => {
+                                              setEditingOosId(item.id);
+                                              setEditOosName(item.name);
+                                              setEditOosStock(String(item.stock || 0));
+                                              setDeletingOosId(null);
+                                            }}
+                                            className="p-1 hover:bg-amber-100/50 text-slate-400 hover:text-amber-600 rounded-md transition-colors cursor-pointer"
+                                            title={isBangla ? 'সম্পাদনা' : 'Edit'}
+                                          >
+                                            <Edit2 className="h-3 w-3" />
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              setEditingOosId(null);
+                                              setConfirmModal({
+                                                isOpen: true,
+                                                title: isBangla ? 'ঘাটতি পণ্য মুছুন' : 'Delete Shortage Item',
+                                                message: isBangla 
+                                                  ? `আপনি কি নিশ্চিতভাবে "${item.name}" তালিকা থেকে মুছে ফেলতে চান?` 
+                                                  : `Are you sure you want to delete "${item.name}" from the shortage list?`,
+                                                onConfirm: () => handleDeleteOutOfStock(item.id)
+                                              });
+                                            }}
+                                            className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-md transition-colors cursor-pointer shrink-0"
+                                            title={isBangla ? 'মুছে ফেলুন' : 'Delete'}
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                          </button>
+                                        </div>
+                                      </>
                                     </div>
                                   );
                                 })}
@@ -4214,7 +4629,7 @@ export default function App() {
 
                           return (
                             <div className="flex-1 flex flex-col justify-between">
-                              <div className="max-h-[380px] overflow-y-auto no-scrollbar space-y-2.5 p-1">
+                              <div className={`max-h-[380px] ${showAllRates ? 'overflow-y-auto' : 'overflow-hidden'} no-scrollbar space-y-2.5 p-1`}>
                                 {itemsToShow.map((item, idx) => {
                                   const isEditing = editingRateId === item.id;
                                   const colorSchemes = [
@@ -4345,7 +4760,7 @@ export default function App() {
                                   >
                                     {showAllRates 
                                       ? (isBangla ? 'কম দেখান' : 'Show Less') 
-                                      : (isBangla ? 'আরো দেখুন' : 'Show More')}
+                                      : (isBangla ? 'আরও দেখুন' : 'Show More')}
                                   </button>
                                 </div>
                               )}
@@ -5128,10 +5543,11 @@ export default function App() {
                             ) : (
                               <div className="space-y-2">
                                 {dueTxs.map((tx, idx) => {
-                                  const customerDue = customerDues.find(
-                                    (cd) => cd.name.trim().toLowerCase() === (tx.customer || '').trim().toLowerCase()
-                                  );
-                                  const isPaidOff = customerDue ? customerDue.amount <= 0 : false;
+                                  const paidAmount = transactions
+                                    .filter(t => t.parentDueId === tx.id)
+                                    .reduce((sum, t) => sum + t.amount, 0);
+                                  const remainingDue = Math.max(0, tx.amount - paidAmount);
+                                  const isPaidOff = remainingDue === 0;
 
                                   return (
                                     <div 
@@ -5155,11 +5571,15 @@ export default function App() {
                                             <p className="text-slate-800 dark:text-slate-200 font-extrabold truncate max-w-[150px]">
                                               {tx.customer || (isBangla ? 'সাধারণ বাকি' : 'General Due')}
                                             </p>
-                                            {isPaidOff && (
+                                            {isPaidOff ? (
                                               <span className="text-[8px] font-black text-emerald-700 bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded-md shrink-0 dark:text-emerald-300 dark:bg-emerald-950/50 dark:border-emerald-900/40">
                                                 {isBangla ? 'পরিশোধিত' : 'Paid'}
                                               </span>
-                                            )}
+                                            ) : paidAmount > 0 ? (
+                                              <span className="text-[8px] font-black text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded-md shrink-0">
+                                                {isBangla ? 'আংশিক পরিশোধিত' : 'Partially Paid'}
+                                              </span>
+                                            ) : null}
                                           </div>
                                           <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold truncate mt-0.5">{tx.product}</p>
                                         </div>
@@ -5170,8 +5590,13 @@ export default function App() {
                                             ? 'text-emerald-600 dark:text-emerald-400' 
                                             : 'text-orange-600 dark:text-orange-400'
                                         }`}>
-                                          {formatCurrency(tx.amount, isBangla)}
+                                          {isPaidOff 
+                                            ? formatCurrency(tx.amount, isBangla)
+                                            : `${formatCurrency(remainingDue, isBangla)} (${isBangla ? 'বাকি' : 'Due'})`}
                                         </p>
+                                        {paidAmount > 0 && !isPaidOff && (
+                                          <p className="text-[8px] text-emerald-600 font-bold">{isBangla ? 'জমা' : 'Paid'}: {formatCurrency(paidAmount, isBangla)}</p>
+                                        )}
                                         <p className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold mt-0.5">{formatDate(tx.date, isBangla)}</p>
                                       </div>
                                     </div>
@@ -5248,7 +5673,9 @@ export default function App() {
                               <h5 className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex justify-between items-center">
                                 <span>{isBangla ? 'বার ভিত্তিক বেচাকেনা' : 'Sales by Day of Week'}</span>
                                 <span className="text-[9px] font-bold text-slate-400">
-                                  {isBangla ? '৭ দিনের খতিয়ান' : '7 Days Summary'}
+                                  {isBangla 
+                                    ? (weeklyPeriod === '7D' ? '৭ দিনের খতিয়ান' : weeklyPeriod === '1D' ? 'আজকের খতিয়ান' : weeklyPeriod === 'ALL' ? 'লাইফ টাইম খতিয়ান' : '৩০ দিনের খতিয়ান')
+                                    : (weeklyPeriod === '7D' ? '7 Days Summary' : weeklyPeriod === '1D' ? "Today's Summary" : weeklyPeriod === 'ALL' ? 'Lifetime Summary' : '30 Days Summary')}
                                 </span>
                               </h5>
 
@@ -7405,20 +7832,22 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 0.5 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
               onClick={() => setSelectedCustomerForDetail(null)}
               className="fixed inset-0 bg-black"
             />
 
             {/* Modal Box */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-5 border border-slate-100 overflow-hidden flex flex-col max-h-[85vh]"
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.15, ease: 'easeOut' }}
+              className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl p-5 border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col max-h-[85vh]"
             >
-              <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-150">
-                <h3 className="font-bold text-slate-800 text-sm sm:text-base flex items-center gap-2">
-                  <span className="p-1.5 bg-rose-50 text-rose-600 rounded-lg shrink-0">
+              <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-150 dark:border-slate-800">
+                <h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base flex items-center gap-2">
+                  <span className="p-1.5 bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 rounded-lg shrink-0">
                     <History className="h-4 w-4" />
                   </span>
                   <span>
@@ -7427,54 +7856,230 @@ export default function App() {
                 </h3>
                 <button
                   onClick={() => setSelectedCustomerForDetail(null)}
-                  className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer text-xs font-bold p-1 hover:bg-slate-100 rounded-full"
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors cursor-pointer text-xs font-bold p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full"
                 >
                   ✕
                 </button>
               </div>
 
               {/* Total Outstanding Summary */}
-              <div className="bg-rose-50 border border-rose-200/50 rounded-xl p-3.5 mb-3.5 flex justify-between items-center text-xs font-black text-rose-900">
+              <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-200/50 dark:border-rose-900/30 rounded-xl p-3.5 mb-3 flex justify-between items-center text-xs font-black text-rose-900 dark:text-rose-200">
                 <span className="flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse"></span>
                   {isBangla ? 'বর্তমান মোট বকেয়া পাওনা:' : 'Current Outstanding Due:'}
                 </span>
-                <span className="text-base sm:text-lg font-black text-rose-600">
+                <span className="text-base sm:text-lg font-black text-rose-600 dark:text-rose-400">
                   {formatCurrency(selectedCustomerTotalDue, isBangla)}
                 </span>
               </div>
 
+              {/* Action Buttons: Add Due / Add Deposit */}
+              <div className="mb-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl p-1 border border-slate-150 dark:border-slate-800 flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailActionTab(detailActionTab === 'add_due' ? 'none' : 'add_due');
+                    setDetailActionError('');
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                    detailActionTab === 'add_due'
+                      ? 'bg-rose-600 text-white shadow-xs font-black'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>{isBangla ? 'নতুন বাকি যোগ' : 'Add New Due'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailActionTab(detailActionTab === 'add_deposit' ? 'none' : 'add_deposit');
+                    setDetailActionError('');
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                    detailActionTab === 'add_deposit'
+                      ? 'bg-emerald-600 text-white shadow-xs font-black'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Coins className="h-3.5 w-3.5" />
+                  <span>{isBangla ? 'টাকা জমা এন্ট্রি' : 'Record Deposit'}</span>
+                </button>
+              </div>
+
+              {/* Action Forms */}
+              <AnimatePresence mode="wait">
+                {detailActionTab === 'add_due' && (
+                  <motion.form
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.15, ease: 'easeOut' }}
+                    onSubmit={handleDetailAddDueSubmit}
+                    className="mb-3.5 bg-rose-50/20 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/30 rounded-xl p-3 space-y-3 overflow-hidden shrink-0"
+                  >
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                          {isBangla ? 'পণ্যের নাম' : 'Product Name'}
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder={isBangla ? 'যেমন: চাল, ডাল' : 'e.g. Rice, Lentils'}
+                          value={detailDueProductName}
+                          onChange={(e) => setDetailDueProductName(e.target.value)}
+                          className="w-full text-xs p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                          {isBangla ? 'বাকি দাম/টাকা (৳)' : 'Due Amount'}
+                        </label>
+                        <input
+                          type="number"
+                          required
+                          min="1"
+                          placeholder="0"
+                          value={detailDueProductAmount}
+                          onChange={(e) => setDetailDueProductAmount(e.target.value)}
+                          className="w-full text-xs p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500 font-sans"
+                        />
+                      </div>
+                    </div>
+                    {detailActionError && (
+                      <p className="text-[10px] text-rose-600 dark:text-rose-400 font-bold">● {detailActionError}</p>
+                    )}
+                    <button
+                      type="submit"
+                      className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer transition-all active:scale-98 flex items-center justify-center gap-1 shadow-3xs"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>{isBangla ? 'বাকি যোগ করুন' : 'Confirm New Due'}</span>
+                    </button>
+                  </motion.form>
+                )}
+
+                {detailActionTab === 'add_deposit' && (
+                  <motion.form
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.15, ease: 'easeOut' }}
+                    onSubmit={handleDetailDepositSubmit}
+                    className="mb-3.5 bg-emerald-50/20 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/30 rounded-xl p-3 space-y-3 overflow-hidden shrink-0"
+                  >
+                    {selectedCustomerUnpaidDues.length > 0 && (
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                          {isBangla ? 'কোন পণ্য বা চালানের বাকি পরিশোধ করছেন?' : 'Which product/invoice due to pay?'}
+                        </label>
+                        <select
+                          value={selectedParentDueIdForDeposit}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSelectedParentDueIdForDeposit(val);
+                            if (val) {
+                              const found = selectedCustomerUnpaidDues.find(item => item.tx.id === val);
+                              if (found) {
+                                setDetailDepositAmount(found.remaining.toString());
+                                setDetailDepositNote(found.tx.product);
+                              }
+                            } else {
+                              setDetailDepositAmount('');
+                              setDetailDepositNote('');
+                            }
+                          }}
+                          className="w-full text-xs p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-sans font-bold"
+                        >
+                          <option value="">{isBangla ? '-- সাধারণ জমা (কোনো নির্দিষ্ট পণ্য ছাড়া) --' : '-- General Deposit (No specific product) --'}</option>
+                          {selectedCustomerUnpaidDues.map(item => (
+                            <option key={item.tx.id} value={item.tx.id}>
+                              {item.tx.product} ({isBangla ? 'বাকি: ' : 'Remaining: '}{formatCurrency(item.remaining, isBangla)})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                          {isBangla ? 'জমার পরিমাণ (৳)' : 'Deposit Amount'}
+                        </label>
+                        <input
+                          type="number"
+                          required
+                          min="1"
+                          placeholder="0"
+                          value={detailDepositAmount}
+                          onChange={(e) => setDetailDepositAmount(e.target.value)}
+                          className="w-full text-xs p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-sans"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                          {isBangla ? 'কোন পণ্য/বিবরণ (ঐচ্ছিক)' : 'Product/Reason (Optional)'}
+                        </label>
+                        <input
+                          type="text"
+                          placeholder={isBangla ? 'যেমন: চাল, ডাল' : 'e.g. Rice, Lentils'}
+                          value={detailDepositNote}
+                          onChange={(e) => setDetailDepositNote(e.target.value)}
+                          className="w-full text-xs p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                    </div>
+                    {detailActionError && (
+                      <p className="text-[10px] text-rose-600 dark:text-rose-400 font-bold">● {detailActionError}</p>
+                    )}
+                    <button
+                      type="submit"
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer transition-all active:scale-98 flex items-center justify-center gap-1 shadow-3xs"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      <span>{isBangla ? 'টাকা জমা করুন' : 'Confirm Deposit'}</span>
+                    </button>
+                  </motion.form>
+                )}
+              </AnimatePresence>
+
               {/* Scrollable Ledger Details */}
-              <div className="overflow-y-auto flex-1 pr-1 space-y-2.5 max-h-[45vh]">
-                <h4 className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">
+              <div className="overflow-y-auto flex-1 pr-1 space-y-2.5 max-h-[35vh]">
+                <h4 className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider mb-1">
                   {isBangla ? 'লেনদেনের বিবরণী (নতুন থেকে পুরাতন)' : 'Transaction History (Newest to Oldest)'}
                 </h4>
 
                 {selectedCustomerTxHistory.length === 0 ? (
-                  <div className="text-center py-8 text-xs text-slate-400 font-bold border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                  <div className="text-center py-8 text-xs text-slate-400 font-bold border border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/50">
                     {isBangla ? 'কোনো লেনদেনের তথ্য পাওয়া যায়নি' : 'No transactions recorded for this customer'}
                   </div>
                 ) : (
                   selectedCustomerTxHistory.map((tx) => {
                     const isDuePurchase = !tx.isCash;
+                    const paidAmount = isDuePurchase
+                      ? transactions.filter(t => t.parentDueId === tx.id).reduce((sum, t) => sum + t.amount, 0)
+                      : 0;
+                    const remainingDue = isDuePurchase ? Math.max(0, tx.amount - paidAmount) : 0;
+
                     return (
                       <div
                         key={tx.id}
-                        className={`p-3 rounded-xl border flex flex-col gap-1 transition-all ${
+                        className={`p-3 rounded-xl border flex flex-col gap-1.5 transition-all ${
                           isDuePurchase 
-                            ? 'border-rose-100 bg-rose-50/5 hover:bg-rose-50/10' 
-                            : 'border-emerald-100 bg-emerald-50/5 hover:bg-emerald-50/10'
+                            ? 'border-rose-100 dark:border-rose-950/40 bg-rose-50/5 hover:bg-rose-50/10' 
+                            : 'border-emerald-100 dark:border-emerald-950/40 bg-emerald-50/5 hover:bg-emerald-50/10'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
                             {/* Product Name / Activity Description */}
-                            <p className="text-xs font-bold text-slate-800 leading-tight">
+                            <p className="text-xs font-bold text-slate-800 dark:text-slate-100 leading-tight">
                               {tx.product}
                             </p>
                             
                             {/* Date & Time */}
-                            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-bold mt-1">
+                            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-1">
                               <span className="flex items-center gap-0.5">
                                 <Calendar className="h-2.5 w-2.5" />
                                 <span className="font-mono">{formatDate(tx.date, isBangla)}</span>
@@ -7491,22 +8096,118 @@ export default function App() {
                             {/* Type Badge */}
                             <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md tracking-wider ${
                               isDuePurchase 
-                                ? 'bg-rose-100 text-rose-700' 
-                                : 'bg-emerald-100 text-emerald-700'
+                                ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300' 
+                                : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300'
                             }`}>
                               {isDuePurchase 
                                 ? (isBangla ? 'বাকি নিয়েছেন' : 'Took Due') 
                                 : (isBangla ? 'জমা দিয়েছেন' : 'Paid/Deposit')}
                             </span>
 
-                            {/* Price / Amount */}
-                            <span className={`text-xs sm:text-sm font-black ${
-                              isDuePurchase ? 'text-rose-600' : 'text-emerald-600'
-                            }`}>
-                              {isDuePurchase ? '+' : '-'}{formatCurrency(tx.amount, isBangla)}
-                            </span>
+                            {/* Price / Amount and repayment updates */}
+                            <div className="flex flex-col items-end gap-0.5">
+                              {isDuePurchase ? (
+                                <>
+                                  <div className="flex items-center gap-1 flex-wrap justify-end">
+                                    <span className="text-xs sm:text-sm font-black text-rose-600 dark:text-rose-400">
+                                      +{formatCurrency(tx.amount, isBangla)}
+                                    </span>
+                                    {paidAmount > 0 && (
+                                      <span className="text-[9px] sm:text-[10px] font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1 py-0.5 rounded">
+                                        -{formatCurrency(paidAmount, isBangla)}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className={`text-[9px] sm:text-[10px] font-bold ${
+                                    remainingDue === 0 
+                                      ? 'text-emerald-600 dark:text-emerald-400 font-black' 
+                                      : 'text-slate-500 dark:text-slate-400'
+                                  }`}>
+                                    {remainingDue === 0 
+                                      ? (isBangla ? '● পরিশোধিত' : '● Paid') 
+                                      : (isBangla ? `বাকি: ${formatCurrency(remainingDue, true)}` : `Due: ${formatCurrency(remainingDue, false)}`)}
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 font-sans">
+                                  -{formatCurrency(tx.amount, isBangla)}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
+
+                        {/* Inline repayment form when due outstanding is remaining */}
+                        {isDuePurchase && remainingDue > 0 && (
+                          <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800/50 w-full">
+                            {activePayingDueId === tx.id ? (
+                              <form 
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  const amt = parseFloat(paymentAmt);
+                                  if (isNaN(amt) || amt <= 0) {
+                                    showToast(isBangla ? 'সঠিক টাকার পরিমাণ লিখুন' : 'Enter a valid amount');
+                                    return;
+                                  }
+                                  if (amt > remainingDue) {
+                                    showToast(
+                                      isBangla 
+                                        ? `সর্বোচ্চ ${formatCurrency(remainingDue, true)} পরিশোধ করা যাবে` 
+                                        : `Cannot pay more than ${formatCurrency(remainingDue, false)}`
+                                    );
+                                    return;
+                                  }
+                                  handleDueDeposit(selectedCustomerForDetail!, amt, "", tx.id);
+                                  setActivePayingDueId(null);
+                                  setPaymentAmt('');
+                                }} 
+                                className="flex items-center gap-1 w-full animate-fadeIn"
+                              >
+                                <input
+                                  type="number"
+                                  required
+                                  autoFocus
+                                  min="1"
+                                  max={remainingDue}
+                                  placeholder={isBangla ? 'কত টাকা জমা' : 'Amt'}
+                                  value={paymentAmt}
+                                  onChange={(e) => setPaymentAmt(e.target.value)}
+                                  className="flex-1 text-[11px] p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-sans"
+                                />
+                                <button 
+                                  type="submit" 
+                                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black rounded-lg cursor-pointer transition-all active:scale-95 shrink-0"
+                                >
+                                  {isBangla ? 'জমা' : 'Deposit'}
+                                </button>
+                                <button 
+                                  type="button" 
+                                  onClick={() => {
+                                    setActivePayingDueId(null);
+                                    setPaymentAmt('');
+                                  }} 
+                                  className="px-2 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 text-[10px] font-bold rounded-lg cursor-pointer shrink-0"
+                                >
+                                  {isBangla ? 'বাতিল' : 'Cancel'}
+                                </button>
+                              </form>
+                            ) : (
+                              <div className="flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActivePayingDueId(tx.id);
+                                    setPaymentAmt(remainingDue.toString());
+                                  }}
+                                  className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 px-2 py-0.5 rounded-md border border-emerald-100 dark:border-emerald-900/30 transition-all flex items-center gap-0.5 cursor-pointer"
+                                >
+                                  <Plus className="h-2 w-2" />
+                                  {isBangla ? 'বাকি পরিশোধ' : 'Pay Due'}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })
@@ -7514,11 +8215,11 @@ export default function App() {
               </div>
 
               {/* Footer */}
-              <div className="flex items-center justify-end pt-3 mt-4 border-t border-slate-150">
+              <div className="flex items-center justify-end pt-3 mt-4 border-t border-slate-150 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setSelectedCustomerForDetail(null)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-xs text-slate-600 rounded-xl cursor-pointer font-black transition-colors"
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs text-slate-600 dark:text-slate-300 rounded-xl cursor-pointer font-black transition-colors"
                 >
                   {isBangla ? 'বন্ধ করুন' : 'Close'}
                 </button>
@@ -7752,6 +8453,377 @@ export default function App() {
             </motion.div>
           </div>
         )}
+      </AnimatePresence>
+
+      {/* --- HOMEPAGE CARDS DETAIL POPUP (SALES, CASH DEPOSIT, EXPENSES) --- */}
+      <AnimatePresence>
+        {activeCardDetailModal !== null && (() => {
+          // Calculate high-fidelity stats for selected date
+          const salesItems = todayTransactions.filter(tx => !isTransactionRepayment(tx));
+          const cashSales = salesItems.filter(tx => tx.isCash);
+          const dueSales = salesItems.filter(tx => !tx.isCash);
+          const totalCashSalesAmt = cashSales.reduce((acc, curr) => acc + curr.amount, 0);
+          const totalDueSalesAmt = dueSales.reduce((acc, curr) => acc + curr.amount, 0);
+
+          const cashItems = todayTransactions.filter(tx => tx.isCash);
+          const directCashSales = cashItems.filter(tx => !isTransactionRepayment(tx));
+          const dueRepayments = cashItems.filter(tx => isTransactionRepayment(tx));
+          const totalDirectCashAmt = directCashSales.reduce((acc, curr) => acc + curr.amount, 0);
+          const totalDueRepayAmt = dueRepayments.reduce((acc, curr) => acc + curr.amount, 0);
+
+          const totalExpAmt = todayExpenses.reduce((acc, curr) => acc + curr.amount, 0);
+          const avgExpense = todayExpenses.length > 0 ? totalExpAmt / todayExpenses.length : 0;
+
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setActiveCardDetailModal(null)}
+                className="fixed inset-0 bg-slate-900/65 dark:bg-black/85 backdrop-blur-[2px]"
+              />
+
+              {/* Modal Box */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="relative w-full max-w-md bg-white dark:bg-slate-950 rounded-2xl shadow-2xl p-5 sm:p-6 border border-slate-100 dark:border-slate-800/80 overflow-hidden z-10 text-left flex flex-col max-h-[85vh]"
+                id="card-calculation-details-modal"
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800/80 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`p-2 rounded-xl shrink-0 ${
+                      activeCardDetailModal === 'sales'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-100/30'
+                        : activeCardDetailModal === 'cash'
+                        ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-100/30'
+                        : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-100/30'
+                    }`}>
+                      {activeCardDetailModal === 'sales' ? (
+                        <TrendingUp className="h-5 w-5" />
+                      ) : activeCardDetailModal === 'cash' ? (
+                        <Wallet className="h-5 w-5" />
+                      ) : (
+                        <Coins className="h-5 w-5" />
+                      )}
+                    </span>
+                    <div>
+                      <h3 className="font-bold text-slate-850 dark:text-slate-100 text-sm sm:text-base leading-snug">
+                        {activeCardDetailModal === 'sales' && (isBangla ? 'আজকের বিক্রি বিবরণী' : "Today's Sales Breakdown")}
+                        {activeCardDetailModal === 'cash' && (isBangla ? 'আজকের নগদ ক্যাশ জমা' : "Today's Cash Ledger")}
+                        {activeCardDetailModal === 'expenses' && (isBangla ? 'আজকের খরচ বিবরণী' : "Today's Expense Statement")}
+                      </h3>
+                      <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1 mt-0.5">
+                        <Calendar className="h-3 w-3 text-slate-400 dark:text-slate-500" />
+                        {formatDate(selectedDate, isBangla)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setActiveCardDetailModal(null)}
+                    className="text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 transition-colors cursor-pointer text-xs font-bold p-1.5 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-full shrink-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Main Info Box */}
+                <div className="bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200/50 dark:border-slate-800/80 rounded-xl p-3 mb-3.5 flex justify-between items-center text-xs font-bold text-slate-700 dark:text-slate-300 shrink-0">
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
+                    {isBangla ? 'খাতার ধরণ:' : 'Ledger Mode:'}
+                    <span className="font-extrabold text-slate-900 dark:text-white">
+                      {activeCardDetailModal === 'sales' && (isBangla ? 'পণ্য বিক্রি হিসাব' : 'Product Sales')}
+                      {activeCardDetailModal === 'cash' && (isBangla ? 'নগদ ক্যাশ খাতা' : 'Cash Counter')}
+                      {activeCardDetailModal === 'expenses' && (isBangla ? 'ব্যবসায়িক ব্যয়' : 'Business Expense')}
+                    </span>
+                  </span>
+                  <span className="font-mono text-[9px] tracking-wider uppercase px-2 py-0.5 bg-white dark:bg-slate-950 rounded-md border border-slate-200/65 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold">
+                    {selectedDate === getTodayDateString() ? (isBangla ? 'আজ' : 'Today') : (isBangla ? 'নির্দিষ্ট তারিখ' : 'Selected')}
+                  </span>
+                </div>
+
+                {/* Mini Summary Cards Row */}
+                {activeCardDetailModal === 'sales' && (
+                  <div className="grid grid-cols-2 gap-2 mb-3.5 shrink-0">
+                    <div className="bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100/50 dark:border-emerald-900/30 rounded-xl p-2.5 text-center">
+                      <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-black uppercase tracking-wider block mb-0.5">
+                        {isBangla ? 'নগদ বিক্রি' : 'Cash Sales'}
+                      </span>
+                      <span className="font-extrabold text-xs sm:text-sm text-slate-800 dark:text-slate-100 font-sans block leading-tight">
+                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(totalCashSalesAmt, isBangla)}
+                      </span>
+                      <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold block mt-0.5">
+                        {isBangla ? `${toBanglaNumber(cashSales.length.toString())} টি লেনদেন` : `${cashSales.length} Txns`}
+                      </span>
+                    </div>
+                    <div className="bg-rose-50/50 dark:bg-rose-950/20 border border-rose-100/50 dark:border-rose-900/30 rounded-xl p-2.5 text-center">
+                      <span className="text-[10px] text-rose-700 dark:text-rose-300 font-black uppercase tracking-wider block mb-0.5">
+                        {isBangla ? 'বাকি বিক্রি' : 'Due Sales'}
+                      </span>
+                      <span className="font-extrabold text-xs sm:text-sm text-slate-800 dark:text-slate-100 font-sans block leading-tight">
+                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(totalDueSalesAmt, isBangla)}
+                      </span>
+                      <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold block mt-0.5">
+                        {isBangla ? `${toBanglaNumber(dueSales.length.toString())} টি লেনদেন` : `${dueSales.length} Txns`}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {activeCardDetailModal === 'cash' && (
+                  <div className="grid grid-cols-2 gap-2 mb-3.5 shrink-0">
+                    <div className="bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100/50 dark:border-emerald-900/30 rounded-xl p-2.5 text-center">
+                      <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-black uppercase tracking-wider block mb-0.5">
+                        {isBangla ? 'সরাসরি নগদ' : 'Direct Cash'}
+                      </span>
+                      <span className="font-extrabold text-xs sm:text-sm text-slate-800 dark:text-slate-100 font-sans block leading-tight">
+                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(totalDirectCashAmt, isBangla)}
+                      </span>
+                      <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold block mt-0.5">
+                        {isBangla ? `${toBanglaNumber(directCashSales.length.toString())} টি বিক্রি` : `${directCashSales.length} Sales`}
+                      </span>
+                    </div>
+                    <div className="bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100/50 dark:border-blue-900/30 rounded-xl p-2.5 text-center">
+                      <span className="text-[10px] text-blue-700 dark:text-blue-300 font-black uppercase tracking-wider block mb-0.5">
+                        {isBangla ? 'বাকি আদায়' : 'Due Recovered'}
+                      </span>
+                      <span className="font-extrabold text-xs sm:text-sm text-slate-800 dark:text-slate-100 font-sans block leading-tight">
+                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(totalDueRepayAmt, isBangla)}
+                      </span>
+                      <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold block mt-0.5">
+                        {isBangla ? `${toBanglaNumber(dueRepayments.length.toString())} টি আদায়` : `${dueRepayments.length} Repays`}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {activeCardDetailModal === 'expenses' && (
+                  <div className="grid grid-cols-2 gap-2 mb-3.5 shrink-0">
+                    <div className="bg-rose-50/50 dark:bg-rose-950/20 border border-rose-100/50 dark:border-rose-900/30 rounded-xl p-2.5 text-center">
+                      <span className="text-[10px] text-rose-700 dark:text-rose-300 font-black uppercase tracking-wider block mb-0.5">
+                        {isBangla ? 'মোট খরচ খাত' : 'Expense Count'}
+                      </span>
+                      <span className="font-extrabold text-xs sm:text-sm text-slate-800 dark:text-slate-100 font-sans block leading-tight">
+                        {isBangla ? `${toBanglaNumber(todayExpenses.length.toString())} টি` : `${todayExpenses.length} Items`}
+                      </span>
+                      <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold block mt-0.5">
+                        {isBangla ? 'ব্যবসায়িক ব্যয়' : 'Business Expense'}
+                      </span>
+                    </div>
+                    <div className="bg-amber-50/50 dark:bg-amber-950/20 border border-amber-100/50 dark:border-amber-900/30 rounded-xl p-2.5 text-center">
+                      <span className="text-[10px] text-amber-700 dark:text-amber-300 font-black uppercase tracking-wider block mb-0.5">
+                        {isBangla ? 'গড় খরচ' : 'Average Expense'}
+                      </span>
+                      <span className="font-extrabold text-xs sm:text-sm text-slate-800 dark:text-slate-100 font-sans block leading-tight">
+                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(Math.round(avgExpense), isBangla)}
+                      </span>
+                      <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold block mt-0.5">
+                        {isBangla ? 'প্রতি খরচ খাত' : 'Per transaction'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Subtitle list header */}
+                <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-2 shrink-0">
+                  {isBangla ? 'লেনদেনের বিস্তারিত বিবরণ:' : 'Transaction Breakdown List:'}
+                </span>
+
+                {/* Transaction / Items List */}
+                <div className="flex-1 overflow-y-auto no-scrollbar space-y-2.5 max-h-[38vh] pr-0.5 py-0.5">
+                  {(() => {
+                    if (activeCardDetailModal === 'sales') {
+                      if (salesItems.length === 0) {
+                        return (
+                          <div className="text-center py-8 px-4 border border-dashed border-slate-150 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/20">
+                            <p className="text-slate-400 dark:text-slate-500 text-xs font-semibold">
+                              {isBangla ? 'এই তারিখে কোনো বিক্রির হিসাব পাওয়া যায়নি!' : 'No sales transactions found for this date!'}
+                            </p>
+                          </div>
+                        );
+                      }
+                      return salesItems.map((tx) => (
+                        <div 
+                          key={tx.id}
+                          className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-slate-100/30 dark:hover:bg-slate-900/60 transition-colors"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-bold text-slate-800 dark:text-slate-100 text-xs sm:text-[13px] break-words whitespace-normal leading-tight">
+                                {tx.product}
+                              </span>
+                              <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-450 dark:text-slate-400 font-bold font-mono shrink-0 bg-slate-200/50 dark:bg-slate-800 px-1.5 py-0.2 rounded-md">
+                                <Clock className="h-2.5 w-2.5" />
+                                {tx.time}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {tx.isCash ? (
+                                <span className="inline-flex items-center justify-center gap-0.5 text-[8.5px] font-black bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-350 px-2 py-0.5 rounded-lg border border-emerald-200/35 dark:border-emerald-900/30">
+                                  {isBangla ? 'নগদ বিক্রি' : 'Cash Sale'}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center justify-center gap-0.5 text-[8.5px] font-black bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-350 px-2 py-0.5 rounded-lg border border-rose-200/35 dark:border-rose-900/30">
+                                  {isBangla ? 'বাকি বিক্রি' : 'Due Sale'}
+                                </span>
+                              )}
+                              {!tx.isCash && tx.customer && (
+                                <span className="inline-flex items-center text-[9px] font-extrabold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-md">
+                                  👤 {tx.customer}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className="font-extrabold text-slate-900 dark:text-white text-xs sm:text-[13px] font-sans">
+                              {formatCurrency(tx.amount, isBangla)}
+                            </span>
+                          </div>
+                        </div>
+                      ));
+                    } else if (activeCardDetailModal === 'cash') {
+                      if (cashItems.length === 0) {
+                        return (
+                          <div className="text-center py-8 px-4 border border-dashed border-slate-150 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/20">
+                            <p className="text-slate-400 dark:text-slate-500 text-xs font-semibold">
+                              {isBangla ? 'এই তারিখে কোনো নগদ জমা পাওয়া যায়নি!' : 'No cash deposits found for this date!'}
+                            </p>
+                          </div>
+                        );
+                      }
+                      return cashItems.map((tx) => {
+                        const isRepay = isTransactionRepayment(tx);
+                        return (
+                          <div 
+                            key={tx.id}
+                            className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-slate-100/30 dark:hover:bg-slate-900/60 transition-colors"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-bold text-slate-800 dark:text-slate-100 text-xs sm:text-[13px] break-words whitespace-normal leading-tight">
+                                  {tx.product}
+                                </span>
+                                <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-450 dark:text-slate-400 font-bold font-mono shrink-0 bg-slate-200/50 dark:bg-slate-800 px-1.5 py-0.2 rounded-md">
+                                  <Clock className="h-2.5 w-2.5" />
+                                  {tx.time}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {isRepay ? (
+                                  <span className="inline-flex items-center justify-center gap-0.5 text-[8.5px] font-black bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-350 px-2 py-0.5 rounded-lg border border-blue-200/35 dark:border-blue-900/30">
+                                    {isBangla ? 'বাকি পরিশোধ' : 'Due Paid'}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center justify-center gap-0.5 text-[8.5px] font-black bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-350 px-2 py-0.5 rounded-lg border border-emerald-200/35 dark:border-emerald-900/30">
+                                    {isBangla ? 'নগদ বিক্রি' : 'Cash Sale'}
+                                  </span>
+                                )}
+                                {tx.customer && (
+                                  <span className="inline-flex items-center text-[9px] font-extrabold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-md font-sans">
+                                    👤 {tx.customer}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <span className="font-extrabold text-slate-900 dark:text-white text-xs sm:text-[13px] font-sans">
+                                {formatCurrency(tx.amount, isBangla)}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      });
+                    } else {
+                      if (todayExpenses.length === 0) {
+                        return (
+                          <div className="text-center py-8 px-4 border border-dashed border-slate-150 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/20">
+                            <p className="text-slate-400 dark:text-slate-500 text-xs font-semibold">
+                              {isBangla ? 'এই তারিখে কোনো খরচের বিবরণ পাওয়া যায়নি!' : 'No expenses found for this date!'}
+                            </p>
+                          </div>
+                        );
+                      }
+                      return todayExpenses.map((ex) => (
+                        <div 
+                          key={ex.id}
+                          className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-slate-100/30 dark:hover:bg-slate-900/60 transition-colors"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-bold text-slate-800 dark:text-slate-100 text-xs sm:text-[13px] break-words whitespace-normal leading-tight">
+                                {ex.description}
+                              </span>
+                              <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-450 dark:text-slate-400 font-bold font-mono shrink-0 bg-slate-200/50 dark:bg-slate-800 px-1.5 py-0.2 rounded-md">
+                                <Clock className="h-2.5 w-2.5" />
+                                {ex.time}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="inline-flex items-center justify-center gap-0.5 text-[8.5px] font-black bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-350 px-2 py-0.5 rounded-lg border border-rose-200/35 dark:border-rose-900/30">
+                                {isBangla ? 'ব্যবসায়িক খরচ' : 'Business Expense'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className="font-extrabold text-slate-900 dark:text-white text-xs sm:text-[13px] font-sans">
+                              {formatCurrency(ex.amount, isBangla)}
+                            </span>
+                          </div>
+                        </div>
+                      ));
+                    }
+                  })()}
+                </div>
+
+                {/* Total Summary Footer */}
+                <div className={`mt-4 pt-3.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 p-3 rounded-xl ${
+                  activeCardDetailModal === 'sales'
+                    ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border border-emerald-100/30 dark:border-emerald-900/20'
+                    : activeCardDetailModal === 'cash'
+                    ? 'bg-blue-50/40 dark:bg-blue-950/20 border border-blue-100/30 dark:border-blue-900/20'
+                    : 'bg-rose-50/40 dark:bg-rose-950/20 border border-rose-100/30 dark:border-rose-900/20'
+                }`}>
+                  <span className="text-xs font-black text-slate-600 dark:text-slate-350">
+                    {activeCardDetailModal === 'sales' && (isBangla ? 'মোট বিক্রির পরিমাণ:' : 'Total Sales Amount:')}
+                    {activeCardDetailModal === 'cash' && (isBangla ? 'মোট নগদ জমার পরিমাণ:' : 'Total Cash Received:')}
+                    {activeCardDetailModal === 'expenses' && (isBangla ? 'মোট খরচের পরিমাণ:' : 'Total Expense Amount:')}
+                  </span>
+                  <span className={`text-base sm:text-lg font-black font-sans ${
+                    activeCardDetailModal === 'sales'
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : activeCardDetailModal === 'cash'
+                      ? 'text-blue-600 dark:text-blue-400'
+                      : 'text-rose-600 dark:text-rose-400'
+                  }`}>
+                    {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : (
+                      activeCardDetailModal === 'sales'
+                        ? formatCurrency(todaySales, isBangla)
+                        : activeCardDetailModal === 'cash'
+                        ? formatCurrency(todayCashDeposit, isBangla)
+                        : formatCurrency(todayExpenseTotal, isBangla)
+                    )}
+                  </span>
+                </div>
+
+                {/* Action Button */}
+                <div className="flex items-center justify-end gap-2.5 mt-4 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setActiveCardDetailModal(null)}
+                    className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-black text-xs rounded-xl transition-all cursor-pointer text-center active:scale-98"
+                  >
+                    {isBangla ? 'বন্ধ করুন' : 'Close'}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
       </AnimatePresence>
 
       {/* --- ADD OUT OF STOCK ITEM MODAL --- */}
@@ -8066,6 +9138,110 @@ export default function App() {
                     id="edit-rate-submit-btn"
                   >
                     {isBangla ? 'পরিবর্তন করুন' : 'Update Rate'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- EDIT OUT OF STOCK ITEM MODAL --- */}
+      <AnimatePresence>
+        {editingOosId !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setEditingOosId(null)}
+              className="fixed inset-0 bg-black"
+            />
+
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 border border-slate-100 overflow-hidden z-50"
+              id="edit-oos-modal-box"
+            >
+              <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                <h3 className="font-bold text-slate-800 text-base flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse"></span>
+                  {isBangla ? 'পণ্য সংশোধন' : 'Edit Shortage Item'}
+                </h3>
+                <button
+                  onClick={() => setEditingOosId(null)}
+                  className="text-slate-400 hover:text-slate-650 transition-colors cursor-pointer text-xs font-bold p-1 hover:bg-slate-100 rounded-full"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">
+                    {isBangla ? 'পণ্যের নাম' : 'Product Name'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder={isBangla ? 'যেমন: চিনি' : 'e.g. Sugar'}
+                    value={editOosName}
+                    onChange={(e) => setEditOosName(e.target.value)}
+                    className="w-full text-sm p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-slate-50 hover:bg-white focus:bg-white transition-all font-semibold"
+                    id="edit-oos-name-input"
+                    autoFocus
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">
+                    {isBangla ? 'স্টক সংখ্যা' : 'Stock Qty'}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    placeholder={isBangla ? 'যেমন: ১০' : 'e.g. 10'}
+                    value={editOosStock}
+                    onChange={(e) => {
+                      let val = e.target.value;
+                      if (val.length > 1 && val.startsWith('0')) {
+                        val = val.replace(/^0+/, '');
+                      }
+                      setEditOosStock(val);
+                    }}
+                    className="w-full text-sm p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-slate-50 hover:bg-white focus:bg-white transition-all font-sans font-bold"
+                    id="edit-oos-stock-input"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setEditingOosId(null)}
+                    className="px-4 py-2 text-xs font-black text-slate-500 hover:bg-slate-100 rounded-xl border border-slate-200 cursor-pointer"
+                  >
+                    {isBangla ? 'বাতিল' : 'Cancel'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editOosName.trim()) {
+                        const val = parseFloat(editOosStock);
+                        handleUpdateOutOfStock(editingOosId, editOosName, isNaN(val) ? 0 : val);
+                        setEditingOosId(null);
+                      } else {
+                        showToast(isBangla ? 'দয়া করে সঠিক নাম লিখুন!' : 'Please enter a valid name!');
+                      }
+                    }}
+                    className="px-5 py-2 text-xs font-black text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-sm cursor-pointer"
+                    id="edit-oos-submit-btn"
+                  >
+                    {isBangla ? 'পরিবর্তন করুন' : 'Update Item'}
                   </button>
                 </div>
               </div>
