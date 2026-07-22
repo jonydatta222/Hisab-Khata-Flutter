@@ -796,6 +796,8 @@ export default function App() {
   const [editRateKeywords, setEditRateKeywords] = useState('');
   const [activeInfoTab, setActiveInfoTab] = useState<'oos' | 'rates' | 'dues' | 'expenses'>('oos');
   const [settingsSubTab, setSettingsSubTab] = useState<'store' | 'sync' | 'history' | 'memo'>('store');
+  const [leastSoldSubTab, setLeastSoldSubTab] = useState<'once' | 'twice'>('once');
+  const [mostSoldSubTab, setMostSoldSubTab] = useState<'top10' | 'top20'>('top10');
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -2132,14 +2134,14 @@ export default function App() {
     if (productList.length > 0) {
       mostSoldProducts = [...productList]
         .sort((a, b) => b.count - a.count || b.totalAmount - a.totalAmount)
-        .slice(0, 10);
+        .slice(0, 40);
     }
     
     let leastSoldProducts: typeof productList = [];
     if (productList.length > 0) {
       leastSoldProducts = [...productList]
         .sort((a, b) => a.count - b.count || a.totalAmount - b.totalAmount)
-        .slice(0, 10);
+        .slice(0, 100);
     }
     
     const individualSales: { name: string; price: number; date: string; customer?: string }[] = [];
@@ -2162,7 +2164,7 @@ export default function App() {
     
     const mostExpensiveProducts = [...individualSales]
       .sort((a, b) => b.price - a.price)
-      .slice(0, 10);
+      .slice(0, 20);
 
     const totalExpense = weeklyExs.reduce((sum, ex) => sum + (Number(ex.amount) || 0), 0);
     const totalDueDeposits = weeklyTxs.filter(tx => !isProductSale(tx)).reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
@@ -2576,9 +2578,6 @@ export default function App() {
       }
     }
 
-    let hasDuplicate = false;
-    let duplicateInfo = '';
-
     for (let i = 0; i < productParts.length; i++) {
       const prodName = productParts[i];
       // Get corresponding price or default to '0'
@@ -2586,22 +2585,6 @@ export default function App() {
       const englishPriceStr = toEnglishNumber(priceStr);
       const price = parseFloat(englishPriceStr);
       const finalPrice = isNaN(price) || price < 0 ? 0 : price;
-
-      // Check if this identical entry already exists today
-      const duplicate = transactions.find(tx => 
-        tx.date === selectedDate &&
-        tx.isCash === isCashTransaction &&
-        tx.amount === finalPrice &&
-        tx.product.trim().toLowerCase() === prodName.trim().toLowerCase() &&
-        (isCashTransaction ? true : tx.customer.trim().toLowerCase() === normalizedCustomerName.toLowerCase())
-      );
-
-      if (duplicate) {
-        hasDuplicate = true;
-        duplicateInfo = isBangla
-          ? `পণ্য: "${prodName}", পরিমাণ: ৳${toBanglaNumber(finalPrice)}${!isCashTransaction ? `, ক্রেতা: "${normalizedCustomerName}"` : ''}`
-          : `Product: "${prodName}", Amount: ৳${finalPrice}${!isCashTransaction ? `, Customer: "${normalizedCustomerName}"` : ''}`;
-      }
 
       const newTx: Transaction = {
         id: generateId(),
@@ -2636,18 +2619,7 @@ export default function App() {
       showToast(isBangla ? 'বিক্রি সফলভাবে হিসাবভুক্ত হয়েছে!' : 'Sale added to ledger!');
     };
 
-    if (hasDuplicate) {
-      setConfirmModal({
-        isOpen: true,
-        title: isBangla ? 'একই বিক্রির হিসাব ইতিমধ্যে বিদ্যমান!' : 'Duplicate Sale Detected!',
-        message: isBangla
-          ? `আজকে এই হিসাবটি ইতিমধ্যে যুক্ত করা হয়েছে:\n(${duplicateInfo})\n\nআপনি কি নিশ্চিত যে আপনি এটি আবার যোগ করতে চান?`
-          : `This sale record has already been added today:\n(${duplicateInfo})\n\nAre you sure you want to add it again?`,
-        onConfirm: proceedAdd
-      });
-    } else {
-      proceedAdd();
-    }
+    proceedAdd();
   };
 
   // Add an expense
@@ -2836,15 +2808,6 @@ export default function App() {
       }
     }
 
-    // Check if duplicate due entry already exists today
-    const duplicate = transactions.find(tx => 
-      tx.date === selectedDate &&
-      !tx.isCash &&
-      tx.amount === price &&
-      tx.product.trim().toLowerCase() === prodDesc.trim().toLowerCase() &&
-      tx.customer.trim().toLowerCase() === normalizedCustomerName.toLowerCase()
-    );
-
     const proceedAddDue = () => {
       const newTx: Transaction = {
         id: generateId(),
@@ -2876,18 +2839,7 @@ export default function App() {
       showToast(isBangla ? 'বকেয়া হিসাব সফলভাবে যোগ হয়েছে!' : 'Due outstanding added successfully!');
     };
 
-    if (duplicate) {
-      setConfirmModal({
-        isOpen: true,
-        title: isBangla ? 'একই বকেয়া হিসাব ইতিমধ্যে বিদ্যমান!' : 'Duplicate Due Detected!',
-        message: isBangla
-          ? `আজকে এই বকেয়া হিসাবটি ইতিমধ্যে যুক্ত করা হয়েছে:\nক্রেতা: "${normalizedCustomerName}", বিবরণ: "${prodDesc}", বকেয়া: ৳${toBanglaNumber(price)}\n\nআপনি কি নিশ্চিত যে আপনি এটি আবার যোগ করতে চান?`
-          : `This due entry has already been added today:\nCustomer: "${normalizedCustomerName}", Details: "${prodDesc}", Amount: ৳${price}\n\nAre you sure you want to add it again?`,
-        onConfirm: proceedAddDue
-      });
-    } else {
-      proceedAddDue();
-    }
+    proceedAddDue();
   };
 
   // Delete Product rate item
@@ -2941,15 +2893,6 @@ export default function App() {
       }
     }
 
-    // Check if duplicate deposit entry already exists today
-    const duplicate = transactions.find(tx => 
-      tx.date === selectedDate &&
-      tx.isCash &&
-      tx.amount === depositAmt &&
-      tx.product.trim().toLowerCase() === productDesc.trim().toLowerCase() &&
-      tx.customer.trim().toLowerCase() === normalizedCustomerName.toLowerCase()
-    );
-
     const proceedDueDeposit = () => {
       const newTx: Transaction = {
         id: generateId(),
@@ -2972,18 +2915,7 @@ export default function App() {
       );
     };
 
-    if (duplicate) {
-      setConfirmModal({
-        isOpen: true,
-        title: isBangla ? 'একই জমার হিসাব ইতিমধ্যে বিদ্যমান!' : 'Duplicate Deposit Detected!',
-        message: isBangla
-          ? `আজকে এই জমার হিসাবটি ইতিমধ্যে যুক্ত করা হয়েছে:\nক্রেতা: "${normalizedCustomerName}", পরিমাণ: ৳${toBanglaNumber(depositAmt)}\n\nআপনি কি নিশ্চিত যে আপনি এটি আবার যোগ করতে চান?`
-          : `This deposit entry has already been added today:\nCustomer: "${normalizedCustomerName}", Amount: ৳${depositAmt}\n\nAre you sure you want to add it again?`,
-        onConfirm: proceedDueDeposit
-      });
-    } else {
-      proceedDueDeposit();
-    }
+    proceedDueDeposit();
   };
 
   // Submit handler to add new due (product & price) from inside the customer details modal
@@ -3005,15 +2937,6 @@ export default function App() {
 
     const hasProd = detailDueProductName.trim().length > 0;
     const prodDesc = detailDueProductName.trim() || (isBangla ? 'পূর্বের বকেয়া বাকি' : 'Previous Due');
-
-    // Check if duplicate due entry already exists today
-    const duplicate = transactions.find(tx => 
-      tx.date === selectedDate &&
-      !tx.isCash &&
-      tx.amount === price &&
-      tx.product.trim().toLowerCase() === prodDesc.trim().toLowerCase() &&
-      tx.customer.trim().toLowerCase() === selectedCustomerForDetail.trim().toLowerCase()
-    );
 
     const proceedDetailAddDue = () => {
       const newTx: Transaction = {
@@ -3044,18 +2967,7 @@ export default function App() {
       showToast(isBangla ? 'বকেয়া হিসাব সফলভাবে যোগ হয়েছে!' : 'Due outstanding added successfully!');
     };
 
-    if (duplicate) {
-      setConfirmModal({
-        isOpen: true,
-        title: isBangla ? 'একই বকেয়া হিসাব ইতিমধ্যে বিদ্যমান!' : 'Duplicate Due Detected!',
-        message: isBangla
-          ? `আজকে এই বকেয়া হিসাবটি ইতিমধ্যে যুক্ত করা হয়েছে:\nক্রেতা: "${selectedCustomerForDetail}", বিবরণ: "${prodDesc}", বকেয়া: ৳${toBanglaNumber(price)}\n\nআপনি কি নিশ্চিত যে আপনি এটি আবার যোগ করতে চান?`
-          : `This due entry has already been added today:\nCustomer: "${selectedCustomerForDetail}", Details: "${prodDesc}", Amount: ৳${price}\n\nAre you sure you want to add it again?`,
-        onConfirm: proceedDetailAddDue
-      });
-    } else {
-      proceedDetailAddDue();
-    }
+    proceedDetailAddDue();
   };
 
   // Submit handler to record a deposit payment from inside the customer details modal
@@ -5150,9 +5062,9 @@ export default function App() {
                             if (weeklyDetailModal === 'sales') return isBangla ? 'মোট বিক্রির হিসাব বিবরণী' : 'Total Sales Statement';
                             if (weeklyDetailModal === 'expense') return isBangla ? 'মোট খরচের হিসাব বিবরণী' : 'Total Expense Statement';
                             if (weeklyDetailModal === 'net') return isBangla ? 'নিট লাভ ও ক্যাশ ফ্লো বিবরণী' : 'Net Flow & Profit Statement';
-                            if (weeklyDetailModal === 'most_sold') return isBangla ? 'সেরা বিক্রিত ১০টি পণ্য' : 'Top 10 Most Sold Products';
-                            if (weeklyDetailModal === 'least_sold') return isBangla ? 'কম বিক্রিত ১০টি পণ্য' : 'Top 10 Least Sold Products';
-                            if (weeklyDetailModal === 'expensive') return isBangla ? 'সর্বোচ্চ দামী ১০টি বিক্রয়' : 'Top 10 Most Expensive Sales';
+                            if (weeklyDetailModal === 'most_sold') return isBangla ? 'সেরা বিক্রিত ২০টি পণ্য' : 'Top 20 Most Sold Products';
+                            if (weeklyDetailModal === 'least_sold') return isBangla ? 'কম বিক্রিত ২০টি পণ্য' : 'Top 20 Least Sold Products';
+                            if (weeklyDetailModal === 'expensive') return isBangla ? 'সর্বোচ্চ দামী ২০টি বিক্রয়' : 'Top 20 Most Expensive Sales';
                             if (weeklyDetailModal === 'due') return isBangla ? 'বাকি বিক্রির হিসাব বিবরণী' : 'Due Sales Statement';
                             if (weeklyDetailModal === 'others') return isBangla ? 'ব্যস্ত সময় ট্র্যাকিং (Peak Hour Analysis)' : 'Peak Hour & Day Analysis';
                             return '';
@@ -5243,25 +5155,28 @@ export default function App() {
                                 );
                               }
                               return (
-                                <div className="space-y-1.5 font-sans">
+                                <div className="space-y-1 max-h-[540px] overflow-y-auto pr-1 custom-scrollbar">
                                   {weeklyTxs.map((tx) => (
-                                    <div key={tx.id} className="flex justify-between items-center p-2 rounded-lg bg-slate-50 hover:bg-slate-100/80 border border-slate-150/60 text-xs font-bold transition-all">
+                                    <div 
+                                      key={tx.id} 
+                                      className="flex justify-between items-center py-1.5 px-2 rounded-md bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/80 shadow-2xs hover:border-slate-300 dark:hover:border-slate-600 transition-colors duration-150 text-xs font-bold gap-2"
+                                    >
                                       <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-1.5">
-                                          <span className="text-slate-800 font-extrabold truncate max-w-[150px]">{tx.product}</span>
-                                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md shrink-0 uppercase tracking-wide ${
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="text-slate-800 dark:text-slate-100 font-bold text-[11px] leading-tight truncate">{tx.product}</span>
+                                          <span className={`text-[8.5px] font-black px-1 py-0.2 rounded shrink-0 uppercase tracking-wide ${
                                             tx.isCash 
-                                              ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' 
-                                              : 'bg-rose-50 border border-rose-200 text-rose-700'
+                                              ? 'bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300' 
+                                              : 'bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
                                           }`}>
                                             {tx.isCash ? (isBangla ? 'নগদ' : 'Cash') : (isBangla ? 'বাকি' : 'Due')}
                                           </span>
                                         </div>
-                                        <span className="text-[9px] text-slate-400 font-bold font-mono block mt-0.5">
+                                        <span className="text-[9px] text-slate-500 dark:text-slate-400 font-medium font-mono block mt-0.5">
                                           {formatDate(tx.date, isBangla)} • {tx.customer || (isBangla ? 'খুচরা ক্রেতা' : 'Retail')}
                                         </span>
                                       </div>
-                                      <span className="text-slate-900 font-extrabold shrink-0 text-right ml-2">{formatCurrency(tx.amount, isBangla)}</span>
+                                      <span className="text-slate-900 dark:text-slate-100 font-black shrink-0 text-right text-[11px] pl-2 border-l border-slate-150 dark:border-slate-700/60">{formatCurrency(tx.amount, isBangla)}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -5274,34 +5189,37 @@ export default function App() {
                       {/* EXPENSE */}
                       {weeklyDetailModal === 'expense' && (
                         <div className="space-y-3">
-                          <div className="flex justify-between items-center p-3 bg-rose-50/50 rounded-xl border border-rose-100/50 text-xs font-bold">
-                            <span className="text-slate-500">{isBangla ? 'মোট খরচের পরিমাণ:' : 'Total Expense Amount:'}</span>
-                            <span className="text-rose-600 font-black text-sm">{formatCurrency(weeklyReport.totalExpense, isBangla)}</span>
+                          <div className="flex justify-between items-center p-3 bg-rose-50/50 dark:bg-rose-950/20 rounded-xl border border-rose-200/80 dark:border-rose-800/60 text-xs font-bold">
+                            <span className="text-slate-600 dark:text-slate-300">{isBangla ? 'মোট খরচের পরিমাণ:' : 'Total Expense Amount:'}</span>
+                            <span className="text-rose-600 dark:text-rose-400 font-black text-sm">{formatCurrency(weeklyReport.totalExpense, isBangla)}</span>
                           </div>
 
                           <div className="space-y-2">
-                            <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">
+                            <h5 className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                               {isBangla 
                                 ? (weeklyPeriod === '7D' ? 'সাপ্তাহিক খরচের তালিকা:' : weeklyPeriod === '1D' ? 'আজকের খরচের তালিকা:' : weeklyPeriod === 'ALL' ? 'শুরু থেকে খরচের তালিকা:' : '৩০ দিনের খরচের তালিকা:') 
                                 : (weeklyPeriod === '7D' ? 'Weekly Expense List:' : weeklyPeriod === '1D' ? "Today's Expense List:" : weeklyPeriod === 'ALL' ? 'Lifetime Expense List:' : '30 Days Expense List:')}
                             </h5>
                             {weeklyReport.weeklyExs.length === 0 ? (
-                              <div className="text-center py-8 text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-slate-100">
+                              <div className="text-center py-8 text-xs text-slate-400 italic bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-200 dark:border-slate-700">
                                 {isBangla 
                                   ? (weeklyPeriod === '7D' ? 'গত ৭ দিনে কোনো খরচ করা হয়নি।' : weeklyPeriod === '1D' ? 'আজ কোনো খরচ করা হয়নি।' : 'গত ৩০ দিনে কোনো খরচ করা হয়নি।') 
                                   : (weeklyPeriod === '7D' ? 'No expenses recorded in last 7 days.' : weeklyPeriod === '1D' ? "No expenses recorded today." : 'No expenses recorded in last 30 days.')}
                               </div>
                             ) : (
-                              <div className="space-y-1.5 font-sans">
+                              <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1 custom-scrollbar">
                                 {weeklyReport.weeklyExs.map((ex) => (
-                                  <div key={ex.id} className="flex justify-between items-center p-2 rounded-lg bg-rose-50/20 hover:bg-rose-50/50 border border-rose-100/30 text-xs font-bold transition-all">
+                                  <div 
+                                    key={ex.id} 
+                                    className="flex justify-between items-center p-3 rounded-xl bg-white dark:bg-slate-800/90 border border-rose-200/80 dark:border-rose-800/60 shadow-2xs hover:border-rose-300 transition-colors duration-150 text-xs font-bold gap-3"
+                                  >
                                     <div className="min-w-0 flex-1">
-                                      <span className="text-slate-800 font-extrabold truncate block">{ex.description}</span>
-                                      <span className="text-[9px] text-slate-400 font-bold font-mono block mt-0.5">
+                                      <span className="text-slate-800 dark:text-slate-100 font-extrabold text-xs sm:text-sm leading-snug break-words block">{ex.description}</span>
+                                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold font-mono block mt-1">
                                         {formatDate(ex.date, isBangla)}
                                       </span>
                                     </div>
-                                    <span className="text-rose-600 font-extrabold shrink-0 ml-2">-{formatCurrency(ex.amount, isBangla)}</span>
+                                    <span className="text-rose-600 dark:text-rose-400 font-black shrink-0 pl-2.5 border-l border-slate-150 dark:border-slate-700/60">-{formatCurrency(ex.amount, isBangla)}</span>
                                   </div>
                                 ))}
                               </div>
@@ -5358,91 +5276,273 @@ export default function App() {
 
                       {/* MOST SOLD */}
                       {weeklyDetailModal === 'most_sold' && (
-                        <div className="space-y-3">
+                        <div className="space-y-4">
                           <p className="text-xs text-slate-500 font-bold leading-relaxed">
                             {isBangla 
                               ? (weeklyPeriod === '7D'
-                                  ? 'চলতি সপ্তাহে গ্রাহকদের চাহিদার ভিত্তিতে সেরা বিক্রিত ১০টি পণ্যের তালিকা নিচে দেওয়া হলো (নগদ এন্ট্রি বাদে):'
+                                  ? 'চলতি সপ্তাহে গ্রাহকদের চাহিদার ভিত্তিতে সেরা বিক্রিত ৪০টি পণ্যের বিভক্ত তালিকা নিচে দেওয়া হলো (নগদ এন্ট্রি বাদে):'
                                   : weeklyPeriod === '1D'
-                                    ? 'আজকে গ্রাহকদের চাহিদার ভিত্তিতে সেরা বিক্রিত ১০টি পণ্যের তালিকা নিচে দেওয়া হলো (নগদ এন্ট্রি বাদে):'
+                                    ? 'আজকে গ্রাহকদের চাহিদার ভিত্তিতে সেরা বিক্রিত ৪০টি পণ্যের বিভক্ত তালিকা নিচে দেওয়া হলো (নগদ এন্ট্রি বাদে):'
                                     : weeklyPeriod === 'ALL'
-                                      ? 'শুরু থেকে আজ পর্যন্ত গ্রাহকদের চাহিদার ভিত্তিতে সেরা বিক্রিত ১০টি পণ্যের তালিকা নিচে দেওয়া হলো (নগদ এন্ট্রি বাদে):'
-                                      : 'গত ৩০ দিনে গ্রাহকদের চাহিদার ভিত্তিতে সেরা বিক্রিত ১০টি পণ্যের তালিকা নিচে দেওয়া হলো (নগদ এন্ট্রি বাদে):') 
+                                      ? 'শুরু থেকে আজ পর্যন্ত গ্রাহকদের চাহিদার ভিত্তিতে সেরা বিক্রিত ৪০টি পণ্যের বিভক্ত তালিকা নিচে দেওয়া হলো (নগদ এন্ট্রি বাদে):'
+                                      : 'গত ৩০ দিনে গ্রাহকদের চাহিদার ভিত্তিতে সেরা বিক্রিত ৪০টি পণ্যের বিভক্ত তালিকা নিচে দেওয়া হলো (নগদ এন্ট্রি বাদে):') 
                               : (weeklyPeriod === '7D'
-                                  ? 'Below are the top 10 most selling items of the week sorted by transaction count (excluding cash products):'
+                                  ? 'Below is the split list of the top 40 most selling items of the week sorted by transaction count (excluding cash products):'
                                   : weeklyPeriod === '1D'
-                                    ? 'Below are the top 10 most selling items of today sorted by transaction count (excluding cash products):'
+                                    ? 'Below is the split list of the top 40 most selling items of today sorted by transaction count (excluding cash products):'
                                     : weeklyPeriod === 'ALL'
-                                      ? 'Below are the top 10 most selling items of all time sorted by transaction count (excluding cash products):'
-                                      : 'Below are the top 10 most selling items of the last 30 days sorted by transaction count (excluding cash products):')}
+                                      ? 'Below is the split list of the top 40 most selling items of all time sorted by transaction count (excluding cash products):'
+                                      : 'Below is the split list of the top 40 most selling items of the last 30 days sorted by transaction count (excluding cash products):')}
                           </p>
-                          {weeklyReport.mostSoldProducts.length === 0 ? (
-                            <div className="text-center py-8 text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-slate-100">
-                              {isBangla ? 'কোনো পণ্য বিক্রির হিসাব পাওয়া যায়নি।' : 'No product sales recorded yet.'}
-                            </div>
-                          ) : (
-                            <div className="space-y-2">
-                              {weeklyReport.mostSoldProducts.map((item, idx) => (
-                                <div key={item.name} className="flex justify-between items-center p-3 rounded-xl bg-indigo-50/30 border border-indigo-100/30 text-xs font-bold font-sans">
-                                  <div className="flex items-center gap-2.5 min-w-0">
-                                    <span className="w-5 h-5 flex items-center justify-center rounded-full bg-indigo-100 text-indigo-700 font-black font-mono text-[10px]">
-                                      {idx + 1}
-                                    </span>
-                                    <span className="text-slate-800 font-extrabold truncate max-w-[180px]">{item.name}</span>
-                                  </div>
-                                  <div className="text-right shrink-0">
-                                    <p className="text-slate-900 font-black">{isBangla ? `${toBanglaNumber(item.count)} বার` : `${item.count} times`}</p>
-                                    <p className="text-[9px] text-slate-400 font-bold mt-0.5">{isBangla ? 'মোট:' : 'Sum:'} {formatCurrency(item.totalAmount, isBangla)}</p>
-                                  </div>
+                          {(() => {
+                            const top20List = weeklyReport.mostSoldProducts.slice(0, 20);
+                            const top40List = weeklyReport.mostSoldProducts.slice(20, 40);
+
+                            if (top20List.length === 0 && top40List.length === 0) {
+                              return (
+                                <div className="text-center py-8 text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-slate-200">
+                                  {isBangla ? 'কোনো পণ্য বিক্রির হিসাব পাওয়া যায়নি।' : 'No product sales recorded yet.'}
                                 </div>
-                              ))}
-                            </div>
-                          )}
+                              );
+                            }
+
+                            return (
+                              <div className="space-y-4">
+                                {/* Side-by-side toggle buttons */}
+                                <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-2xl gap-2 border border-slate-200 dark:border-slate-700/80">
+                                  <button
+                                    type="button"
+                                    onClick={() => setMostSoldSubTab('top10')}
+                                    className={`flex-1 py-2.5 px-3 text-xs font-black rounded-xl transition-colors duration-100 active:scale-[0.98] touch-manipulation cursor-pointer flex items-center justify-center gap-2 select-none ${
+                                      mostSoldSubTab === 'top10'
+                                        ? 'bg-indigo-600 text-white shadow-sm'
+                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700/70'
+                                    }`}
+                                  >
+                                    <span className={`w-2 h-2 rounded-full ${mostSoldSubTab === 'top10' ? 'bg-white' : 'bg-indigo-500'}`}></span>
+                                    <span>{isBangla ? '১-২০ নম্বর পণ্য' : 'Top 1-20 Items'}</span>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-md font-extrabold ${mostSoldSubTab === 'top10' ? 'bg-indigo-700/80 text-white' : 'bg-slate-200/80 text-slate-700 dark:bg-slate-700 dark:text-slate-200'}`}>
+                                      {isBangla ? toBanglaNumber(top20List.length) : top20List.length}
+                                    </span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setMostSoldSubTab('top20')}
+                                    className={`flex-1 py-2.5 px-3 text-xs font-black rounded-xl transition-colors duration-100 active:scale-[0.98] touch-manipulation cursor-pointer flex items-center justify-center gap-2 select-none ${
+                                      mostSoldSubTab === 'top20'
+                                        ? 'bg-violet-600 text-white shadow-sm'
+                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700/70'
+                                    }`}
+                                  >
+                                    <span className={`w-2 h-2 rounded-full ${mostSoldSubTab === 'top20' ? 'bg-white' : 'bg-violet-500'}`}></span>
+                                    <span>{isBangla ? '২১-৪০ নম্বর পণ্য' : 'Top 21-40 Items'}</span>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-md font-extrabold ${mostSoldSubTab === 'top20' ? 'bg-violet-700/80 text-white' : 'bg-slate-200/80 text-slate-700 dark:bg-slate-700 dark:text-slate-200'}`}>
+                                      {isBangla ? toBanglaNumber(top40List.length) : top40List.length}
+                                    </span>
+                                  </button>
+                                </div>
+
+                                {/* Active list content */}
+                                {mostSoldSubTab === 'top10' ? (
+                                  <div>
+                                    {top20List.length === 0 ? (
+                                      <p className="text-[11px] text-slate-400 italic py-6 text-center bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                                        {isBangla ? '১-২০ এর মধ্যে কোনো পণ্য নেই।' : 'No products found.'}
+                                      </p>
+                                    ) : (
+                                      <div className="space-y-1 max-h-[520px] overflow-y-auto pr-1 custom-scrollbar">
+                                        {top20List.map((item, idx) => (
+                                          <div 
+                                            key={item.name} 
+                                            className="flex justify-between items-center py-1 px-2 rounded-md bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/80 shadow-2xs hover:border-indigo-300 dark:hover:border-indigo-600 transition-colors duration-150 gap-2"
+                                          >
+                                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                              <span className="w-4.5 h-4.5 flex items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 font-black font-mono text-[9px] shrink-0 border border-indigo-200/80 dark:border-indigo-800/60">
+                                                {idx + 1}
+                                              </span>
+                                              <span className="text-slate-800 dark:text-slate-100 font-bold text-[11px] leading-tight truncate" title={item.name}>
+                                                {item.name}
+                                              </span>
+                                            </div>
+                                            <div className="text-right shrink-0 pl-1.5 border-l border-slate-150 dark:border-slate-700/60">
+                                              <p className="text-slate-900 dark:text-slate-100 font-black text-[11px] leading-none">{isBangla ? `${toBanglaNumber(item.count)} বার` : `${item.count} times`}</p>
+                                              <p className="text-[8.5px] text-slate-500 dark:text-slate-400 font-medium leading-none mt-0.5">{isBangla ? 'মোট:' : 'Sum:'} {formatCurrency(item.totalAmount, isBangla)}</p>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div>
+                                    {top40List.length === 0 ? (
+                                      <p className="text-[11px] text-slate-400 italic py-6 text-center bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                                        {isBangla ? '২১-৪০ এর মধ্যে কোনো পণ্য নেই।' : 'No products found.'}
+                                      </p>
+                                    ) : (
+                                      <div className="space-y-1 max-h-[520px] overflow-y-auto pr-1 custom-scrollbar">
+                                        {top40List.map((item, idx) => (
+                                          <div 
+                                            key={item.name} 
+                                            className="flex justify-between items-center py-1 px-2 rounded-md bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/80 shadow-2xs hover:border-violet-300 dark:hover:border-violet-600 transition-colors duration-150 gap-2"
+                                          >
+                                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                              <span className="w-4.5 h-4.5 flex items-center justify-center rounded-full bg-violet-100 dark:bg-violet-950 text-violet-800 dark:text-violet-300 font-black font-mono text-[9px] shrink-0 border border-violet-200/80 dark:border-violet-800/60">
+                                                {idx + 21}
+                                              </span>
+                                              <span className="text-slate-800 dark:text-slate-100 font-bold text-[11px] leading-tight truncate" title={item.name}>
+                                                {item.name}
+                                              </span>
+                                            </div>
+                                            <div className="text-right shrink-0 pl-1.5 border-l border-slate-150 dark:border-slate-700/60">
+                                              <p className="text-slate-900 dark:text-slate-100 font-black text-[11px] leading-none">{isBangla ? `${toBanglaNumber(item.count)} বার` : `${item.count} times`}</p>
+                                              <p className="text-[8.5px] text-slate-500 dark:text-slate-400 font-medium leading-none mt-0.5">{isBangla ? 'মোট:' : 'Sum:'} {formatCurrency(item.totalAmount, isBangla)}</p>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
 
                       {/* LEAST SOLD */}
                       {weeklyDetailModal === 'least_sold' && (
-                        <div className="space-y-3">
+                        <div className="space-y-4">
                           <p className="text-xs text-slate-500 font-bold leading-relaxed">
                             {isBangla 
                               ? (weeklyPeriod === '7D'
-                                  ? 'চলতি সপ্তাহে সবচেয়ে কম বিক্রি হওয়া ১০টি পণ্যের তালিকা (যাতে সহজে সঠিক সিদ্ধান্ত নেওয়া যায়):' 
+                                  ? 'চলতি সপ্তাহে সবচেয়ে কম বিক্রি হওয়া এবং ২ বার বিক্রি হওয়া পণ্যের বিশ্লেষণ তালিকা:' 
                                   : weeklyPeriod === '1D'
-                                    ? 'আজকে সবচেয়ে কম বিক্রি হওয়া ১০টি পণ্যের তালিকা (যাতে সহজে সঠিক সিদ্ধান্ত নেওয়া যায়):'
+                                    ? 'আজকে সবচেয়ে কম বিক্রি হওয়া এবং ২ বার বিক্রি হওয়া পণ্যের বিশ্লেষণ তালিকা:'
                                     : weeklyPeriod === 'ALL'
-                                      ? 'শুরু থেকে আজ পর্যন্ত সবচেয়ে কম বিক্রি হওয়া ১০টি পণ্যের তালিকা (যাতে সহজে সঠিক সিদ্ধান্ত নেওয়া যায়):'
-                                      : 'গত ৩০ দিনে সবচেয়ে কম বিক্রি হওয়া ১০টি পণ্যের তালিকা (যাতে সহজে সঠিক সিদ্ধান্ত নেওয়া যায়):')
+                                      ? 'শুরু থেকে আজ পর্যন্ত সবচেয়ে কম বিক্রি হওয়া এবং ২ বার বিক্রি হওয়া পণ্যের বিশ্লেষণ তালিকা:'
+                                      : 'গত ৩০ দিনে সবচেয়ে কম বিক্রি হওয়া এবং ২ বার বিক্রি হওয়া পণ্যের বিশ্লেষণ তালিকা:')
                               : (weeklyPeriod === '7D'
-                                  ? 'Here are the top 10 least selling items of the week sorted by transaction count:'
+                                  ? 'Analysis of the least sold and 2 times sold items of the week:'
                                   : weeklyPeriod === '1D'
-                                    ? 'Here are the top 10 least selling items of today sorted by transaction count:'
+                                    ? 'Analysis of the least sold and 2 times sold items of today:'
                                     : weeklyPeriod === 'ALL'
-                                      ? 'Here are the top 10 least selling items of all time sorted by transaction count:'
-                                      : 'Here are the top 10 least selling items of the last 30 days sorted by transaction count:')}
+                                      ? 'Analysis of the least sold and 2 times sold items of all time:'
+                                      : 'Analysis of the least sold and 2 times sold items of the last 30 days:')}
                           </p>
-                          {weeklyReport.leastSoldProducts.length === 0 ? (
-                            <div className="text-center py-8 text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-slate-100">
-                              {isBangla ? 'কোনো পণ্য বিক্রির হিসাব পাওয়া যায়নি।' : 'No product sales recorded yet.'}
-                            </div>
-                          ) : (
-                            <div className="space-y-2">
-                              {weeklyReport.leastSoldProducts.map((item, idx) => (
-                                <div key={item.name} className="flex justify-between items-center p-3 rounded-xl bg-slate-50 border border-slate-200/60 text-xs font-bold font-sans">
-                                  <div className="flex items-center gap-2.5 min-w-0">
-                                    <span className="w-5 h-5 flex items-center justify-center rounded-full bg-slate-100 text-slate-600 font-black font-mono text-[10px]">
-                                      {idx + 1}
-                                    </span>
-                                    <span className="text-slate-700 font-extrabold truncate max-w-[180px]">{item.name}</span>
-                                  </div>
-                                  <div className="text-right shrink-0">
-                                    <p className="text-slate-800 font-black">{isBangla ? `${toBanglaNumber(item.count)} বার` : `${item.count} times`}</p>
-                                    <p className="text-[9px] text-slate-400 font-bold mt-0.5">{isBangla ? 'মোট:' : 'Sum:'} {formatCurrency(item.totalAmount, isBangla)}</p>
-                                  </div>
+                          {(() => {
+                            const onceSold = weeklyReport.leastSoldProducts.filter(item => item.count <= 1).slice(0, 20);
+                            const twiceSold = weeklyReport.leastSoldProducts.filter(item => item.count === 2).slice(0, 20);
+
+                            if (onceSold.length === 0 && twiceSold.length === 0) {
+                              return (
+                                <div className="text-center py-8 text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-slate-200">
+                                  {isBangla ? 'কোনো পণ্য বিক্রির হিসাব পাওয়া যায়নি।' : 'No product sales recorded yet.'}
                                 </div>
-                              ))}
-                            </div>
-                          )}
+                              );
+                            }
+
+                            return (
+                              <div className="space-y-4">
+                                {/* Side-by-side toggle buttons */}
+                                <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-2xl gap-2 border border-slate-200 dark:border-slate-700/80">
+                                  <button
+                                    type="button"
+                                    onClick={() => setLeastSoldSubTab('once')}
+                                    className={`flex-1 py-2.5 px-3 text-xs font-black rounded-xl transition-colors duration-100 active:scale-[0.98] touch-manipulation cursor-pointer flex items-center justify-center gap-2 select-none ${
+                                      leastSoldSubTab === 'once'
+                                        ? 'bg-amber-500 text-white shadow-sm'
+                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700/70'
+                                    }`}
+                                  >
+                                    <span className={`w-2 h-2 rounded-full ${leastSoldSubTab === 'once' ? 'bg-white' : 'bg-amber-500'}`}></span>
+                                    <span>{isBangla ? '১ বার বিক্রি' : '1 Time Sold'}</span>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-md font-extrabold ${leastSoldSubTab === 'once' ? 'bg-amber-600/80 text-white' : 'bg-slate-200/80 text-slate-700 dark:bg-slate-700 dark:text-slate-200'}`}>
+                                      {isBangla ? toBanglaNumber(onceSold.length) : onceSold.length}
+                                    </span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setLeastSoldSubTab('twice')}
+                                    className={`flex-1 py-2.5 px-3 text-xs font-black rounded-xl transition-colors duration-100 active:scale-[0.98] touch-manipulation cursor-pointer flex items-center justify-center gap-2 select-none ${
+                                      leastSoldSubTab === 'twice'
+                                        ? 'bg-sky-500 text-white shadow-sm'
+                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700/70'
+                                    }`}
+                                  >
+                                    <span className={`w-2 h-2 rounded-full ${leastSoldSubTab === 'twice' ? 'bg-white' : 'bg-sky-500'}`}></span>
+                                    <span>{isBangla ? '২ বার বিক্রি' : '2 Times Sold'}</span>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-md font-extrabold ${leastSoldSubTab === 'twice' ? 'bg-sky-600/80 text-white' : 'bg-slate-200/80 text-slate-700 dark:bg-slate-700 dark:text-slate-200'}`}>
+                                      {isBangla ? toBanglaNumber(twiceSold.length) : twiceSold.length}
+                                    </span>
+                                  </button>
+                                </div>
+
+                                {/* Active list content */}
+                                {leastSoldSubTab === 'once' ? (
+                                  <div>
+                                    {onceSold.length === 0 ? (
+                                      <p className="text-[11px] text-slate-400 italic py-6 text-center bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                                        {isBangla ? '১ বার বিক্রি হওয়া কোনো পণ্য নেই।' : 'No products sold 1 time.'}
+                                      </p>
+                                    ) : (
+                                      <div className="space-y-1 max-h-[520px] overflow-y-auto pr-1 custom-scrollbar">
+                                        {onceSold.map((item, idx) => (
+                                          <div 
+                                            key={item.name} 
+                                            className="flex justify-between items-center py-1 px-2 rounded-md bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/80 shadow-2xs hover:border-amber-300 dark:hover:border-amber-600 transition-colors duration-150 gap-2"
+                                          >
+                                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                              <span className="w-4.5 h-4.5 flex items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-black font-mono text-[9px] shrink-0 border border-amber-200/80 dark:border-amber-800/60">
+                                                {idx + 1}
+                                              </span>
+                                              <span className="text-slate-800 dark:text-slate-100 font-bold text-[11px] leading-tight truncate" title={item.name}>
+                                                {item.name}
+                                              </span>
+                                            </div>
+                                            <div className="text-right shrink-0 pl-1.5 border-l border-slate-150 dark:border-slate-700/60">
+                                              <p className="text-slate-900 dark:text-slate-100 font-black text-[11px] leading-none">{isBangla ? `${toBanglaNumber(item.count)} বার` : `${item.count} time`}</p>
+                                              <p className="text-[8.5px] text-slate-500 dark:text-slate-400 font-medium leading-none mt-0.5">{isBangla ? 'মোট:' : 'Sum:'} {formatCurrency(item.totalAmount, isBangla)}</p>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div>
+                                    {twiceSold.length === 0 ? (
+                                      <p className="text-[11px] text-slate-400 italic py-6 text-center bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                                        {isBangla ? '২ বার বিক্রি হওয়া কোনো পণ্য নেই।' : 'No products sold 2 times.'}
+                                      </p>
+                                    ) : (
+                                      <div className="space-y-1 max-h-[520px] overflow-y-auto pr-1 custom-scrollbar">
+                                        {twiceSold.map((item, idx) => (
+                                          <div 
+                                            key={item.name} 
+                                            className="flex justify-between items-center py-1 px-2 rounded-md bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/80 shadow-2xs hover:border-sky-300 dark:hover:border-sky-600 transition-colors duration-150 gap-2"
+                                          >
+                                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                              <span className="w-4.5 h-4.5 flex items-center justify-center rounded-full bg-sky-100 dark:bg-sky-950 text-sky-800 dark:text-sky-300 font-black font-mono text-[9px] shrink-0 border border-sky-200/80 dark:border-sky-800/60">
+                                                {idx + 1}
+                                              </span>
+                                              <span className="text-slate-800 dark:text-slate-100 font-bold text-[11px] leading-tight truncate" title={item.name}>
+                                                {item.name}
+                                              </span>
+                                            </div>
+                                            <div className="text-right shrink-0 pl-1.5 border-l border-slate-150 dark:border-slate-700/60">
+                                              <p className="text-slate-900 dark:text-slate-100 font-black text-[11px] leading-none">{isBangla ? `${toBanglaNumber(item.count)} বার` : `${item.count} times`}</p>
+                                              <p className="text-[8.5px] text-slate-500 dark:text-slate-400 font-medium leading-none mt-0.5">{isBangla ? 'মোট:' : 'Sum:'} {formatCurrency(item.totalAmount, isBangla)}</p>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
 
@@ -5452,44 +5552,47 @@ export default function App() {
                           <p className="text-xs text-slate-500 font-bold leading-relaxed">
                             {isBangla 
                               ? (weeklyPeriod === '7D'
-                                  ? 'চলতি সপ্তাহে সর্বোচ্চ মূল্যের ১০টি একক বিক্রয়ের বিবরণী:' 
+                                  ? 'চলতি সপ্তাহে সর্বোচ্চ মূল্যের ২০টি একক বিক্রয়ের বিবরণী:' 
                                   : weeklyPeriod === '1D'
-                                    ? 'আজকে সর্বোচ্চ মূল্যের ১০টি একক বিক্রয়ের বিবরণী:'
+                                    ? 'আজকে সর্বোচ্চ মূল্যের ২০টি একক বিক্রয়ের বিবরণী:'
                                     : weeklyPeriod === 'ALL'
-                                      ? 'শুরু থেকে আজ পর্যন্ত সর্বোচ্চ মূল্যের ১০টি একক বিক্রয়ের বিবরণী:'
-                                      : 'গত ৩০ দিনে সর্বোচ্চ মূল্যের ১০টি একক বিক্রয়ের বিবরণী:')
+                                      ? 'শুরু থেকে আজ পর্যন্ত সর্বোচ্চ মূল্যের ২০টি একক বিক্রয়ের বিবরণী:'
+                                      : 'গত ৩০ দিনে সর্বোচ্চ মূল্যের ২০টি একক বিক্রয়ের বিবরণী:')
                               : (weeklyPeriod === '7D'
-                                  ? 'Top 10 highest priced product sales recorded this week:'
+                                  ? 'Top 20 highest priced product sales recorded this week:'
                                   : weeklyPeriod === '1D'
-                                    ? 'Top 10 highest priced product sales recorded today:'
+                                    ? 'Top 20 highest priced product sales recorded today:'
                                     : weeklyPeriod === 'ALL'
-                                      ? 'Top 10 highest priced product sales recorded of all time:'
-                                      : 'Top 10 highest priced product sales recorded in the last 30 days:')}
+                                      ? 'Top 20 highest priced product sales recorded of all time:'
+                                      : 'Top 20 highest priced product sales recorded in the last 30 days:')}
                           </p>
                           {(!weeklyReport.mostExpensiveProducts || weeklyReport.mostExpensiveProducts.length === 0) ? (
-                            <div className="text-center py-8 text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-slate-100">
+                            <div className="text-center py-8 text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-slate-200">
                               {isBangla ? 'কোনো পণ্য বিক্রি হয়নি।' : 'No sales recorded.'}
                             </div>
                           ) : (
-                            <div className="space-y-2">
+                            <div className="space-y-1 max-h-[520px] overflow-y-auto pr-1 custom-scrollbar">
                               {weeklyReport.mostExpensiveProducts.map((item, idx) => (
-                                <div key={`${item.name}-${idx}`} className="flex justify-between items-center p-3 rounded-xl bg-purple-50/40 border border-purple-100/40 text-xs font-bold font-sans">
-                                  <div className="flex items-center gap-2.5 min-w-0">
-                                    <span className="w-5 h-5 flex items-center justify-center rounded-full bg-purple-100 text-purple-700 font-black font-mono text-[10px] shrink-0">
+                                <div 
+                                  key={`${item.name}-${idx}`} 
+                                  className="flex justify-between items-center py-1 px-2 rounded-md bg-white dark:bg-slate-800/90 border border-purple-200/80 dark:border-purple-800/60 shadow-2xs hover:border-purple-300 transition-colors duration-150 gap-2"
+                                >
+                                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                    <span className="w-4.5 h-4.5 flex items-center justify-center rounded-full bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 font-black font-mono text-[9px] shrink-0 border border-purple-200/80 dark:border-purple-800/60">
                                       {idx + 1}
                                     </span>
-                                    <div className="min-w-0">
-                                      <p className="text-slate-800 font-extrabold truncate max-w-[180px]">{item.name}</p>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-slate-800 dark:text-slate-100 font-bold text-[11px] leading-tight truncate">{item.name}</p>
                                       {item.customer && (
-                                        <p className="text-[9px] text-slate-400 font-semibold truncate mt-0.5">
+                                        <p className="text-[8.5px] text-slate-500 font-medium truncate mt-0.5">
                                           {isBangla ? `গ্রাহক: ${item.customer}` : `Cust: ${item.customer}`}
                                         </p>
                                       )}
                                     </div>
                                   </div>
-                                  <div className="text-right shrink-0">
-                                    <p className="text-purple-600 font-black">{formatCurrency(item.price, isBangla)}</p>
-                                    <p className="text-[9px] text-slate-400 font-semibold mt-0.5">{formatDate(item.date, isBangla)}</p>
+                                  <div className="text-right shrink-0 pl-1.5 border-l border-slate-150 dark:border-slate-700/60">
+                                    <p className="text-purple-600 dark:text-purple-400 font-black text-[11px] leading-none">{formatCurrency(item.price, isBangla)}</p>
+                                    <p className="text-[8.5px] text-slate-400 font-medium mt-0.5">{formatDate(item.date, isBangla)}</p>
                                   </div>
                                 </div>
                               ))}

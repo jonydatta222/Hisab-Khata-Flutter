@@ -179,7 +179,7 @@ export default function Calculator({ onClose, isBangla, onApplyValue }: Calculat
       {/* Super-smooth backdrop overlay */}
       <motion.div
         id="calc-backdrop"
-        onPointerDown={(e) => { e.preventDefault(); onClose(); }}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -208,8 +208,7 @@ export default function Calculator({ onClose, isBangla, onApplyValue }: Calculat
               </h3>
             </div>
             <button
-              onPointerDown={(e) => { e.preventDefault(); onClose(); }}
-              onClick={onClose}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }}
               className="p-1.5 hover:bg-slate-200/60 rounded-full transition-colors text-slate-400 hover:text-slate-600 cursor-pointer"
               id="close-calc-btn"
             >
@@ -316,7 +315,7 @@ export default function Calculator({ onClose, isBangla, onApplyValue }: Calculat
               <span>Clear All</span>
             </button>
             <button
-              onPointerDown={(e) => { e.preventDefault(); handleEqual(); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEqual(); }}
               className="calc-btn-apply col-span-2 h-14 bg-[#00c853] active:bg-[#00a243] text-white font-bold text-2xl rounded-2xl shadow-[0_8px_20px_rgba(0,200,83,0.3)] flex items-center justify-center gap-2 cursor-pointer font-sans select-none touch-none"
             >
               {equation ? (
