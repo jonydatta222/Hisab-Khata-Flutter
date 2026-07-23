@@ -524,7 +524,12 @@ html.dark {
   scrollbar-width: none;  /* Firefox */
 }
 
-/* Custom scrollbar styling */
+/* Custom scrollbar styling and smooth touch performance */
+.custom-scrollbar {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
 .custom-scrollbar::-webkit-scrollbar {
   width: 5px;
 }
@@ -537,6 +542,22 @@ html.dark {
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+/* Hardware accelerated smooth scroll item styles for long lists */
+.smooth-scroll-container {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  scroll-behavior: smooth;
+}
+
+.smooth-scroll-item {
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 /* --- Weekly Details Popup Modal Dark Mode Overrides --- */

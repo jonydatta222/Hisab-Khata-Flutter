@@ -521,7 +521,7 @@ export default function UserGuide({ isBangla, onClose, isModalMode = false }: Us
           <div className="flex items-center justify-between">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/15 backdrop-blur-md rounded-full text-xs font-black tracking-wide text-teal-100 border border-white/20">
               <Sparkles className="h-3.5 w-3.5 text-amber-300 animate-pulse" />
-              <span>{isBangla ? 'A to Z সম্পূর্ণ ব্যবহার নির্দেশিকা' : 'A to Z Complete User Manual'}</span>
+              <span>{isBangla ? 'সম্পূর্ণ ব্যবহার নির্দেশিকা' : 'Complete User Manual'}</span>
             </span>
             {isModalMode && onClose && (
               <button

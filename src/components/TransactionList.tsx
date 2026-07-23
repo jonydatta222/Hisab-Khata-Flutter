@@ -178,8 +178,12 @@ function TransactionList({
                               <Clock className="h-2.5 w-2.5 text-slate-400 shrink-0" />
                               {tx.time}
                             </span>
-                            {!tx.isCash && tx.customer && (
-                              <span className="text-[9px] sm:text-[10px] text-rose-600 dark:text-rose-400 font-extrabold bg-rose-50 dark:bg-rose-950/50 px-1 sm:px-1.5 py-0.2 rounded border border-rose-100 dark:border-rose-800/60 break-words leading-tight">
+                            {tx.customer && (
+                              <span className={`text-[9px] sm:text-[10px] font-extrabold px-1 sm:px-1.5 py-0.2 rounded border break-words leading-tight ${
+                                !tx.isCash 
+                                  ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/50 border-rose-100 dark:border-rose-800/60'
+                                  : 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 border-blue-100 dark:border-blue-800/60'
+                              }`}>
                                 👤 {tx.customer}
                               </span>
                             )}

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Landmark, Coins, X, Check, Edit2, Trash2, Clock, User, History, Calendar } from 'lucide-react';
 import { CustomerDue, Transaction } from '../types';
-import { formatCurrency, toBanglaNumber, formatDate, formatTimeStr, toEnglishNumber } from '../utils';
+import { formatCurrency, toBanglaNumber, formatDate, formatTimeStr, toEnglishNumber, isTransactionRepayment } from '../utils';
 
 interface DueListProps {
   dueList: CustomerDue[];
@@ -72,7 +72,7 @@ function DueList({
   // Extract all baki deposit transactions
   const depositTxs = React.useMemo(() => {
     return (transactions || [])
-      .filter((tx) => tx.isCash && tx.customer && tx.customer.trim() !== '')
+      .filter((tx) => isTransactionRepayment(tx))
       .sort((a, b) => {
         const dateCompare = b.date.localeCompare(a.date);
         if (dateCompare !== 0) return dateCompare;

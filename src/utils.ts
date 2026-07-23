@@ -134,15 +134,16 @@ export function getTimestamp(dateStr: string, timeStr?: string): number {
 /**
  * Checks if a transaction is a due repayment/deposit (not a product sale).
  */
-export function isTransactionRepayment(tx: { product: string; isCash: boolean; customer?: string }): boolean {
+export function isTransactionRepayment(tx: { product: string; isCash: boolean; customer?: string; parentDueId?: string }): boolean {
   if (!tx) return false;
+  if (tx.parentDueId) return true;
   const prodLower = (tx.product || '').toLowerCase().trim();
-  const isRepayment = (tx.isCash && tx.customer && tx.customer.trim().length > 0) ||
-                      prodLower.startsWith('বাকি টাকা জমা') || 
+  const isRepayment = prodLower.startsWith('বাকি টাকা জমা') || 
                       prodLower.startsWith('বাকির টাকা জমা') || 
                       prodLower.includes('due deposit') ||
                       prodLower.includes('বাকি পরিশোধ') ||
-                      prodLower.includes('due paid');
+                      prodLower.includes('due paid') ||
+                      prodLower.includes('হিসাব পরিশোধ জমা');
   return !!isRepayment;
 }
 
