@@ -59,7 +59,8 @@ import {
   formatCurrency,
   generateId,
   getTimestamp,
-  isTransactionRepayment
+  isTransactionRepayment,
+  isShopRentExpense
 } from './utils';
 
 import { 
@@ -489,7 +490,14 @@ export default function App() {
   const [showAuthHelp, setShowAuthHelp] = useState(false);
   const [currentNavTab, setCurrentNavTab] = useState<'home' | 'info' | 'monthly' | 'settings'>('home');
   const [weeklyDetailModal, setWeeklyDetailModal] = useState<'sales' | 'expense' | 'net' | 'most_sold' | 'least_sold' | 'expensive' | 'due' | 'others' | null>(null);
+  const [modalListLimit, setModalListLimit] = useState(50);
   const [weeklyPeriod, setWeeklyPeriod] = useState<'7D' | '1D' | '30D' | 'ALL'>('1D');
+
+  useEffect(() => {
+    if (weeklyDetailModal !== null) {
+      setModalListLimit(50);
+    }
+  }, [weeklyDetailModal]);
   const [showAllHistoryTxs, setShowAllHistoryTxs] = useState(false);
   const [showAllTopProducts, setShowAllTopProducts] = useState(false);
   const [searchTopProduct, setSearchTopProduct] = useState('');
@@ -597,7 +605,7 @@ export default function App() {
     return saved as 'dev' | 'pre';
   });
 
-  const [authTab, setAuthTab] = useState<'google' | 'email'>('google');
+  const [authTab, setAuthTab] = useState<'email' | 'google'>('email');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [isRegisterMode, setIsRegisterMode] = useState(false);
@@ -1067,6 +1075,8 @@ export default function App() {
 
 
 
+  const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // --- Listen for Firebase Auth changes ---
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
@@ -1074,13 +1084,20 @@ export default function App() {
       if (user && user.email) {
         setUserEmail(user.email);
         localStorage.setItem('hisab_khata_sync_email', user.email);
-      } else {
-        // Since we now require secure Google/password login, we do not auto-authenticate in the background.
-        // We disable sync if the user is not authenticated.
-        setIsSyncActive(false);
-        setUserEmail('');
-        localStorage.setItem('hisab_khata_sync', 'false');
-        localStorage.removeItem('hisab_khata_sync_email');
+        const savedSync = localStorage.getItem('hisab_khata_sync');
+        if (savedSync === 'true') {
+          setIsSyncActive(true);
+        }
+      } else if (user === null) {
+        // Auth state tick is null (initial load or signed out)
+        const savedEmail = localStorage.getItem('hisab_khata_sync_email');
+        if (savedEmail) {
+          setUserEmail(savedEmail);
+        }
+        const savedSync = localStorage.getItem('hisab_khata_sync');
+        if (savedSync === 'true') {
+          setIsSyncActive(true);
+        }
       }
     });
     return () => unsubscribe();
@@ -1089,9 +1106,12 @@ export default function App() {
   // --- Auto Sync on App Load ---
   useEffect(() => {
     const runAutoSync = async () => {
-      if (isSyncActive && userEmail && userEmail.trim()) {
+      const emailToUse = userEmail || localStorage.getItem('hisab_khata_sync_email') || '';
+      const syncActive = localStorage.getItem('hisab_khata_sync') === 'true' || isSyncActive;
+
+      if (syncActive && emailToUse && emailToUse.trim()) {
         try {
-          const cloudData = await downloadLedgerFromCloud(userEmail);
+          const cloudData = await downloadLedgerFromCloud(emailToUse);
           if (cloudData) {
             const localUpdated = localStorage.getItem('hisab_khata_last_updated');
             const localUpdateTime = localUpdated ? parseInt(localUpdated, 10) : 0;
@@ -1100,9 +1120,14 @@ export default function App() {
             // Read latest raw local storage values to avoid stale closures
             const localTxsStr = localStorage.getItem('hisab_khata_transactions');
             const localExsStr = localStorage.getItem('hisab_khata_expenses');
-            const localTxs = localTxsStr ? JSON.parse(localTxsStr) : [];
-            const localExs = localExsStr ? JSON.parse(localExsStr) : [];
-            const isLocalEmpty = localTxs.length === 0 && localExs.length === 0;
+            const localOosStr = localStorage.getItem('hisab_khata_out_of_stock');
+            const localRatesStr = localStorage.getItem('hisab_khata_product_rates');
+            const localTxs: Transaction[] = localTxsStr ? JSON.parse(localTxsStr) : [];
+            const localExs: Expense[] = localExsStr ? JSON.parse(localExsStr) : [];
+            const localOos: OutOfStockItem[] = localOosStr ? JSON.parse(localOosStr) : [];
+            const localRates: ProductRateItem[] = localRatesStr ? JSON.parse(localRatesStr) : [];
+
+            const isLocalEmpty = localTxs.length === 0 && localExs.length === 0 && localOos.length === 0 && localRates.length === 0;
             const isCloudNotEmpty = (cloudData.transactions && cloudData.transactions.length > 0) || 
                                     (cloudData.expenses && cloudData.expenses.length > 0) ||
                                     (cloudData.outOfStockItems && cloudData.outOfStockItems.length > 0) ||
@@ -1124,15 +1149,19 @@ export default function App() {
               localStorage.setItem('hisab_khata_last_updated', String(cloudUpdateTime));
               showToast(isBangla ? 'ক্লাউড থেকে নতুন ডাটা আপডেট করা হয়েছে!' : 'Newer data synced from cloud!');
             } else if (localUpdateTime > cloudUpdateTime) {
-              await uploadLedgerToCloud(userEmail, localTxs, localExs, shopName, outOfStockItems, productRates);
+              await uploadLedgerToCloud(emailToUse, localTxs, localExs, shopName, localOos, localRates);
               localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
             }
           } else {
             const localTxsStr = localStorage.getItem('hisab_khata_transactions');
             const localExsStr = localStorage.getItem('hisab_khata_expenses');
-            const localTxs = localTxsStr ? JSON.parse(localTxsStr) : [];
-            const localExs = localExsStr ? JSON.parse(localExsStr) : [];
-            await uploadLedgerToCloud(userEmail, localTxs, localExs, shopName, outOfStockItems, productRates);
+            const localOosStr = localStorage.getItem('hisab_khata_out_of_stock');
+            const localRatesStr = localStorage.getItem('hisab_khata_product_rates');
+            const localTxs: Transaction[] = localTxsStr ? JSON.parse(localTxsStr) : [];
+            const localExs: Expense[] = localExsStr ? JSON.parse(localExsStr) : [];
+            const localOos: OutOfStockItem[] = localOosStr ? JSON.parse(localOosStr) : [];
+            const localRates: ProductRateItem[] = localRatesStr ? JSON.parse(localRatesStr) : [];
+            await uploadLedgerToCloud(emailToUse, localTxs, localExs, shopName, localOos, localRates);
             localStorage.setItem('hisab_khata_last_updated', String(Date.now()));
           }
         } catch (e) {
@@ -1154,8 +1183,9 @@ export default function App() {
     localStorage.setItem('hisab_khata_transactions', JSON.stringify(txList));
     const now = Date.now();
     localStorage.setItem('hisab_khata_last_updated', String(now));
-    if (isSyncActive) {
-      triggerCloudSync(txList, expenses, shopName, userEmail, outOfStockItems, productRates);
+    const syncActive = localStorage.getItem('hisab_khata_sync') === 'true' || isSyncActive;
+    if (syncActive) {
+      triggerCloudSync();
     }
   };
 
@@ -1164,8 +1194,9 @@ export default function App() {
     localStorage.setItem('hisab_khata_expenses', JSON.stringify(expList));
     const now = Date.now();
     localStorage.setItem('hisab_khata_last_updated', String(now));
-    if (isSyncActive) {
-      triggerCloudSync(transactions, expList, shopName, userEmail, outOfStockItems, productRates);
+    const syncActive = localStorage.getItem('hisab_khata_sync') === 'true' || isSyncActive;
+    if (syncActive) {
+      triggerCloudSync();
     }
   };
 
@@ -1174,8 +1205,9 @@ export default function App() {
     localStorage.setItem('hisab_khata_out_of_stock', JSON.stringify(oosList));
     const now = Date.now();
     localStorage.setItem('hisab_khata_last_updated', String(now));
-    if (isSyncActive) {
-      triggerCloudSync(transactions, expenses, shopName, userEmail, oosList, productRates);
+    const syncActive = localStorage.getItem('hisab_khata_sync') === 'true' || isSyncActive;
+    if (syncActive) {
+      triggerCloudSync();
     }
   };
 
@@ -1184,8 +1216,9 @@ export default function App() {
     localStorage.setItem('hisab_khata_product_rates', JSON.stringify(ratesList));
     const now = Date.now();
     localStorage.setItem('hisab_khata_last_updated', String(now));
-    if (isSyncActive) {
-      triggerCloudSync(transactions, expenses, shopName, userEmail, outOfStockItems, ratesList);
+    const syncActive = localStorage.getItem('hisab_khata_sync') === 'true' || isSyncActive;
+    if (syncActive) {
+      triggerCloudSync();
     }
   };
 
@@ -1346,7 +1379,15 @@ export default function App() {
     let lastBackPressed = 0;
 
     const backButtonListener = CapApp.addListener('backButton', () => {
-      // 1. First, check if any modals or overlays are open and close them in order
+      // 1. First, check if top-most modal overlay selectedCustomerForDetail is open
+      if (selectedCustomerForDetail !== null) {
+        setSelectedCustomerForDetail(null);
+        return;
+      }
+      if (activeCardDetailModal !== null) {
+        setActiveCardDetailModal(null);
+        return;
+      }
       if (isCalcOpen) {
         setIsCalcOpen(false);
         return;
@@ -1357,10 +1398,6 @@ export default function App() {
       }
       if (isDueListModalOpen) {
         setIsDueListModalOpen(false);
-        return;
-      }
-      if (selectedCustomerForDetail !== null) {
-        setSelectedCustomerForDetail(null);
         return;
       }
       if (isOutOfStockModalOpen) {
@@ -1470,39 +1507,46 @@ export default function App() {
   };
 
   // --- Real Firebase Cloud Sync ---
-  const triggerCloudSync = async (
-    currentTxs: Transaction[] = transactions,
-    currentExs: Expense[] = expenses,
-    currentShopName: string = shopName,
-    currentEmail: string = userEmail,
-    currentOos: OutOfStockItem[] = outOfStockItems,
-    currentRates: ProductRateItem[] = productRates
-  ) => {
-    if (!isSyncActive || !currentEmail || !currentEmail.trim()) return;
-    setIsSyncing(true);
-    setSyncMessage(isBangla ? 'ফায়ারবেস ক্লাউডে ডেটা সিঙ্ক হচ্ছে...' : 'Syncing data with Firebase Cloud...');
-    
-    try {
-      const now = Date.now();
-      await uploadLedgerToCloud(currentEmail, currentTxs, currentExs, currentShopName, currentOos, currentRates);
-      localStorage.setItem('hisab_khata_last_updated', String(now));
-      setIsSyncing(false);
-      setSyncMessage('');
-      showToast(
-        isBangla 
-          ? 'ক্লাউড সিঙ্ক সফলভাবে সম্পন্ন হয়েছে!' 
-          : 'Cloud sync completed successfully!'
-      );
-    } catch (e) {
-      console.error('Cloud Sync failed', e);
-      setIsSyncing(false);
-      setSyncMessage('');
-      showToast(
-        isBangla
-          ? 'ক্লাউড সিঙ্ক ব্যর্থ হয়েছে!'
-          : 'Cloud sync failed!'
-      );
+  const triggerCloudSync = (delayMs: number = 400) => {
+    const emailToUse = userEmail || localStorage.getItem('hisab_khata_sync_email') || '';
+    const syncActive = localStorage.getItem('hisab_khata_sync') === 'true' || isSyncActive;
+    if (!syncActive || !emailToUse || !emailToUse.trim()) return;
+
+    if (syncTimerRef.current) {
+      clearTimeout(syncTimerRef.current);
     }
+
+    syncTimerRef.current = setTimeout(async () => {
+      const currentEmail = userEmail || localStorage.getItem('hisab_khata_sync_email') || '';
+      if (!currentEmail || !currentEmail.trim()) return;
+
+      // Always pull the absolute freshest data directly from localStorage to eliminate stale state/closures
+      const localTxsStr = localStorage.getItem('hisab_khata_transactions');
+      const localExsStr = localStorage.getItem('hisab_khata_expenses');
+      const localOosStr = localStorage.getItem('hisab_khata_out_of_stock');
+      const localRatesStr = localStorage.getItem('hisab_khata_product_rates');
+      const localShopName = localStorage.getItem('hisab_khata_shop_name') || shopName;
+
+      const freshTxs: Transaction[] = localTxsStr ? JSON.parse(localTxsStr) : [];
+      const freshExs: Expense[] = localExsStr ? JSON.parse(localExsStr) : [];
+      const freshOos: OutOfStockItem[] = localOosStr ? JSON.parse(localOosStr) : [];
+      const freshRates: ProductRateItem[] = localRatesStr ? JSON.parse(localRatesStr) : [];
+
+      setIsSyncing(true);
+      setSyncMessage(isBangla ? 'ফায়ারবেস ক্লাউডে ডেটা সিঙ্ক হচ্ছে...' : 'Syncing data with Firebase Cloud...');
+
+      try {
+        const now = Date.now();
+        await uploadLedgerToCloud(currentEmail, freshTxs, freshExs, localShopName, freshOos, freshRates);
+        localStorage.setItem('hisab_khata_last_updated', String(now));
+        setIsSyncing(false);
+        setSyncMessage('');
+      } catch (e) {
+        console.error('Cloud Sync failed', e);
+        setIsSyncing(false);
+        setSyncMessage('');
+      }
+    }, delayMs);
   };
 
   const toggleSyncState = async (targetEmail?: string) => {
@@ -1795,9 +1839,19 @@ export default function App() {
     return sum + tx.amount;
   }, 0), [todayTransactions, repaymentsByDueTxId]);
 
-  const todayCashDeposit = useMemo(() => todayTransactions.reduce((sum, tx) => {
+  const todayExpenseTotal = useMemo(() => todayExpenses.reduce((sum, ex) => sum + ex.amount, 0), [todayExpenses]);
+
+  const todayDeductibleExpenseTotal = useMemo(() => todayExpenses.reduce((sum, ex) => {
+    return sum + (isShopRentExpense(ex.description) ? 0 : ex.amount);
+  }, 0), [todayExpenses]);
+
+  const todayCashIn = useMemo(() => todayTransactions.reduce((sum, tx) => {
     return sum + (tx.isCash ? tx.amount : 0);
   }, 0), [todayTransactions]);
+
+  const todayCashDeposit = useMemo(() => {
+    return todayCashIn - todayDeductibleExpenseTotal;
+  }, [todayCashIn, todayDeductibleExpenseTotal]);
 
   const todayDueTaken = useMemo(() => {
     const duesToday = todayTransactions.filter(tx => !tx.isCash && !isTransactionRepayment(tx));
@@ -1806,8 +1860,6 @@ export default function App() {
       return sum + Math.max(0, tx.amount - paidOff);
     }, 0);
   }, [todayTransactions, repaymentsByDueTxId]);
-
-  const todayExpenseTotal = useMemo(() => todayExpenses.reduce((sum, ex) => sum + ex.amount, 0), [todayExpenses]);
 
   // --- Global Customer Due Calculation across all time ---
   // Calculates live customer due lists dynamically from all recorded transactions.
@@ -1986,15 +2038,20 @@ export default function App() {
       }
     });
     
+    let totalDeductibleExpenses = 0;
+
     // Process expenses
     expenses.forEach(ex => {
       totalExpenses += ex.amount;
+      if (!isShopRentExpense(ex.description)) {
+        totalDeductibleExpenses += ex.amount;
+      }
     });
     
     // Total cash in flow = Cash Sales + Due Deposits (since this represents real cash entering the hand/drawer)
     const totalCashInFlow = totalCashSales + totalDueDeposits;
-    // Net Cash in Hand = Real cash entering - cash going out as expenses
-    const netCashInHand = totalCashInFlow - totalExpenses;
+    // Net Cash in Hand = Real cash entering - cash going out as deductible expenses
+    const netCashInHand = totalCashInFlow - totalDeductibleExpenses;
     
     // Get unique customers
     const uniqueCustomers = new Set(
@@ -2194,15 +2251,17 @@ export default function App() {
     const totalCashSales = weeklySalesTxs.filter(tx => tx.isCash).reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
     const weeklyDues = weeklySalesTxs.filter(tx => !tx.isCash);
     const totalWeeklyDues = weeklyDues.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
-    const weeklyDueIds = weeklyDues.map(tx => tx.id);
-    const repaymentsForWeeklyDues = txs.filter(tx => tx.parentDueId && weeklyDueIds.includes(tx.parentDueId));
+    const weeklyDueIdsSet = new Set(weeklyDues.map(tx => tx.id));
+    const repaymentsForWeeklyDues = txs.filter(tx => tx.parentDueId && weeklyDueIdsSet.has(tx.parentDueId));
     const totalRepaymentsForWeekly = repaymentsForWeeklyDues.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
     const totalDueSales = Math.max(0, totalWeeklyDues - totalRepaymentsForWeekly);
     
-    const productMap: Record<string, { name: string; count: number; totalAmount: number; txs: { date: string; customer?: string; amount: number }[] }> = {};
+    const productMap: Record<string, { name: string; count: number; totalAmount: number }> = {};
     let mostExpensiveProduct = { name: '', price: 0, date: '' };
+    const individualSales: { name: string; price: number; date: string; customer?: string }[] = [];
     
     weeklySalesTxs.forEach(tx => {
+      if (!tx.product) return;
       const parts = tx.product.split('+').map(p => p.trim()).filter(p => {
         const pl = p.toLowerCase();
         return pl !== '' && pl !== 'নগদ' && pl !== 'cash';
@@ -2216,17 +2275,11 @@ export default function App() {
           productMap[key] = {
             name: part,
             count: 0,
-            totalAmount: 0,
-            txs: []
+            totalAmount: 0
           };
         }
         productMap[key].count += 1;
         productMap[key].totalAmount += splitAmount;
-        productMap[key].txs.push({
-          date: tx.date,
-          customer: tx.customer,
-          amount: splitAmount
-        });
         
         if (splitAmount > mostExpensiveProduct.price) {
           mostExpensiveProduct = {
@@ -2235,34 +2288,7 @@ export default function App() {
             date: tx.date
           };
         }
-      });
-    });
-    
-    const productList = Object.values(productMap);
-    
-    let mostSoldProducts: typeof productList = [];
-    if (productList.length > 0) {
-      mostSoldProducts = [...productList]
-        .sort((a, b) => b.count - a.count || b.totalAmount - a.totalAmount)
-        .slice(0, 40);
-    }
-    
-    let leastSoldProducts: typeof productList = [];
-    if (productList.length > 0) {
-      leastSoldProducts = [...productList]
-        .sort((a, b) => a.count - b.count || a.totalAmount - b.totalAmount)
-        .slice(0, 100);
-    }
-    
-    const individualSales: { name: string; price: number; date: string; customer?: string }[] = [];
-    weeklySalesTxs.forEach(tx => {
-      const parts = tx.product.split('+').map(p => p.trim()).filter(p => {
-        const pl = p.toLowerCase();
-        return pl !== '' && pl !== 'নগদ' && pl !== 'cash';
-      });
-      if (parts.length === 0) return;
-      const splitAmount = (Number(tx.amount) || 0) / parts.length;
-      parts.forEach(part => {
+
         individualSales.push({
           name: part,
           price: splitAmount,
@@ -2272,7 +2298,17 @@ export default function App() {
       });
     });
     
-    const mostExpensiveProducts = [...individualSales]
+    const productList = Object.values(productMap);
+    
+    const mostSoldProducts = productList.length > 0
+      ? [...productList].sort((a, b) => b.count - a.count || b.totalAmount - a.totalAmount).slice(0, 40)
+      : [];
+    
+    const leastSoldProducts = productList.length > 0
+      ? [...productList].sort((a, b) => a.count - b.count || a.totalAmount - b.totalAmount).slice(0, 100)
+      : [];
+    
+    const mostExpensiveProducts = individualSales
       .sort((a, b) => b.price - a.price)
       .slice(0, 20);
 
@@ -2396,6 +2432,81 @@ export default function App() {
   const weeklyReport = useMemo(() => {
     return calculateWeeklyReportSync(transactions, expenses, weeklyPeriod);
   }, [transactions, expenses, weeklyPeriod]);
+
+  // Memoized transactions list for sales modal
+  const salesModalTxs = useMemo(() => {
+    if (weeklyDetailModal !== 'sales') return [];
+    let daysToSubtract = 6;
+    if (weeklyPeriod === '30D') daysToSubtract = 29;
+    if (weeklyPeriod === '1D') daysToSubtract = 0;
+    const periodStartDateStr = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - daysToSubtract);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    })();
+    return weeklyPeriod === 'ALL'
+      ? transactions
+      : transactions.filter(tx => tx.date >= periodStartDateStr);
+  }, [weeklyDetailModal, weeklyPeriod, transactions]);
+
+  // Memoized due sales modal list and repayment amounts
+  const dueModalData = useMemo(() => {
+    if (weeklyDetailModal !== 'due') return { dueTxs: [], repaymentsMap: {} as Record<string, number> };
+
+    let daysToSubtract = 6;
+    if (weeklyPeriod === '30D') daysToSubtract = 29;
+    if (weeklyPeriod === '1D') daysToSubtract = 0;
+    const periodStartDateStr = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - daysToSubtract);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    })();
+
+    const repaymentsMap: Record<string, number> = {};
+    for (let i = 0; i < transactions.length; i++) {
+      const t = transactions[i];
+      if (t.parentDueId) {
+        repaymentsMap[t.parentDueId] = (repaymentsMap[t.parentDueId] || 0) + (Number(t.amount) || 0);
+      }
+    }
+
+    const customerDueMap = new Map<string, number>();
+    for (let i = 0; i < customerDues.length; i++) {
+      const cd = customerDues[i];
+      customerDueMap.set(cd.name.trim().toLowerCase(), cd.amount);
+    }
+
+    const dueTxs = transactions
+      .filter(tx => (weeklyPeriod === 'ALL' || tx.date >= periodStartDateStr) && !tx.isCash)
+      .sort((a, b) => {
+        const custA = (a.customer || '').trim().toLowerCase();
+        const custB = (b.customer || '').trim().toLowerCase();
+        const dueA = customerDueMap.has(custA) ? customerDueMap.get(custA)! : 1;
+        const dueB = customerDueMap.has(custB) ? customerDueMap.get(custB)! : 1;
+        const isPaidOffA = dueA <= 0;
+        const isPaidOffB = dueB <= 0;
+
+        if (isPaidOffA && !isPaidOffB) return 1;
+        if (!isPaidOffA && isPaidOffB) return -1;
+        return 0;
+      });
+
+    return { dueTxs, repaymentsMap };
+  }, [weeklyDetailModal, weeklyPeriod, transactions, customerDues]);
+
+  // Memoized least sold sub-lists
+  const leastSoldLists = useMemo(() => {
+    if (weeklyDetailModal !== 'least_sold') return { onceSold: [], twiceSold: [] };
+    const onceSold = weeklyReport.leastSoldProducts.filter(item => item.count <= 1).slice(0, 20);
+    const twiceSold = weeklyReport.leastSoldProducts.filter(item => item.count === 2).slice(0, 20);
+    return { onceSold, twiceSold };
+  }, [weeklyDetailModal, weeklyReport.leastSoldProducts]);
 
   // Get current month's daily breakdown (1 to 31)
   const currentMonthDailyData = useMemo(() => {
@@ -3265,7 +3376,7 @@ export default function App() {
         localStorage.setItem('hisab_khata_product_rates', JSON.stringify(rates));
         
         showToast(isBangla ? 'ফোনের মেমোরি ব্যাকআপ থেকে খাতা সফলভাবে রিস্টোর হয়েছে!' : 'Backup restored from phone memory successfully!');
-        triggerCloudSync(parsed.transactions, parsed.expenses, shopName, userEmail, oos, rates);
+        triggerCloudSync();
         setIsRestoreChoiceModalOpen(false);
       } else {
         alert(isBangla ? 'ভুল ফরম্যাট! সঠিক ব্যাকআপ ডাটা পাওয়া যায়নি।' : 'Invalid backup format!');
@@ -3297,7 +3408,7 @@ export default function App() {
           localStorage.setItem('hisab_khata_product_rates', JSON.stringify(rates));
           
           showToast(isBangla ? 'ব্যাকআপ সফলভাবে রিস্টোর হয়েছে!' : 'Backup restored successfully!');
-          triggerCloudSync(parsed.transactions, parsed.expenses, shopName, userEmail, oos, rates);
+          triggerCloudSync();
           setIsRestoreChoiceModalOpen(false);
         } else {
           alert(isBangla ? 'ভুল ফরম্যাট! সঠিক ব্যাকআপ ফাইল নির্বাচন করুন।' : 'Invalid backup format!');
@@ -3368,7 +3479,7 @@ export default function App() {
         localStorage.removeItem('hisab_khata_product_rates');
         localStorage.removeItem('hisab_khata_last_updated');
         showToast(isBangla ? 'সমস্ত হিসাব মুছে খাতা খালি করা হয়েছে।' : 'All ledger data cleared.');
-        triggerCloudSync([], [], shopName, userEmail, [], []);
+        triggerCloudSync();
       }
     });
   };
@@ -5237,23 +5348,7 @@ export default function App() {
                                 : (weeklyPeriod === '7D' ? 'Weekly Sales Transactions:' : weeklyPeriod === '1D' ? "Today's Sales Transactions:" : weeklyPeriod === 'ALL' ? 'Lifetime Sales Transactions:' : '30 Days Sales Transactions:')}
                             </h5>
                             {(() => {
-                              const getDaysAgoDate = (days: number) => {
-                                const d = new Date();
-                                d.setDate(d.getDate() - days);
-                                const yyyy = d.getFullYear();
-                                const mm = String(d.getMonth() + 1).padStart(2, '0');
-                                const dd = String(d.getDate()).padStart(2, '0');
-                                return `${yyyy}-${mm}-${dd}`;
-                              };
-                              let daysToSubtract = 6;
-                              if (weeklyPeriod === '30D') daysToSubtract = 29;
-                              if (weeklyPeriod === '1D') daysToSubtract = 0;
-                              const periodStartDateStr = getDaysAgoDate(daysToSubtract);
-                              const weeklyTxs = weeklyPeriod === 'ALL'
-                                ? transactions
-                                : transactions.filter(tx => tx.date >= periodStartDateStr);
-                              
-                              if (weeklyTxs.length === 0) {
+                              if (salesModalTxs.length === 0) {
                                 return (
                                   <div className="text-center py-6 text-xs text-slate-400 bg-slate-50 rounded-xl border border-slate-100">
                                     {isBangla 
@@ -5263,31 +5358,44 @@ export default function App() {
                                   </div>
                                 );
                               }
+                              const displayedTxs = salesModalTxs.slice(0, modalListLimit);
+                              const hasMore = salesModalTxs.length > modalListLimit;
                               return (
-                                <div className="space-y-1.5">
-                                  {weeklyTxs.map((tx) => (
-                                    <div 
-                                      key={tx.id} 
-                                      className="smooth-scroll-item flex justify-between items-center py-1.5 px-2 rounded-md bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/80 shadow-2xs hover:border-slate-300 dark:hover:border-slate-600 text-xs font-bold gap-2"
-                                    >
-                                      <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                          <span className="text-slate-800 dark:text-slate-100 font-bold text-[11px] leading-tight truncate">{tx.product}</span>
-                                          <span className={`text-[8.5px] font-black px-1 py-0.2 rounded shrink-0 uppercase tracking-wide ${
-                                            tx.isCash 
-                                              ? 'bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300' 
-                                              : 'bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
-                                          }`}>
-                                            {tx.isCash ? (isBangla ? 'নগদ' : 'Cash') : (isBangla ? 'বাকি' : 'Due')}
+                                <div className="space-y-2">
+                                  <div className="space-y-1.5">
+                                    {displayedTxs.map((tx) => (
+                                      <div 
+                                        key={tx.id} 
+                                        className="smooth-scroll-item flex justify-between items-center py-1.5 px-2 rounded-md bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/80 shadow-2xs hover:border-slate-300 dark:hover:border-slate-600 text-xs font-bold gap-2"
+                                      >
+                                        <div className="min-w-0 flex-1">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="text-slate-800 dark:text-slate-100 font-bold text-[11px] leading-tight truncate">{tx.product}</span>
+                                            <span className={`text-[8.5px] font-black px-1 py-0.2 rounded shrink-0 uppercase tracking-wide ${
+                                              tx.isCash 
+                                                ? 'bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300' 
+                                                : 'bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+                                            }`}>
+                                              {tx.isCash ? (isBangla ? 'নগদ' : 'Cash') : (isBangla ? 'বাকি' : 'Due')}
+                                            </span>
+                                          </div>
+                                          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-medium font-mono block mt-0.5">
+                                            {formatDate(tx.date, isBangla)} • {tx.customer || (isBangla ? 'খুচরা ক্রেতা' : 'Retail')}
                                           </span>
                                         </div>
-                                        <span className="text-[9px] text-slate-500 dark:text-slate-400 font-medium font-mono block mt-0.5">
-                                          {formatDate(tx.date, isBangla)} • {tx.customer || (isBangla ? 'খুচরা ক্রেতা' : 'Retail')}
-                                        </span>
+                                        <span className="text-slate-900 dark:text-slate-100 font-black shrink-0 text-right text-[11px] pl-2 border-l border-slate-150 dark:border-slate-700/60">{formatCurrency(tx.amount, isBangla)}</span>
                                       </div>
-                                      <span className="text-slate-900 dark:text-slate-100 font-black shrink-0 text-right text-[11px] pl-2 border-l border-slate-150 dark:border-slate-700/60">{formatCurrency(tx.amount, isBangla)}</span>
-                                    </div>
-                                  ))}
+                                    ))}
+                                  </div>
+                                  {hasMore && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setModalListLimit(prev => prev + 50)}
+                                      className="w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold text-xs rounded-xl transition-colors cursor-pointer text-center"
+                                    >
+                                      {isBangla ? `আরও ৫০টি দেখুন (${salesModalTxs.length - modalListLimit}টি বাকি)` : `Load 50 More (${salesModalTxs.length - modalListLimit} remaining)`}
+                                    </button>
+                                  )}
                                 </div>
                               );
                             })()}
@@ -5315,24 +5423,39 @@ export default function App() {
                                   ? (weeklyPeriod === '7D' ? 'গত ৭ দিনে কোনো খরচ করা হয়নি।' : weeklyPeriod === '1D' ? 'আজ কোনো খরচ করা হয়নি।' : 'গত ৩০ দিনে কোনো খরচ করা হয়নি।') 
                                   : (weeklyPeriod === '7D' ? 'No expenses recorded in last 7 days.' : weeklyPeriod === '1D' ? "No expenses recorded today." : 'No expenses recorded in last 30 days.')}
                               </div>
-                            ) : (
-                              <div className="space-y-2">
-                                {weeklyReport.weeklyExs.map((ex) => (
-                                  <div 
-                                    key={ex.id} 
-                                    className="smooth-scroll-item flex justify-between items-center p-3 rounded-xl bg-white dark:bg-slate-800/90 border border-rose-200/80 dark:border-rose-800/60 shadow-2xs hover:border-rose-300 text-xs font-bold gap-3"
-                                  >
-                                    <div className="min-w-0 flex-1">
-                                      <span className="text-slate-800 dark:text-slate-100 font-extrabold text-xs sm:text-sm leading-snug break-words block">{ex.description}</span>
-                                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold font-mono block mt-1">
-                                        {formatDate(ex.date, isBangla)}
-                                      </span>
-                                    </div>
-                                    <span className="text-rose-600 dark:text-rose-400 font-black shrink-0 pl-2.5 border-l border-slate-150 dark:border-slate-700/60">-{formatCurrency(ex.amount, isBangla)}</span>
+                            ) : (() => {
+                              const displayedExs = weeklyReport.weeklyExs.slice(0, modalListLimit);
+                              const hasMore = weeklyReport.weeklyExs.length > modalListLimit;
+                              return (
+                                <div className="space-y-2">
+                                  <div className="space-y-2">
+                                    {displayedExs.map((ex) => (
+                                      <div 
+                                        key={ex.id} 
+                                        className="smooth-scroll-item flex justify-between items-center p-3 rounded-xl bg-white dark:bg-slate-800/90 border border-rose-200/80 dark:border-rose-800/60 shadow-2xs hover:border-rose-300 text-xs font-bold gap-3"
+                                      >
+                                        <div className="min-w-0 flex-1">
+                                          <span className="text-slate-800 dark:text-slate-100 font-extrabold text-xs sm:text-sm leading-snug break-words block">{ex.description}</span>
+                                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold font-mono block mt-1">
+                                            {formatDate(ex.date, isBangla)}
+                                          </span>
+                                        </div>
+                                        <span className="text-rose-600 dark:text-rose-400 font-black shrink-0 pl-2.5 border-l border-slate-150 dark:border-slate-700/60">-{formatCurrency(ex.amount, isBangla)}</span>
+                                      </div>
+                                    ))}
                                   </div>
-                                ))}
-                              </div>
-                            )}
+                                  {hasMore && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setModalListLimit(prev => prev + 50)}
+                                      className="w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold text-xs rounded-xl transition-colors cursor-pointer text-center"
+                                    >
+                                      {isBangla ? `আরও ৫০টি দেখুন (${weeklyReport.weeklyExs.length - modalListLimit}টি বাকি)` : `Load 50 More (${weeklyReport.weeklyExs.length - modalListLimit} remaining)`}
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       )}
@@ -5540,8 +5663,7 @@ export default function App() {
                                       : 'Analysis of the least sold and 2 times sold items of the last 30 days:')}
                           </p>
                           {(() => {
-                            const onceSold = weeklyReport.leastSoldProducts.filter(item => item.count <= 1).slice(0, 20);
-                            const twiceSold = weeklyReport.leastSoldProducts.filter(item => item.count === 2).slice(0, 20);
+                            const { onceSold, twiceSold } = leastSoldLists;
 
                             if (onceSold.length === 0 && twiceSold.length === 0) {
                               return (
@@ -5712,34 +5834,7 @@ export default function App() {
 
                       {/* DUE (বাকি) */}
                       {weeklyDetailModal === 'due' && (() => {
-                        let daysToSubtract = 6;
-                        if (weeklyPeriod === '30D') daysToSubtract = 29;
-                        if (weeklyPeriod === '1D') daysToSubtract = 0;
-                        const periodStartDateStr = (() => {
-                          const d = new Date();
-                          d.setDate(d.getDate() - daysToSubtract);
-                          const yyyy = d.getFullYear();
-                          const mm = String(d.getMonth() + 1).padStart(2, '0');
-                          const dd = String(d.getDate()).padStart(2, '0');
-                          return `${yyyy}-${mm}-${dd}`;
-                        })();
-                        const dueTxs = transactions
-                          .filter(tx => (weeklyPeriod === 'ALL' || tx.date >= periodStartDateStr) && !tx.isCash)
-                          .sort((a, b) => {
-                            const customerDueA = customerDues.find(
-                              (cd) => cd.name.trim().toLowerCase() === (a.customer || '').trim().toLowerCase()
-                            );
-                            const isPaidOffA = customerDueA ? customerDueA.amount <= 0 : false;
-
-                            const customerDueB = customerDues.find(
-                              (cd) => cd.name.trim().toLowerCase() === (b.customer || '').trim().toLowerCase()
-                            );
-                            const isPaidOffB = customerDueB ? customerDueB.amount <= 0 : false;
-
-                            if (isPaidOffA && !isPaidOffB) return 1;
-                            if (!isPaidOffA && isPaidOffB) return -1;
-                            return 0;
-                          });
+                        const { dueTxs, repaymentsMap } = dueModalData;
 
                         return (
                           <div className="space-y-3">
@@ -5752,70 +5847,83 @@ export default function App() {
                               <div className="text-center py-8 text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-slate-100">
                                 {isBangla ? 'কোনো বাকি বিক্রির হিসাব পাওয়া যায়নি।' : 'No due sales recorded during this timeframe.'}
                               </div>
-                            ) : (
-                              <div className="space-y-2">
-                                {dueTxs.map((tx, idx) => {
-                                  const paidAmount = transactions
-                                    .filter(t => t.parentDueId === tx.id)
-                                    .reduce((sum, t) => sum + t.amount, 0);
-                                  const remainingDue = Math.max(0, tx.amount - paidAmount);
-                                  const isPaidOff = remainingDue === 0;
+                            ) : (() => {
+                              const displayedDueTxs = dueTxs.slice(0, modalListLimit);
+                              const hasMore = dueTxs.length > modalListLimit;
+                              return (
+                                <div className="space-y-2">
+                                  <div className="space-y-2">
+                                    {displayedDueTxs.map((tx, idx) => {
+                                      const paidAmount = repaymentsMap[tx.id] || 0;
+                                      const remainingDue = Math.max(0, tx.amount - paidAmount);
+                                      const isPaidOff = remainingDue === 0;
 
-                                  return (
-                                    <div 
-                                      key={tx.id || idx} 
-                                      className={`smooth-scroll-item flex justify-between items-center p-3 rounded-xl text-xs font-bold font-sans border ${
-                                        isPaidOff 
-                                          ? 'bg-emerald-50/40 border-emerald-100/40 dark:bg-emerald-950/20 dark:border-emerald-900/30' 
-                                          : 'bg-orange-50/40 border-orange-100/40 dark:bg-orange-950/10 dark:border-orange-900/20'
-                                      }`}
-                                    >
-                                      <div className="flex items-center gap-2.5 min-w-0">
-                                        <span className={`w-5 h-5 flex items-center justify-center rounded-full font-black font-mono text-[10px] shrink-0 ${
-                                          isPaidOff 
-                                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300' 
-                                            : 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300'
-                                        }`}>
-                                          {idx + 1}
-                                        </span>
-                                        <div className="min-w-0">
-                                          <div className="flex items-center gap-1.5 flex-wrap">
-                                            <p className="text-slate-800 dark:text-slate-200 font-extrabold truncate max-w-[150px]">
-                                              {tx.customer || (isBangla ? 'সাধারণ বাকি' : 'General Due')}
-                                            </p>
-                                            {isPaidOff ? (
-                                              <span className="text-[8px] font-black text-emerald-700 bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded-md shrink-0 dark:text-emerald-300 dark:bg-emerald-950/50 dark:border-emerald-900/40">
-                                                {isBangla ? 'পরিশোধিত' : 'Paid'}
-                                              </span>
-                                            ) : paidAmount > 0 ? (
-                                              <span className="text-[8px] font-black text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded-md shrink-0">
-                                                {isBangla ? 'আংশিক পরিশোধিত' : 'Partially Paid'}
-                                              </span>
-                                            ) : null}
+                                      return (
+                                        <div 
+                                          key={tx.id || idx} 
+                                          className={`smooth-scroll-item flex justify-between items-center p-3 rounded-xl text-xs font-bold font-sans border ${
+                                            isPaidOff 
+                                              ? 'bg-emerald-50/40 border-emerald-100/40 dark:bg-emerald-950/20 dark:border-emerald-900/30' 
+                                              : 'bg-orange-50/40 border-orange-100/40 dark:bg-orange-950/10 dark:border-orange-900/20'
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-2.5 min-w-0">
+                                            <span className={`w-5 h-5 flex items-center justify-center rounded-full font-black font-mono text-[10px] shrink-0 ${
+                                              isPaidOff 
+                                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300' 
+                                                : 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300'
+                                            }`}>
+                                              {idx + 1}
+                                            </span>
+                                            <div className="min-w-0">
+                                              <div className="flex items-center gap-1.5 flex-wrap">
+                                                <p className="text-slate-800 dark:text-slate-200 font-extrabold truncate max-w-[150px]">
+                                                  {tx.customer || (isBangla ? 'সাধারণ বাকি' : 'General Due')}
+                                                </p>
+                                                {isPaidOff ? (
+                                                  <span className="text-[8px] font-black text-emerald-700 bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded-md shrink-0 dark:text-emerald-300 dark:bg-emerald-950/50 dark:border-emerald-900/40">
+                                                    {isBangla ? 'পরিশোধিত' : 'Paid'}
+                                                  </span>
+                                                ) : paidAmount > 0 ? (
+                                                  <span className="text-[8px] font-black text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded-md shrink-0">
+                                                    {isBangla ? 'আংশিক পরিশোধিত' : 'Partially Paid'}
+                                                  </span>
+                                                ) : null}
+                                              </div>
+                                              <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold truncate mt-0.5">{tx.product}</p>
+                                            </div>
                                           </div>
-                                          <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold truncate mt-0.5">{tx.product}</p>
+                                          <div className="text-right shrink-0">
+                                            <p className={`font-black ${
+                                              isPaidOff 
+                                                ? 'text-emerald-600 dark:text-emerald-400' 
+                                                : 'text-orange-600 dark:text-orange-400'
+                                            }`}>
+                                              {isPaidOff 
+                                                ? formatCurrency(tx.amount, isBangla)
+                                                : `${formatCurrency(remainingDue, isBangla)} (${isBangla ? 'বাকি' : 'Due'})`}
+                                            </p>
+                                            {paidAmount > 0 && !isPaidOff && (
+                                              <p className="text-[8px] text-emerald-600 font-bold">{isBangla ? 'জমা' : 'Paid'}: {formatCurrency(paidAmount, isBangla)}</p>
+                                            )}
+                                            <p className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold mt-0.5">{formatDate(tx.date, isBangla)}</p>
+                                          </div>
                                         </div>
-                                      </div>
-                                      <div className="text-right shrink-0">
-                                        <p className={`font-black ${
-                                          isPaidOff 
-                                            ? 'text-emerald-600 dark:text-emerald-400' 
-                                            : 'text-orange-600 dark:text-orange-400'
-                                        }`}>
-                                          {isPaidOff 
-                                            ? formatCurrency(tx.amount, isBangla)
-                                            : `${formatCurrency(remainingDue, isBangla)} (${isBangla ? 'বাকি' : 'Due'})`}
-                                        </p>
-                                        {paidAmount > 0 && !isPaidOff && (
-                                          <p className="text-[8px] text-emerald-600 font-bold">{isBangla ? 'জমা' : 'Paid'}: {formatCurrency(paidAmount, isBangla)}</p>
-                                        )}
-                                        <p className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold mt-0.5">{formatDate(tx.date, isBangla)}</p>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
+                                      );
+                                    })}
+                                  </div>
+                                  {hasMore && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setModalListLimit(prev => prev + 50)}
+                                      className="w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold text-xs rounded-xl transition-colors cursor-pointer text-center"
+                                    >
+                                      {isBangla ? `আরও ৫০টি দেখুন (${dueTxs.length - modalListLimit}টি বাকি)` : `Load 50 More (${dueTxs.length - modalListLimit} remaining)`}
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
                         );
                       })()}
@@ -6495,10 +6603,10 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setSettingsSubTab('store')}
-                  className={`py-2 px-2 text-xs font-black rounded-xl transition-all cursor-pointer text-center ${
+                  className={`py-2 px-2 text-xs font-black rounded-xl transition-all duration-75 active:scale-95 cursor-pointer text-center ${
                     settingsSubTab === 'store'
-                      ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-3xs font-extrabold'
-                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold'
+                      ? 'bg-red-600 dark:bg-red-600 text-white shadow-sm font-extrabold active:bg-red-700 hover:bg-red-700'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 active:bg-red-100 active:text-red-700 font-bold'
                   }`}
                 >
                   {isBangla ? 'সাধারণ' : 'General'}
@@ -6506,10 +6614,10 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setSettingsSubTab('sync')}
-                  className={`py-2 px-2 text-xs font-black rounded-xl transition-all cursor-pointer text-center ${
+                  className={`py-2 px-2 text-xs font-black rounded-xl transition-all duration-75 active:scale-95 cursor-pointer text-center ${
                     settingsSubTab === 'sync'
-                      ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-3xs font-extrabold'
-                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold'
+                      ? 'bg-red-600 dark:bg-red-600 text-white shadow-sm font-extrabold active:bg-red-700 hover:bg-red-700'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 active:bg-red-100 active:text-red-700 font-bold'
                   }`}
                 >
                   {isBangla ? 'ব্যাকআপ' : 'Backup'}
@@ -6517,10 +6625,10 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setSettingsSubTab('history')}
-                  className={`py-2 px-2 text-xs font-black rounded-xl transition-all cursor-pointer text-center ${
+                  className={`py-2 px-2 text-xs font-black rounded-xl transition-all duration-75 active:scale-95 cursor-pointer text-center ${
                     settingsSubTab === 'history'
-                      ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-3xs font-extrabold'
-                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold'
+                      ? 'bg-red-600 dark:bg-red-600 text-white shadow-sm font-extrabold active:bg-red-700 hover:bg-red-700'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 active:bg-red-100 active:text-red-700 font-bold'
                   }`}
                 >
                   {isBangla ? 'ইতিহাস' : 'History'}
@@ -6528,10 +6636,10 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setSettingsSubTab('memo')}
-                  className={`py-2 px-2 text-xs font-black rounded-xl transition-all cursor-pointer text-center ${
+                  className={`py-2 px-2 text-xs font-black rounded-xl transition-all duration-75 active:scale-95 cursor-pointer text-center ${
                     settingsSubTab === 'memo'
-                      ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-3xs font-extrabold'
-                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold'
+                      ? 'bg-red-600 dark:bg-red-600 text-white shadow-sm font-extrabold active:bg-red-700 hover:bg-red-700'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 active:bg-red-100 active:text-red-700 font-bold'
                   }`}
                 >
                   {isBangla ? 'মেমো/রশিদ' : 'Memo/Receipt'}
@@ -6544,8 +6652,8 @@ export default function App() {
                 onClick={() => setSettingsSubTab('guide')}
                 className={`w-full py-2.5 px-4 text-xs font-black rounded-2xl transition-all cursor-pointer flex items-center justify-center gap-2 border shadow-3xs active:scale-98 ${
                   settingsSubTab === 'guide'
-                    ? 'bg-gradient-to-r from-teal-700 via-teal-800 to-indigo-900 dark:from-teal-600 dark:via-teal-700 dark:to-indigo-800 text-white border-teal-600 dark:border-teal-500 shadow-md ring-2 ring-teal-500/30'
-                    : 'bg-gradient-to-r from-teal-50 via-emerald-50 to-indigo-50 dark:from-slate-800/90 dark:via-teal-950/70 dark:to-indigo-950/70 text-teal-800 dark:text-teal-200 border-teal-200 dark:border-teal-800/60 hover:bg-teal-100/80 dark:hover:bg-teal-900/50'
+                    ? 'bg-red-600 dark:bg-red-600 text-white border-red-600 dark:border-red-500 shadow-md ring-2 ring-red-500/30 active:bg-red-700'
+                    : 'bg-red-50 dark:bg-slate-800/90 text-red-800 dark:text-red-200 border-red-200 dark:border-red-800/60 hover:bg-red-100 dark:hover:bg-red-900/50 active:bg-red-200'
                 }`}
               >
                 <BookOpen className="h-4 w-4 text-amber-500 shrink-0" />
@@ -6593,7 +6701,7 @@ export default function App() {
                         localStorage.setItem('hisab_khata_shop_name', val);
                         localStorage.setItem('hisab_khata_last_updated', String(now));
                         if (isSyncActive) {
-                          triggerCloudSync(transactions, expenses, val, userEmail);
+                          triggerCloudSync();
                         }
                       }}
                       className="w-full text-xs font-bold pl-3 pr-9 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 dark:focus:border-teal-500 transition-all duration-200 shadow-3xs group-hover:border-slate-300 dark:group-hover:border-slate-600"
@@ -6722,8 +6830,8 @@ export default function App() {
                         }}
                         className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
                           themeMode === 'light'
-                            ? 'bg-teal-50 border-teal-500 text-teal-700'
-                            : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-600'
+                            ? 'bg-red-50 dark:bg-red-950/50 border-red-500 text-red-600 dark:text-red-400 font-extrabold shadow-2xs'
+                            : 'bg-slate-50 border-slate-200 hover:bg-red-50/60 hover:text-red-600 active:bg-red-100 text-slate-600'
                         }`}
                       >
                         <Sun className="h-3.5 w-3.5 text-amber-500" />
@@ -6739,8 +6847,8 @@ export default function App() {
                         }}
                         className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
                           themeMode === 'dark'
-                            ? 'bg-teal-50 border-teal-500 text-teal-700'
-                            : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-600'
+                            ? 'bg-red-50 dark:bg-red-950/50 border-red-500 text-red-600 dark:text-red-400 font-extrabold shadow-2xs'
+                            : 'bg-slate-50 border-slate-200 hover:bg-red-50/60 hover:text-red-600 active:bg-red-100 text-slate-600'
                         }`}
                       >
                         <Moon className="h-3.5 w-3.5 text-indigo-500" />
@@ -6756,8 +6864,8 @@ export default function App() {
                         }}
                         className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
                           themeMode === 'system'
-                            ? 'bg-teal-50 border-teal-500 text-teal-700'
-                            : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-600'
+                            ? 'bg-red-50 dark:bg-red-950/50 border-red-500 text-red-600 dark:text-red-400 font-extrabold shadow-2xs'
+                            : 'bg-slate-50 border-slate-200 hover:bg-red-50/60 hover:text-red-600 active:bg-red-100 text-slate-600'
                         }`}
                       >
                         <Monitor className="h-3.5 w-3.5 text-emerald-500" />
@@ -6864,7 +6972,7 @@ export default function App() {
                           <div className="grid grid-cols-2 gap-2 mt-1">
                             <button
                               type="button"
-                              onClick={() => triggerCloudSync(transactions, expenses, shopName, currentUser.email || '')}
+                              onClick={() => triggerCloudSync()}
                               disabled={isSyncing}
                               className="py-2 px-1 bg-teal-50/50 hover:bg-teal-50 border border-teal-100 rounded-xl text-[10px] sm:text-xs font-bold text-teal-700 flex flex-col items-center justify-center gap-1 cursor-pointer shadow-3xs transition-all disabled:opacity-50"
                             >
@@ -6895,8 +7003,8 @@ export default function App() {
                             }}
                             className={`flex-1 pb-2 text-xs font-bold border-b-2 transition-colors cursor-pointer ${
                               authTab === 'google'
-                                ? 'border-teal-600 text-teal-700'
-                                : 'border-transparent text-slate-500 hover:text-slate-800'
+                                ? 'border-red-600 text-red-600 font-black'
+                                : 'border-transparent text-slate-500 hover:text-red-600 active:text-red-700'
                             }`}
                           >
                             {isBangla ? 'গুগল লগইন' : 'Google Login'}
@@ -6909,8 +7017,8 @@ export default function App() {
                             }}
                             className={`flex-1 pb-2 text-xs font-bold border-b-2 transition-colors cursor-pointer ${
                               authTab === 'email'
-                                ? 'border-teal-600 text-teal-700'
-                                : 'border-transparent text-slate-500 hover:text-slate-800'
+                                ? 'border-red-600 text-red-600 font-black'
+                                : 'border-transparent text-slate-500 hover:text-red-600 active:text-red-700'
                             }`}
                           >
                             {isBangla ? 'ইমেইল ও পাসওয়ার্ড' : 'Email & Password'}
@@ -7436,50 +7544,6 @@ export default function App() {
                     : 'Sync all your ledger data in real-time to Firebase Cloud. Your data will remain safe and secure even if you switch or lose your device.'}
                 </p>
 
-                {/* Server Selection Segment */}
-                {isCapacitor && (
-                  <div className="p-3 bg-slate-50 border border-slate-150 rounded-xl space-y-2" id="auth-server-selector">
-                    <span className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                      {isBangla ? 'কানেকশন সার্ভার (Server Connection)' : 'Connection Server'}
-                    </span>
-                    <div className="grid grid-cols-2 p-0.5 bg-slate-200/60 rounded-lg">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAuthServerType('dev');
-                          localStorage.setItem('hisab_khata_auth_server_type', 'dev');
-                        }}
-                        className={`py-1.5 text-[11px] font-black rounded-md transition-all cursor-pointer ${
-                          authServerType === 'dev'
-                            ? 'bg-white text-teal-700 shadow-xs'
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        {isBangla ? 'ডেভ সার্ভার (Dev)' : 'Dev Server'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAuthServerType('pre');
-                          localStorage.setItem('hisab_khata_auth_server_type', 'pre');
-                        }}
-                        className={`py-1.5 text-[11px] font-black rounded-md transition-all cursor-pointer ${
-                          authServerType === 'pre'
-                            ? 'bg-white text-indigo-700 shadow-xs'
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        {isBangla ? 'লাইভ সার্ভার (Live)' : 'Live Server'}
-                      </button>
-                    </div>
-                    <p className="text-[9px] text-slate-400 leading-normal font-medium">
-                      {isBangla 
-                        ? '💡 অ্যাপ ডেভেলপমেন্ট বা টেস্টিংয়ের সময় "ডেভ" সিলেক্ট করুন। ফাইনাল শেয়ার বা রিলিজের পর "লাইভ" সিলেক্ট করুন।' 
-                        : '💡 Select "Dev" during testing/development. Select "Live" for production builds.'}
-                    </p>
-                  </div>
-                )}
-
                 <div className="space-y-3">
                   {currentUser ? (
                     <div className="space-y-4">
@@ -7529,7 +7593,7 @@ export default function App() {
                       {isSyncActive && (
                         <button
                           type="button"
-                          onClick={() => triggerCloudSync(transactions, expenses, shopName, currentUser.email)}
+                          onClick={() => triggerCloudSync()}
                           disabled={isSyncing}
                           className="w-full py-2.5 bg-teal-600 hover:bg-teal-500 disabled:bg-teal-400 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
                         >
@@ -7545,20 +7609,6 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => {
-                            setAuthTab('google');
-                            setAuthError('');
-                          }}
-                          className={`flex-1 pb-2 text-xs font-bold border-b-2 transition-colors ${
-                            authTab === 'google'
-                              ? 'border-teal-600 text-teal-700'
-                              : 'border-transparent text-slate-500 hover:text-slate-800'
-                          }`}
-                        >
-                          {isBangla ? 'গুগল লগইন' : 'Google Login'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
                             setAuthTab('email');
                             setAuthError('');
                           }}
@@ -7570,11 +7620,155 @@ export default function App() {
                         >
                           {isBangla ? 'ইমেইল ও পাসওয়ার্ড' : 'Email & Password'}
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAuthTab('google');
+                            setAuthError('');
+                          }}
+                          className={`flex-1 pb-2 text-xs font-bold border-b-2 transition-colors ${
+                            authTab === 'google'
+                              ? 'border-teal-600 text-teal-700'
+                              : 'border-transparent text-slate-500 hover:text-slate-800'
+                          }`}
+                        >
+                          {isBangla ? 'গুগল লগইন' : 'Google Login'}
+                        </button>
                       </div>
 
-                      {authTab === 'google' ? (
+                      {authTab === 'email' ? (
+                        <form onSubmit={handleEmailAuth} className="space-y-3 pt-1">
+                          {/* Segmented Control for Log In vs Register */}
+                          <div className="flex bg-slate-100 p-1 rounded-xl">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsRegisterMode(false);
+                                setAuthError('');
+                              }}
+                              className={`flex-1 py-1.5 text-center text-[11px] font-extrabold rounded-lg transition-all cursor-pointer ${
+                                !isRegisterMode
+                                  ? 'bg-white text-teal-800 shadow-3xs'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                            >
+                              {isBangla ? 'ইমেইল লগইন (Log In)' : 'Email Log In'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsRegisterMode(true);
+                                setAuthError('');
+                              }}
+                              className={`flex-1 py-1.5 text-center text-[11px] font-extrabold rounded-lg transition-all cursor-pointer ${
+                                isRegisterMode
+                                  ? 'bg-white text-teal-800 shadow-3xs'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                            >
+                              {isBangla ? 'নতুন সাইন আপ (Sign Up)' : 'Sign Up'}
+                            </button>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                              {isBangla ? 'ইমেইল এড্রেস' : 'Email Address'}
+                            </label>
+                            <input
+                              type="email"
+                              required
+                              value={authEmail}
+                              onChange={(e) => setAuthEmail(e.target.value)}
+                              placeholder="example@mail.com"
+                              className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-sans"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                              {isBangla ? 'পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)' : 'Password (min 6 chars)'}
+                            </label>
+                            <input
+                              type="password"
+                              required
+                              value={authPassword}
+                              onChange={(e) => setAuthPassword(e.target.value)}
+                              placeholder="••••••"
+                              className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-sans"
+                            />
+                          </div>
+
+                          {authError && (
+                            <div className="text-[11px] text-rose-600 font-bold bg-rose-50 p-2.5 rounded-lg border border-rose-100 whitespace-pre-line leading-relaxed">
+                              ⚠️ {authError}
+                            </div>
+                          )}
+
+                          <div className="flex flex-col gap-2 pt-1">
+                            <button
+                              type="submit"
+                              disabled={isSyncing}
+                              className="w-full py-2.5 px-4 bg-teal-600 hover:bg-teal-500 disabled:bg-teal-400 text-white font-extrabold text-xs rounded-xl shadow-xs transition-all cursor-pointer h-10 flex items-center justify-center gap-1.5"
+                            >
+                              <span>
+                                {isRegisterMode 
+                                  ? (isBangla ? 'নতুন অ্যাকাউন্ট তৈরি করুন (Sign Up)' : 'Create New Account (Sign Up)') 
+                                  : (isBangla ? 'লগইন করুন (Log In)' : 'Log In')
+                                }
+                              </span>
+                            </button>
+
+                            {!isRegisterMode && (
+                              <button
+                                type="button"
+                                onClick={handleForgotPassword}
+                                className="text-center text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer py-1"
+                              >
+                                {isBangla ? 'পাসওয়ার্ড ভুলে গেছেন? রিসেট লিংক পাঠান' : 'Forgot Password? Send Reset Link'}
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Option for new user / existing user at the bottom */}
+                          <div className="pt-3 border-t border-slate-200 text-center">
+                            {!isRegisterMode ? (
+                              <div>
+                                <p className="text-[11px] text-slate-500 font-bold mb-1.5">
+                                  {isBangla ? 'নতুন ব্যবহারকারী? এখান থেকে অ্যাকাউন্ট তৈরি করুন:' : 'New user? Create an account here:'}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsRegisterMode(true);
+                                    setAuthError('');
+                                  }}
+                                  className="w-full py-2 px-3 bg-teal-50 hover:bg-teal-100 text-teal-800 font-extrabold text-xs rounded-xl border border-teal-200/80 transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
+                                >
+                                  <span>{isBangla ? 'নতুন ব্যবহারকারী সাইন আপ (Sign Up)' : 'New User Sign Up'}</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <div>
+                                <p className="text-[11px] text-slate-500 font-bold mb-1.5">
+                                  {isBangla ? 'ইতিমধ্যে অ্যাকাউন্ট আছে?' : 'Already have an account?'}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsRegisterMode(false);
+                                    setAuthError('');
+                                  }}
+                                  className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-teal-800 font-extrabold text-xs rounded-xl border border-slate-200 transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
+                                >
+                                  <span>{isBangla ? 'ইমেইল দিয়ে লগইন করুন (Log In)' : 'Log In with Email'}</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </form>
+                      ) : (
                         <div className="space-y-4 pt-1">
-                          {/* Google Sign-In Option (Recommended & Secure) */}
+                          {/* Google Sign-In Option */}
                           <button
                             type="button"
                             onClick={handleGoogleLogin}
@@ -7611,99 +7805,6 @@ export default function App() {
                             </p>
                           )}
                         </div>
-                      ) : (
-                        <form onSubmit={handleEmailAuth} className="space-y-3 pt-1">
-                          {/* Segmented Control for Log In vs Register */}
-                          <div className="flex bg-slate-100 p-1 rounded-xl">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsRegisterMode(false);
-                                setAuthError('');
-                              }}
-                              className={`flex-1 py-1.5 text-center text-[11px] font-extrabold rounded-lg transition-all cursor-pointer ${
-                                !isRegisterMode
-                                  ? 'bg-white text-teal-800 shadow-3xs'
-                                  : 'text-slate-500 hover:text-slate-800'
-                              }`}
-                            >
-                              {isBangla ? 'লগইন করুন (Log In)' : 'Log In'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsRegisterMode(true);
-                                setAuthError('');
-                              }}
-                              className={`flex-1 py-1.5 text-center text-[11px] font-extrabold rounded-lg transition-all cursor-pointer ${
-                                isRegisterMode
-                                  ? 'bg-white text-teal-800 shadow-3xs'
-                                  : 'text-slate-500 hover:text-slate-800'
-                              }`}
-                            >
-                              {isBangla ? 'নতুন অ্যাকাউন্ট (Register)' : 'Register'}
-                            </button>
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 mb-1">
-                              {isBangla ? 'ইমেইল এড্রেস' : 'Email Address'}
-                            </label>
-                            <input
-                              type="email"
-                              required
-                              value={authEmail}
-                              onChange={(e) => setAuthEmail(e.target.value)}
-                              placeholder="example@mail.com"
-                              className="w-full text-xs p-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-sans"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 mb-1">
-                              {isBangla ? 'পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)' : 'Password (min 6 chars)'}
-                            </label>
-                            <input
-                              type="password"
-                              required
-                              value={authPassword}
-                              onChange={(e) => setAuthPassword(e.target.value)}
-                              placeholder="••••••"
-                              className="w-full text-xs p-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 font-sans"
-                            />
-                          </div>
-
-                          {authError && (
-                            <div className="text-[11px] text-rose-600 font-bold bg-rose-50 p-2.5 rounded-lg border border-rose-100 whitespace-pre-line leading-relaxed">
-                              ⚠️ {authError}
-                            </div>
-                          )}
-
-                          <div className="flex flex-col gap-2 pt-1">
-                            <button
-                              type="submit"
-                              disabled={isSyncing}
-                              className="w-full py-2 px-4 bg-teal-600 hover:bg-teal-500 disabled:bg-teal-400 text-white font-extrabold text-xs rounded-xl shadow-xs transition-all cursor-pointer h-10 flex items-center justify-center gap-1.5"
-                            >
-                              <span>
-                                {isRegisterMode 
-                                  ? (isBangla ? 'নতুন অ্যাকাউন্ট খুলুন' : 'Register New Account') 
-                                  : (isBangla ? 'লগইন করুন' : 'Log In')
-                                }
-                              </span>
-                            </button>
-
-                            {!isRegisterMode && (
-                              <button
-                                type="button"
-                                onClick={handleForgotPassword}
-                                className="text-center text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer py-1"
-                              >
-                                {isBangla ? 'পাসওয়ার্ড ভুলে গেছেন? রিসেট লিংক পাঠান' : 'Forgot Password? Send Reset Link'}
-                              </button>
-                            )}
-                          </div>
-                        </form>
                       )}
                     </div>
                   )}
@@ -8755,6 +8856,7 @@ export default function App() {
           const totalDueRepayAmt = dueRepayments.reduce((acc, curr) => acc + curr.amount, 0);
 
           const totalExpAmt = todayExpenses.reduce((acc, curr) => acc + curr.amount, 0);
+          const totalDeductibleExpAmt = todayExpenses.reduce((acc, curr) => acc + (isShopRentExpense(curr.description) ? 0 : curr.amount), 0);
           const avgExpense = todayExpenses.length > 0 ? totalExpAmt / todayExpenses.length : 0;
 
           return (
@@ -8882,27 +8984,38 @@ export default function App() {
                 )}
 
                 {activeCardDetailModal === 'cash' && (
-                  <div className="grid grid-cols-2 gap-1.5 mb-2 shrink-0">
+                  <div className="grid grid-cols-3 gap-1 mb-2 shrink-0">
                     <div className="bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100/50 dark:border-emerald-900/30 rounded-lg p-1 text-center">
-                      <span className="text-[8.5px] text-emerald-700 dark:text-emerald-300 font-black uppercase tracking-wider block leading-tight">
-                        {isBangla ? 'সরাসরি নগদ' : 'Direct Cash'}
+                      <span className="text-[8px] sm:text-[8.5px] text-emerald-700 dark:text-emerald-300 font-black uppercase tracking-wider block leading-tight">
+                        {isBangla ? 'মোট ক্যাশ ইন' : 'Total Cash In'}
                       </span>
                       <span className="font-extrabold text-[10.5px] sm:text-[11.5px] text-slate-800 dark:text-slate-100 font-sans block leading-tight">
-                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(totalDirectCashAmt, isBangla)}
+                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(totalDirectCashAmt + totalDueRepayAmt, isBangla)}
                       </span>
                       <span className="text-[7.5px] text-slate-400 dark:text-slate-500 font-bold block">
-                        {isBangla ? `${toBanglaNumber(directCashSales.length.toString())} টি বিক্রি` : `${directCashSales.length} Sales`}
+                        {isBangla ? `${toBanglaNumber((directCashSales.length + dueRepayments.length).toString())} টি জমা` : `${directCashSales.length + dueRepayments.length} Receipts`}
+                      </span>
+                    </div>
+                    <div className="bg-rose-50/50 dark:bg-rose-950/20 border border-rose-100/50 dark:border-rose-900/30 rounded-lg p-1 text-center">
+                      <span className="text-[8px] sm:text-[8.5px] text-rose-700 dark:text-rose-300 font-black uppercase tracking-wider block leading-tight">
+                        {isBangla ? 'আজকের খরচ (-)' : 'Expense (-)'}
+                      </span>
+                      <span className="font-extrabold text-[10.5px] sm:text-[11.5px] text-rose-600 dark:text-rose-400 font-sans block leading-tight">
+                        -{isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(totalDeductibleExpAmt, isBangla)}
+                      </span>
+                      <span className="text-[7.5px] text-slate-400 dark:text-slate-500 font-bold block">
+                        {isBangla ? `${toBanglaNumber(todayExpenses.length.toString())} টি খরচ` : `${todayExpenses.length} Expenses`}
                       </span>
                     </div>
                     <div className="bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100/50 dark:border-blue-900/30 rounded-lg p-1 text-center">
-                      <span className="text-[8.5px] text-blue-700 dark:text-blue-300 font-black uppercase tracking-wider block leading-tight">
-                        {isBangla ? 'বাকি আদায়' : 'Due Recovered'}
+                      <span className="text-[8px] sm:text-[8.5px] text-blue-700 dark:text-blue-300 font-black uppercase tracking-wider block leading-tight">
+                        {isBangla ? 'নিট ক্যাশ জমা' : 'Net Deposit'}
                       </span>
-                      <span className="font-extrabold text-[10.5px] sm:text-[11.5px] text-slate-800 dark:text-slate-100 font-sans block leading-tight">
-                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency(totalDueRepayAmt, isBangla)}
+                      <span className="font-extrabold text-[10.5px] sm:text-[11.5px] text-blue-600 dark:text-blue-400 font-sans block leading-tight">
+                        {isBalancesHidden ? (isBangla ? '৳ ••••' : '$ ••••') : formatCurrency((totalDirectCashAmt + totalDueRepayAmt) - totalDeductibleExpAmt, isBangla)}
                       </span>
                       <span className="text-[7.5px] text-slate-400 dark:text-slate-500 font-bold block">
-                        {isBangla ? `${toBanglaNumber(dueRepayments.length.toString())} টি আদায়` : `${dueRepayments.length} Repays`}
+                        {isBangla ? 'হাতে ক্যাশ' : 'Net Balance'}
                       </span>
                     </div>
                   </div>
@@ -9138,7 +9251,6 @@ export default function App() {
                                       <div 
                                         className="flex items-center gap-1.5 cursor-pointer group leading-tight"
                                         onClick={() => {
-                                          setActiveCardDetailModal(null);
                                           setSelectedCustomerForDetail(cd.name);
                                         }}
                                         title={isBangla ? 'বিস্তারিত খতিয়ান দেখতে ক্লিক করুন' : 'Click to view detailed ledger'}
@@ -10595,14 +10707,14 @@ export default function App() {
       <AnimatePresence>
         {toastMessage && (
           <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            initial={{ opacity: 0, y: -50, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.9 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white py-2.5 px-5 rounded-full shadow-xl border border-slate-800 text-xs font-medium z-50 flex items-center gap-2"
+            exit={{ opacity: 0, y: -20, scale: 0.9 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 bg-slate-900/95 dark:bg-slate-800/95 text-white py-2.5 px-5 rounded-full shadow-2xl border border-slate-700/80 text-xs font-bold z-[100] flex items-center gap-2 max-w-[92vw] sm:max-w-md text-center"
             id="toast-notification"
           >
-            <Sparkles className="h-4 w-4 text-emerald-400" />
-            <span>{toastMessage}</span>
+            <Sparkles className="h-4 w-4 text-emerald-400 shrink-0" />
+            <span className="truncate">{toastMessage}</span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -10610,70 +10722,66 @@ export default function App() {
       {/* --- PERSISTENT BOTTOM NAVIGATION BAR --- */}
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] py-3 px-4 rounded-t-[24px]" id="persistent-bottom-nav">
         <div className="max-w-md mx-auto grid grid-cols-4 gap-1.5 text-center">
-          <motion.button
-            whileTap={{ scale: 0.94 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+          <button
+            type="button"
             onClick={() => setCurrentNavTab('home')}
-            className={`flex flex-col items-center justify-center gap-1 transition-all duration-[270ms] py-2 px-1 rounded-[18px] cursor-pointer w-full border ${
+            className={`flex flex-col items-center justify-center gap-1 transition-all duration-75 active:scale-95 py-2 px-1 rounded-[18px] cursor-pointer w-full border ${
               currentNavTab === 'home'
                 ? 'text-indigo-600 bg-indigo-50/80 border-indigo-100 shadow-3xs font-black'
                 : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50 border-transparent'
             }`}
           >
-            <Home className={`h-5 w-5 transition-transform duration-[270ms] ${currentNavTab === 'home' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
+            <Home className={`h-5 w-5 transition-transform duration-75 ${currentNavTab === 'home' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
             <span className="text-[10px] font-black truncate w-full text-center">
               {isBangla ? 'হোম' : 'Home'}
             </span>
-          </motion.button>
+          </button>
 
-          <motion.button
-            whileTap={{ scale: 0.94 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+          <button
+            type="button"
             onClick={() => setCurrentNavTab('info')}
-            className={`flex flex-col items-center justify-center gap-1 transition-all duration-[270ms] py-2 px-1 rounded-[18px] cursor-pointer w-full border ${
+            className={`flex flex-col items-center justify-center gap-1 transition-all duration-75 active:scale-95 py-2 px-1 rounded-[18px] cursor-pointer w-full border ${
               currentNavTab === 'info'
                 ? 'text-amber-600 bg-amber-50/80 border-amber-100 shadow-3xs font-black'
                 : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50 border-transparent'
             }`}
             id="info-nav-tab"
           >
-            <Info className={`h-5 w-5 transition-transform duration-[270ms] ${currentNavTab === 'info' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
+            <Info className={`h-5 w-5 transition-transform duration-75 ${currentNavTab === 'info' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
             <span className="text-[10px] font-black truncate w-full text-center">
               {isBangla ? 'সার্ভিস' : 'Service'}
             </span>
-          </motion.button>
+          </button>
 
-          <motion.button
-            whileTap={{ scale: 0.94 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+          <button
+            type="button"
             onClick={() => setCurrentNavTab('monthly')}
-            className={`flex flex-col items-center justify-center gap-1 transition-all duration-[270ms] py-2 px-1 rounded-[18px] cursor-pointer w-full border ${
+            className={`flex flex-col items-center justify-center gap-1 transition-all duration-75 active:scale-95 py-2 px-1 rounded-[18px] cursor-pointer w-full border ${
               currentNavTab === 'monthly'
                 ? 'text-emerald-600 bg-emerald-50/80 border-emerald-100 shadow-3xs font-black'
                 : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50 border-transparent'
             }`}
           >
-            <Database className={`h-5 w-5 transition-transform duration-[270ms] ${currentNavTab === 'monthly' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
+            <Database className={`h-5 w-5 transition-transform duration-75 ${currentNavTab === 'monthly' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
             <span className="text-[10px] font-black truncate w-full text-center">
               {isBangla ? 'রিপোর্ট' : 'Report'}
             </span>
-          </motion.button>
+          </button>
 
-          <motion.button
-            whileTap={{ scale: 0.94 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+          <button
+            type="button"
             onClick={() => setCurrentNavTab('settings')}
-            className={`flex flex-col items-center justify-center gap-1 transition-all duration-[270ms] py-2 px-1 rounded-[18px] cursor-pointer w-full border ${
+            className={`flex flex-col items-center justify-center gap-1 transition-all duration-75 active:scale-95 py-2 px-1 rounded-[18px] cursor-pointer w-full border ${
               currentNavTab === 'settings'
                 ? 'text-rose-600 bg-rose-50/80 border-rose-100 shadow-3xs font-black'
                 : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50 border-transparent'
             }`}
           >
-            <SettingsIcon className={`h-5 w-5 transition-transform duration-[270ms] ${currentNavTab === 'settings' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
+            <SettingsIcon className={`h-5 w-5 transition-transform duration-75 ${currentNavTab === 'settings' ? 'scale-105 stroke-[2.5]' : 'stroke-[2]'}`} />
             <span className="text-[10px] font-black truncate w-full text-center">
               {isBangla ? 'সেটিংস' : 'Settings'}
             </span>
-          </motion.button>
+          </button>
         </div>
       </div>
 

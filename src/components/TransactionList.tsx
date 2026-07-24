@@ -18,9 +18,14 @@ function TransactionList({
   onUpdate,
 }: TransactionListProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [showAll, setShowAll] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(20);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Reset pagination when search term or transactions change
+  useEffect(() => {
+    setVisibleCount(20);
+  }, [searchTerm, transactions]);
 
   // Lock body scroll when a modal is open
   useEffect(() => {
@@ -51,7 +56,7 @@ function TransactionList({
     return productMatch || customerMatch;
   });
 
-  const displayedTransactions = showAll ? filteredTransactions : filteredTransactions.slice(0, 8);
+  const displayedTransactions = filteredTransactions.slice(0, visibleCount);
 
   const startEditing = (tx: Transaction) => {
     setEditingId(tx.id);
@@ -87,10 +92,10 @@ function TransactionList({
     <div className="w-full px-3 sm:px-4">
       <div className="flex flex-col items-center justify-center gap-2 mb-4">
         <div className="text-center">
-          <h3 className="text-xs sm:text-sm font-black text-slate-700 tracking-tight">
+          <h3 className="text-xs sm:text-sm font-black text-slate-700 dark:text-slate-200 tracking-tight">
             {isBangla ? 'আজকের বিক্রির তালিকা' : "Today's Sales"}
           </h3>
-          <p className="text-[10px] sm:text-xs text-slate-400 font-bold">
+          <p className="text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 font-bold">
             {isBangla 
               ? `মোট ${toBanglaNumber(filteredTransactions.length)} টি হিসাব পাওয়া গেছে` 
               : `Found ${filteredTransactions.length} ledger records`}
@@ -99,7 +104,7 @@ function TransactionList({
 
         {/* Search input */}
         <div className="relative w-full max-w-sm">
-          <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+          <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400 dark:text-slate-500">
             <Search className="h-3.5 w-3.5" />
           </span>
           <input
@@ -107,7 +112,7 @@ function TransactionList({
             placeholder={isBangla ? 'পণ্য বা ক্রেতার নাম খুঁজুন...' : 'Search product or customer...'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 focus:border-teal-500 bg-slate-50/50 font-medium"
+            className="w-full pl-9 pr-4 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-teal-500 focus:border-teal-500 bg-slate-50/50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 font-medium"
           />
         </div>
       </div>
@@ -144,7 +149,7 @@ function TransactionList({
                       className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
                     >
                       {/* Product Name, Time & Customer */}
-                      <td className="py-2 sm:py-2.5 px-2 sm:px-3 border-r border-slate-100 dark:border-slate-800 align-middle">
+                      <td className="py-1 sm:py-1.5 px-1.5 sm:px-2.5 border-r border-slate-100 dark:border-slate-800 align-middle">
                         <div className="flex flex-col gap-0.5 text-left">
                           <div className="flex items-center flex-wrap gap-1">
                             {(() => {
@@ -155,9 +160,9 @@ function TransactionList({
                                     {productParts.map((part, pIdx) => (
                                       <span
                                         key={pIdx}
-                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-md sm:rounded-lg border border-teal-200/90 dark:border-teal-800/80 bg-teal-50/90 dark:bg-teal-950/40 text-teal-950 dark:text-teal-200 font-extrabold text-[11px] sm:text-xs shadow-2xs border-l-2 sm:border-l-3 border-l-teal-500 max-w-full leading-tight break-words"
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 sm:px-2 sm:py-0.5 rounded-md border border-teal-200/90 dark:border-teal-800/80 bg-teal-50/90 dark:bg-teal-950/40 text-teal-950 dark:text-teal-200 font-extrabold text-[10.5px] sm:text-[11px] shadow-2xs border-l-2 border-l-teal-500 max-w-full leading-tight break-words"
                                       >
-                                        <Tag className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-teal-600 dark:text-teal-400 shrink-0" />
+                                        <Tag className="h-2.5 w-2.5 text-teal-600 dark:text-teal-400 shrink-0" />
                                         <span className="break-words leading-tight">{part}</span>
                                       </span>
                                     ))}
@@ -165,8 +170,8 @@ function TransactionList({
                                 );
                               }
                               return (
-                                <div className="inline-flex items-center gap-1 px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-md sm:rounded-lg border border-teal-200/90 dark:border-teal-800/80 bg-teal-50/90 dark:bg-teal-950/40 text-teal-950 dark:text-teal-200 font-extrabold text-[11px] sm:text-xs shadow-2xs border-l-2 sm:border-l-3 border-l-teal-500 max-w-full leading-tight break-words">
-                                  <Tag className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-teal-600 dark:text-teal-400 shrink-0" />
+                                <div className="inline-flex items-center gap-1 px-1.5 py-0.5 sm:px-2 sm:py-0.5 rounded-md border border-teal-200/90 dark:border-teal-800/80 bg-teal-50/90 dark:bg-teal-950/40 text-teal-950 dark:text-teal-200 font-extrabold text-[10.5px] sm:text-[11px] shadow-2xs border-l-2 border-l-teal-500 max-w-full leading-tight break-words">
+                                  <Tag className="h-2.5 w-2.5 text-teal-600 dark:text-teal-400 shrink-0" />
                                   <span className="break-words leading-tight">{tx.product}</span>
                                 </div>
                               );
@@ -260,16 +265,14 @@ function TransactionList({
         </div>
       )}
 
-      {filteredTransactions.length > 8 && (
+      {filteredTransactions.length > visibleCount && (
         <div className="flex justify-center mt-4">
           <button
             type="button"
-            onClick={() => setShowAll(!showAll)}
-            className="px-4 py-1.5 text-xs text-teal-700 hover:text-white bg-teal-50 hover:bg-teal-600 rounded-xl border border-teal-100 transition-all font-extrabold cursor-pointer shadow-3xs flex items-center justify-center gap-1 active:scale-95"
+            onClick={() => setVisibleCount((prev) => prev + 20)}
+            className="px-4 py-1.5 text-xs text-teal-700 dark:text-teal-300 hover:text-white bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-600 dark:hover:bg-teal-600 rounded-xl border border-teal-100 dark:border-teal-800 transition-all font-extrabold cursor-pointer shadow-3xs flex items-center justify-center gap-1 active:scale-95"
           >
-            {showAll 
-              ? (isBangla ? 'কম দেখান' : 'Show Less') 
-              : (isBangla ? 'আরো দেখুন' : 'Show More')}
+            <span>{isBangla ? 'আরও দেখুন' : 'See More'}</span>
           </button>
         </div>
       )}

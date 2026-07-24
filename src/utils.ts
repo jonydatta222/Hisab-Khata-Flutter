@@ -148,6 +148,25 @@ export function isTransactionRepayment(tx: { product: string; isCash: boolean; c
 }
 
 /**
+ * Checks if an expense description represents shop rent / store rent.
+ * Shop rent expenses are recorded as entries, but NOT deducted from cash deposit / total cash balance.
+ */
+export function isShopRentExpense(description: string): boolean {
+  if (!description) return false;
+  const norm = description.trim().toLowerCase();
+  
+  // Bengali variations: দোকান ভাড়া, দোকান ভাড়া, দোকানভাড়া, দোকানভাড়া, দোকান ভাড়া খরচ
+  const containsDokan = norm.includes('দোকান') || norm.includes('dokan');
+  const containsVara = norm.includes('ভাড়া') || norm.includes('ভাড়া') || norm.includes('bhara') || norm.includes('vara') || norm.includes('rent');
+  
+  if (containsDokan && containsVara) return true;
+  if (norm.includes('দোকানভাড়া') || norm.includes('দোকানভাড়া')) return true;
+  if (norm.includes('shop rent') || norm.includes('store rent')) return true;
+  
+  return false;
+}
+
+/**
  * Returns the correct base URL for verification links.
  * Fallback to public web domains if running on localhost, Capacitor, or other local dev environments.
  */

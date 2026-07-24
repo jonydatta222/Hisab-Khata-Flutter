@@ -33,7 +33,7 @@ service cloud.firestore {
           && data.expenses is list
           && data.shopName is string
           && data.shopName.size() <= 150
-          && data.updatedAt is int
+          && (data.updatedAt is int || data.updatedAt is number)
           && (!('outOfStockItems' in data) || data.outOfStockItems is list)
           && (!('productRates' in data) || data.productRates is list);
     }
